@@ -1,0 +1,100 @@
+/// Which eye produced this report.
+///
+/// The Five Eyes are:
+/// 1. **`DomReader`** — structured DOM perception
+/// 2. **Vision** — screenshot-based visual understanding
+/// 3. **`PageDiff`** — what changed since last page load
+/// 4. **`GoalVerifier`** — are we on track toward the goal?
+/// 5. **`ErrorDetector`** — what went wrong and how to recover?
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum EyeName {
+    DomReader,
+    Vision,
+    PageDiff,
+    GoalVerifier,
+    ErrorDetector,
+}
+
+impl EyeName {
+    #[must_use] 
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::DomReader => "dom_reader",
+            Self::Vision => "vision",
+            Self::PageDiff => "page_diff",
+            Self::GoalVerifier => "goal_verifier",
+            Self::ErrorDetector => "error_detector",
+        }
+    }
+}
+
+/// Content payload from a single eye.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum EyeReportContent {
+    DomReport {
+        elements: Vec<crate::distill::DistilledElement>,
+        interactive: Vec<crate::distill::InteractiveElement>,
+        mode: crate::distill::DistillMode,
+    },
+    VisionReport {
+        visible_elements: Vec<String>,
+        overlays: Vec<String>,
+        blocked_regions: Vec<String>,
+        page_type: String,
+        anomalies: Vec<String>,
+        raw_response: String,
+    },
+    DiffReport {
+        added: Vec<String>,
+        removed: Vec<String>,
+        modified: Vec<String>,
+        visual_diff_pct: f32,
+        summary: String,
+    },
+    Verification {
+        sub_goal_advanced: bool,
+        confidence: f32,
+        reasoning: String,
+        criteria_status: String,
+    },
+    ErrorReport {
+        failure_type: String,
+        description: String,
+        recovery_actions: Vec<String>,
+        should_retry: bool,
+        max_retries: u32,
+    },
+}
+
+/// A single eye's observation, timestamped and confidence-scored.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EyeReport {
+    pub eye_name: EyeName,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+    pub confidence: f32,
+    pub goal_relevance: f32,
+    pub content: EyeReportContent,
+}
+
+/// The unified signal produced by the Signal Router after
+/// synthesizing all eye reports and resolving contradictions.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RoutedSignal {
+    /// Natural language summary for the Decision Intelligence Layer.
+    pub unified_perception: String,
+    /// Distractions detected and actions taken.
+    pub alerts: Vec<DistractionAlert>,
+    /// Overall confidence in the synthesis.
+    pub confidence: f32,
+    /// Hint for what action to take next (may be empty).
+    pub recommended_action_hint: Option<String>,
+    /// Cross-eye contradictions that were detected and resolved.
+    pub contradictions: Vec<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DistractionAlert {
+    pub kind: String,
+    pub description: String,
+    pub action_taken: String,
+}

@@ -1,0 +1,102 @@
+//! DOM distillation benchmarks.
+//!
+//! Measures `Distiller::process()` across three page sizes.
+
+use ans_core::distill::DistillMode;
+use ans_distill::Distiller;
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use serde_json::json;
+
+/// Build a synthetic CDP DOM tree with `n` leaf elements inside div wrappers.
+fn build_dom_json(leaf_count: usize) -> serde_json::Value {
+    let leaves: Vec<_> = (0..leaf_count)
+        .map(|i| {
+            json!({
+                "nodeType": 1,
+                "nodeName": "span",
+                "attributes": [{"name": "class", "value": format!("item-{}", i)}],
+                "children": [{
+                    "nodeType": 3,
+                    "nodeValue": format!("Leaf node number {}", i)
+                }]
+            })
+        })
+        .collect();
+
+    json!({
+        "root": {
+            "nodeType": 9,
+            "nodeName": "#document",
+            "children": [{
+                "nodeType": 1,
+                "nodeName": "HTML",
+                "children": [{
+                    "nodeType": 1,
+                    "nodeName": "HEAD",
+                    "children": []
+                }, {
+                    "nodeType": 1,
+                    "nodeName": "BODY",
+                    "attributes": [],
+                    "children": [{
+                        "nodeType": 1,
+                        "nodeName": "div",
+                        "attributes": [{"name": "class", "value": "main-content"}],
+                        "children": leaves
+                    }]
+                }]
+            }]
+        }
+    })
+}
+
+fn bench_small_page(c: &mut Criterion) {
+    let dom = build_dom_json(100);
+    let distiller = Distiller;
+
+    c.bench_function("distill/small_100_nodes", |b| {
+        b.iter(|| {
+            distiller.process(
+                black_box(&dom),
+                DistillMode::AllFields,
+                "https://example.com",
+                "Benchmark Page",
+            )
+        });
+    });
+}
+
+fn bench_medium_page(c: &mut Criterion) {
+    let dom = build_dom_json(1000);
+    let distiller = Distiller;
+
+    c.bench_function("distill/medium_1000_nodes", |b| {
+        b.iter(|| {
+            distiller.process(
+                black_box(&dom),
+                DistillMode::AllFields,
+                "https://example.com",
+                "Benchmark Page",
+            )
+        });
+    });
+}
+
+fn bench_large_page(c: &mut Criterion) {
+    let dom = build_dom_json(5000);
+    let distiller = Distiller;
+
+    c.bench_function("distill/large_5000_nodes", |b| {
+        b.iter(|| {
+            distiller.process(
+                black_box(&dom),
+                DistillMode::AllFields,
+                "https://example.com",
+                "Benchmark Page",
+            )
+        });
+    });
+}
+
+criterion_group!(benches, bench_small_page, bench_medium_page, bench_large_page);
+criterion_main!(benches);

@@ -1,0 +1,173 @@
+//! Heuristic distraction classifier.
+//!
+//! Runs at intake, before any eye perceives content. Three-stage pipeline:
+//! 1. URL patterns — ad/tracking domains, redirect detection
+//! 2. DOM content patterns — cookie banners, newsletter modals, surveys
+//! 3. CSS class/id hints — overlay, popup, ad-related selectors
+//!
+//! Target: <1ms classification time for typical pages (5000 elements).
+
+use ans_core::immune::{DistractionFlag, DistractionKind, ImmuneAction};
+
+use crate::rules::{self, Rule};
+
+/// The heuristic distraction classifier.
+pub struct DistractionClassifier;
+
+impl DistractionClassifier {
+    /// Classify all distractions on a page.
+    ///
+    /// `dom_text` should be all visible text from the distilled DOM,
+    /// concatenated for pattern matching. `css_hints` is the raw HTML
+    /// snippet or attribute strings for class/id pattern matching.
+    #[must_use] 
+    pub fn classify(&self, url: &str, dom_text: &str, css_hints: &str) -> Vec<DistractionFlag> {
+        let mut flags = Vec::new();
+
+        // Stage 1: URL-based rules
+        for rule in &rules::url_rules() {
+            if rule.pattern.is_match(url) {
+                flags.push(flag_from_rule(rule));
+            }
+        }
+
+        // Stage 2: Content-based rules
+        for rule in &rules::content_rules() {
+            if rule.pattern.is_match(dom_text) {
+                flags.push(flag_from_rule(rule));
+            }
+        }
+
+        // Stage 3: CSS class/id hint rules
+        for rule in &rules::css_hint_rules() {
+            if rule.pattern.is_match(css_hints) {
+                flags.push(flag_from_rule(rule));
+            }
+        }
+
+        // Deduplicate by kind, keeping the higher confidence
+        deduplicate(&mut flags);
+
+        flags
+    }
+}
+
+/// Map a matched rule to a [`DistractionFlag`].
+fn flag_from_rule(rule: &Rule) -> DistractionFlag {
+    DistractionFlag {
+        kind: str_to_kind(&rule.kind),
+        element_selector: String::new(),
+        confidence: rule.confidence,
+        suggested_action: str_to_action(&rule.action),
+    }
+}
+
+/// Deduplicate flags: keep only one per kind, preferring higher confidence.
+fn deduplicate(flags: &mut Vec<DistractionFlag>) {
+    let mut seen: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    let mut i = 0;
+    while i < flags.len() {
+        let kind_key = format!("{:?}", flags[i].kind);
+        if let Some(&existing_idx) = seen.get(&kind_key) {
+            if flags[existing_idx].confidence < flags[i].confidence {
+                flags.remove(existing_idx);
+                // Rebuild — safe because this is rare (<20 flags)
+                seen.clear();
+                i = 0;
+                continue;
+            }
+            flags.remove(i);
+            continue;
+        }
+        seen.insert(kind_key, i);
+        i += 1;
+    }
+}
+
+fn str_to_kind(s: &str) -> DistractionKind {
+    match s {
+        "ad" => DistractionKind::Ad,
+        "popup" => DistractionKind::Popup,
+        "cookie_banner" => DistractionKind::CookieBanner,
+        "newsletter_modal" => DistractionKind::NewsletterModal,
+        "redirect" => DistractionKind::Redirect,
+        "autoplay_video" => DistractionKind::AutoPlayVideo,
+        "survey" => DistractionKind::Survey,
+        "notification" => DistractionKind::Notification,
+        _ => DistractionKind::Unknown,
+    }
+}
+
+fn str_to_action(s: &str) -> ImmuneAction {
+    match s {
+        "dismiss" => ImmuneAction::Dismiss,
+        "block" => ImmuneAction::Block,
+        "suppress" => ImmuneAction::Suppress,
+        "navigate_back" => ImmuneAction::NavigateBack,
+        _ => ImmuneAction::Ignore,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ad_url_detected() {
+        let c = DistractionClassifier;
+        let flags = c.classify("https://doubleclick.net/ad/123", "", "");
+        assert!(flags.iter().any(|f| f.kind == DistractionKind::Ad));
+    }
+
+    #[test]
+    fn test_cookie_banner_in_text() {
+        let c = DistractionClassifier;
+        let flags = c.classify(
+            "https://example.com",
+            "We use cookies to improve your experience. Accept all cookies to continue.",
+            "",
+        );
+        assert!(flags
+            .iter()
+            .any(|f| f.kind == DistractionKind::CookieBanner));
+    }
+
+    #[test]
+    fn test_clean_page_no_flags() {
+        let c = DistractionClassifier;
+        let flags = c.classify(
+            "https://example.com/docs",
+            "API reference documentation for the library.",
+            r#"<div class="content">docs</div>"#,
+        );
+        assert!(flags.is_empty());
+    }
+
+    #[test]
+    fn test_deduplication_keeps_higher_confidence() {
+        let c = DistractionClassifier;
+        // "ad" in URL (0.95) + ad in content (0.9 for ad_blocker_wall)
+        let flags = c.classify(
+            "https://doubleclick.net/ad/123",
+            "Ad blocker detected! Please disable your ad blocker to continue.",
+            "",
+        );
+        let ad_flags: Vec<_> = flags
+            .iter()
+            .filter(|f| f.kind == DistractionKind::Ad)
+            .collect();
+        assert_eq!(ad_flags.len(), 1);
+        assert!(ad_flags[0].confidence >= 0.9);
+    }
+
+    #[test]
+    fn test_css_popup_class() {
+        let c = DistractionClassifier;
+        let flags = c.classify(
+            "https://example.com",
+            "",
+            r#"<div class="popup-overlay">Sign up now</div>"#,
+        );
+        assert!(flags.iter().any(|f| f.kind == DistractionKind::Popup));
+    }
+}

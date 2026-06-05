@@ -1,0 +1,11 @@
+//! DOM distillation engine.
+//!
+//! Takes raw CDP DOM snapshots and produces [`DistilledPage`] output.
+//! Three modes: `TextOnly`, `InputFields`, `AllFields`. Strips distractions,
+//! annotates interactive elements, and segments semantic blocks.
+
+pub mod engine;
+pub mod semantic;
+pub mod serialization;
+
+pub use engine::Distiller;

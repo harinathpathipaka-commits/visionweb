@@ -1,0 +1,164 @@
+//! Serialize/deserialize immune system types between core domain types
+//! and protobuf-generated types. Used by the gRPC server.
+
+use ans_core::immune::{
+    DistractionFlag, DistractionKind, ImmuneAction, InjectionFlag, InjectionScanResult,
+};
+
+// ── Core → Proto ──────────────────────────────────────────────────────
+
+/// Convert a core [`DistractionFlag`] to the proto [`Distraction`] list-item message.
+#[must_use] 
+pub fn distraction_to_proto_list_item(flag: &DistractionFlag) -> ans_proto::ans::Distraction {
+    ans_proto::ans::Distraction {
+        kind: distraction_kind_to_str(&flag.kind).into(),
+        element_selector: flag.element_selector.clone(),
+        confidence: flag.confidence,
+        action: immune_action_to_str(&flag.suggested_action).into(),
+    }
+}
+
+/// Convert a core [`InjectionScanResult`] to the proto message.
+pub fn injection_result_to_proto(
+    result: &InjectionScanResult,
+) -> ans_proto::ans::InjectionScanResult {
+    ans_proto::ans::InjectionScanResult {
+        score: result.score,
+        flagged: result
+            .flagged_content
+            .iter()
+            .map(injection_flag_to_proto)
+            .collect(),
+        action: result.action.as_str().into(),
+        reason: reason_for_result(result),
+        scan_time_us: 0, // filled by caller
+    }
+}
+
+/// Convert a core [`InjectionFlag`] to the proto [`FlaggedContent`] message.
+#[must_use] 
+pub fn injection_flag_to_proto(flag: &InjectionFlag) -> ans_proto::ans::FlaggedContent {
+    ans_proto::ans::FlaggedContent {
+        content_snippet: flag.content_snippet.clone(),
+        pattern_matched: flag.pattern_matched.clone(),
+        location: flag.location.as_str().into(),
+        confidence: flag.confidence,
+    }
+}
+
+/// Build [`ActionCheckResponse`] from distraction + injection scan results.
+#[must_use] 
+pub fn build_action_check_response(
+    distractions: &[DistractionFlag],
+    injection: &InjectionScanResult,
+) -> ans_proto::ans::ActionCheckResponse {
+    let mut allowed = true;
+    let mut reasons: Vec<String> = Vec::new();
+    let mut distraction_alerts: Vec<String> = Vec::new();
+    let mut injection_alerts: Vec<String> = Vec::new();
+
+    for d in distractions {
+        if matches!(d.suggested_action, ImmuneAction::Block) {
+            allowed = false;
+            reasons.push(format!(
+                "blocked by {} distraction",
+                distraction_kind_to_str(&d.kind)
+            ));
+        }
+        distraction_alerts.push(format!(
+            "{} detected (confidence: {:.0}%) — {}",
+            distraction_kind_to_str(&d.kind),
+            d.confidence * 100.0,
+            immune_action_to_str(&d.suggested_action)
+        ));
+    }
+
+    if injection.score >= 0.7 {
+        allowed = false;
+        reasons.push(format!(
+            "page blocked: injection score {:.0}%",
+            injection.score * 100.0
+        ));
+    } else if injection.score >= 0.3 {
+        reasons.push(format!(
+            "content sanitized: injection score {:.0}%",
+            injection.score * 100.0
+        ));
+    }
+
+    for flag in &injection.flagged_content {
+        injection_alerts.push(format!(
+            "{}: {} (confidence: {:.0}%)",
+            flag.location.as_str(),
+            flag.pattern_matched,
+            flag.confidence * 100.0
+        ));
+    }
+
+    ans_proto::ans::ActionCheckResponse {
+        allowed,
+        reason: reasons.join("; "),
+        distraction_alerts,
+        injection_alerts,
+    }
+}
+
+fn reason_for_result(result: &InjectionScanResult) -> String {
+    if result.score < 0.3 {
+        "No injection patterns detected".into()
+    } else if result.score < 0.7 {
+        format!(
+            "{} potentially malicious patterns found — sanitizing",
+            result.flagged_content.len()
+        )
+    } else {
+        format!(
+            "{} injection patterns detected with score {:.0}% — blocking",
+            result.flagged_content.len(),
+            result.score * 100.0
+        )
+    }
+}
+
+// ── String ↔ Enum converters (public, shared across crate) ────────────
+
+#[must_use] 
+pub const fn distraction_kind_to_str(k: &DistractionKind) -> &'static str {
+    match k {
+        DistractionKind::Ad => "ad",
+        DistractionKind::Popup => "popup",
+        DistractionKind::CookieBanner => "cookie_banner",
+        DistractionKind::NewsletterModal => "newsletter_modal",
+        DistractionKind::Redirect => "redirect",
+        DistractionKind::AutoPlayVideo => "autoplay_video",
+        DistractionKind::Survey => "survey",
+        DistractionKind::Notification => "notification",
+        DistractionKind::Unknown => "unknown",
+    }
+}
+
+#[must_use] 
+pub const fn immune_action_to_str(a: &ImmuneAction) -> &'static str {
+    match a {
+        ImmuneAction::Dismiss => "dismiss",
+        ImmuneAction::Block => "block",
+        ImmuneAction::Suppress => "suppress",
+        ImmuneAction::Ignore => "ignore",
+        ImmuneAction::NavigateBack => "navigate_back",
+    }
+}
+
+#[must_use] 
+pub fn str_to_distraction_kind(s: &str) -> DistractionKind {
+    match s {
+        "ad" => DistractionKind::Ad,
+        "popup" => DistractionKind::Popup,
+        "cookie_banner" => DistractionKind::CookieBanner,
+        "newsletter_modal" => DistractionKind::NewsletterModal,
+        "redirect" => DistractionKind::Redirect,
+        "autoplay_video" => DistractionKind::AutoPlayVideo,
+        "survey" => DistractionKind::Survey,
+        "notification" => DistractionKind::Notification,
+        _ => DistractionKind::Unknown,
+    }
+}

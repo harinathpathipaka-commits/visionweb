@@ -1,0 +1,16 @@
+[package]
+name = "ans-stealth"
+version.workspace = true
+edition.workspace = true
+description = "Anti-detection engine — browser fingerprint masking, CDP-level evasion, humanized input"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+rand = "0.8"
+uuid.workspace = true
+
+[lints]
+workspace = true

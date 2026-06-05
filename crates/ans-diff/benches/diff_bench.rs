@@ -1,0 +1,87 @@
+//! Page diff benchmarks.
+//!
+//! Measures `PageDiffer::diff()` across three change scenarios.
+
+use ans_core::distill::{DistillMode, DistilledElement, DistilledPage};
+use ans_diff::PageDiffer;
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
+
+/// Build a DistilledPage with `n` simple elements.
+fn build_page(label: &str, count: usize) -> DistilledPage {
+    let elements: Vec<_> = (0..count)
+        .map(|i| DistilledElement {
+            tag: "span".into(),
+            text: format!("Item {i}"),
+            attributes: [("class".into(), format!("item-{i}"))].into(),
+            role: Some("text".into()),
+            is_visible: true,
+            bounding_box: None,
+            children: vec![],
+        })
+        .collect();
+
+    DistilledPage {
+        mode: DistillMode::AllFields,
+        url: format!("https://example.com/{label}"),
+        title: label.into(),
+        elements,
+        interactive: vec![],
+        semantic_blocks: vec![],
+        distraction_flags: vec![],
+        timestamp: chrono::Utc::now(),
+    }
+}
+
+/// Create a modified copy of `page` where `pct` percent of elements have changed text.
+fn mutate_page(page: &DistilledPage, pct: f64) -> DistilledPage {
+    let change_count = (page.elements.len() as f64 * pct) as usize;
+    let mut elements = page.elements.clone();
+    for i in 0..change_count {
+        if let Some(el) = elements.get_mut(i) {
+            el.text = format!("Modified item {i}");
+        }
+    }
+    DistilledPage {
+        mode: page.mode,
+        url: page.url.clone(),
+        title: page.title.clone(),
+        elements,
+        interactive: page.interactive.clone(),
+        semantic_blocks: page.semantic_blocks.clone(),
+        distraction_flags: page.distraction_flags.clone(),
+        timestamp: chrono::Utc::now(),
+    }
+}
+
+fn bench_no_change(c: &mut Criterion) {
+    let before = build_page("nochange", 500);
+    let after = before.clone();
+    let differ = PageDiffer;
+
+    c.bench_function("diff/no_change_500", |b| {
+        b.iter(|| differ.diff(black_box(&before), black_box(&after)));
+    });
+}
+
+fn bench_10pct_change(c: &mut Criterion) {
+    let before = build_page("slight", 500);
+    let after = mutate_page(&before, 0.10);
+    let differ = PageDiffer;
+
+    c.bench_function("diff/10pct_change_500", |b| {
+        b.iter(|| differ.diff(black_box(&before), black_box(&after)));
+    });
+}
+
+fn bench_50pct_change(c: &mut Criterion) {
+    let before = build_page("heavy", 500);
+    let after = mutate_page(&before, 0.50);
+    let differ = PageDiffer;
+
+    c.bench_function("diff/50pct_change_500", |b| {
+        b.iter(|| differ.diff(black_box(&before), black_box(&after)));
+    });
+}
+
+criterion_group!(benches, bench_no_change, bench_10pct_change, bench_50pct_change);
+criterion_main!(benches);

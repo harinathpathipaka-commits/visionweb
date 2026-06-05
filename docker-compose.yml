@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  ans-daemon:
+    build: .
+    container_name: ans-daemon
+    ports:
+      - "50051:50051"  # gRPC
+      - "50052:50052"  # Gateway (REST/MCP/WS)
+    environment:
+      - ANS_GRPC_PORT=50051
+      - ANS_GATEWAY_PORT=50052
+      - RUST_LOG=ans=info,tonic=warn
+    volumes:
+      - ans-data:/data
+    restart: unless-stopped
+    mem_limit: 2g
+    cpus: 2
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:50052/api/v1/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  ans-data:
+    driver: local

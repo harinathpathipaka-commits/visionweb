@@ -1,0 +1,17 @@
+[package]
+name = "ans-budget"
+version.workspace = true
+edition.workspace = true
+description = "Cost tracker with circuit breaker — per-goal and per-API-key budget enforcement"
+
+[dependencies]
+ans-proto.workspace = true
+ans-core.workspace = true
+tokio.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

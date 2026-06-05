@@ -1,0 +1,409 @@
+//! Typed CDP command builders and response parsers.
+//!
+//! Each CDP domain (Page, DOM, Runtime, Input) gets a typed command
+//! builder function that produces the JSON-RPC wire format and parser
+//! functions that extract typed results from responses.
+
+use serde_json::Value as Json;
+use std::sync::atomic::AtomicI64;
+
+// ── Wire types ───────────────────────────────────────────────────────
+
+static NEXT_ID: AtomicI64 = AtomicI64::new(1);
+
+fn next_id() -> i64 {
+    NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+}
+
+/// A CDP command ready for serialization to JSON-RPC.
+#[derive(Debug, Clone)]
+pub struct CdpCommand {
+    pub id: i64,
+    pub method: String,
+    pub params: Json,
+}
+
+impl CdpCommand {
+    /// Create a new command with an auto-incremented id.
+    pub fn new(method: impl Into<String>, params: Json) -> Self {
+        Self {
+            id: next_id(),
+            method: method.into(),
+            params,
+        }
+    }
+
+    /// Serialize to the JSON-RPC wire format.
+    #[must_use] 
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(&serde_json::json!({
+            "id": self.id,
+            "method": self.method,
+            "params": self.params,
+        }))
+        .unwrap_or_default()
+    }
+}
+
+/// A parsed CDP response.
+#[derive(Debug, Clone)]
+pub struct CdpResponse {
+    pub id: i64,
+    pub result: Option<Json>,
+    pub error: Option<CdpError>,
+}
+
+impl CdpResponse {
+    /// Extract `result` or return the CDP error.
+    pub fn into_result(self) -> Result<Json, CdpError> {
+        match self.result {
+            Some(r) => Ok(r),
+            None => Err(self.error.unwrap_or_else(|| CdpError {
+                code: -1,
+                message: "empty response".into(),
+            })),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CdpError {
+    pub code: i64,
+    pub message: String,
+}
+
+impl std::fmt::Display for CdpError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CDP error {}: {}", self.code, self.message)
+    }
+}
+
+impl std::error::Error for CdpError {}
+
+/// A CDP event (server push, no id field).
+#[derive(Debug, Clone)]
+pub struct CdpEvent {
+    pub method: String,
+    pub params: Json,
+}
+
+/// Inbound CDP message.
+#[derive(Debug, Clone)]
+pub enum CdpMessage {
+    Response(CdpResponse),
+    Event(CdpEvent),
+}
+
+/// Parse a raw JSON-RPC message from the WebSocket into a [`CdpMessage`].
+#[must_use] 
+pub fn parse_message(text: &str) -> Option<CdpMessage> {
+    let val: Json = serde_json::from_str(text).ok()?;
+    let obj = val.as_object()?;
+
+    if let Some(id) = obj.get("id").and_then(serde_json::Value::as_i64) {
+        let result = obj.get("result").cloned();
+        let error = obj.get("error").map(|e| CdpError {
+            code: e.get("code").and_then(serde_json::Value::as_i64).unwrap_or(-1),
+            message: e
+                .get("message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string(),
+        });
+        return Some(CdpMessage::Response(CdpResponse { id, result, error }));
+    }
+
+    if let Some(method) = obj.get("method").and_then(|v| v.as_str()) {
+        let params = obj.get("params").cloned().unwrap_or(Json::Null);
+        return Some(CdpMessage::Event(CdpEvent {
+            method: method.to_string(),
+            params,
+        }));
+    }
+
+    None
+}
+
+// ── Command builders ──────────────────────────────────────────────────
+
+#[must_use] 
+pub fn page_enable() -> CdpCommand {
+    CdpCommand::new("Page.enable", serde_json::json!({}))
+}
+
+#[must_use] 
+pub fn page_navigate(url: &str) -> CdpCommand {
+    CdpCommand::new("Page.navigate", serde_json::json!({ "url": url }))
+}
+
+#[must_use] 
+pub fn page_get_frame_tree() -> CdpCommand {
+    CdpCommand::new("Page.getFrameTree", serde_json::json!({}))
+}
+
+#[must_use] 
+pub fn page_capture_screenshot(format: &str, quality: Option<u8>) -> CdpCommand {
+    let mut params = serde_json::json!({ "format": format });
+    if let Some(q) = quality {
+        params["quality"] = serde_json::json!(q);
+    }
+    CdpCommand::new("Page.captureScreenshot", params)
+}
+
+#[must_use] 
+pub fn dom_enable() -> CdpCommand {
+    CdpCommand::new("DOM.enable", serde_json::json!({}))
+}
+
+#[must_use] 
+pub fn dom_get_document(depth: i32) -> CdpCommand {
+    CdpCommand::new(
+        "DOM.getDocument",
+        serde_json::json!({ "depth": depth, "pierce": true }),
+    )
+}
+
+#[must_use] 
+pub fn dom_query_selector(node_id: i32, selector: &str) -> CdpCommand {
+    CdpCommand::new(
+        "DOM.querySelector",
+        serde_json::json!({ "nodeId": node_id, "selector": selector }),
+    )
+}
+
+#[must_use] 
+pub fn dom_get_outer_html(node_id: i32) -> CdpCommand {
+    CdpCommand::new("DOM.getOuterHTML", serde_json::json!({ "nodeId": node_id }))
+}
+
+#[must_use] 
+pub fn dom_get_attributes(node_id: i32) -> CdpCommand {
+    CdpCommand::new(
+        "DOM.getAttributes",
+        serde_json::json!({ "nodeId": node_id }),
+    )
+}
+
+#[must_use] 
+pub fn dom_get_box_model(node_id: i32) -> CdpCommand {
+    CdpCommand::new("DOM.getBoxModel", serde_json::json!({ "nodeId": node_id }))
+}
+
+#[must_use] 
+pub fn dom_scroll_into_view(node_id: i32) -> CdpCommand {
+    CdpCommand::new(
+        "DOM.scrollIntoViewIfNeeded",
+        serde_json::json!({ "nodeId": node_id }),
+    )
+}
+
+#[must_use] 
+pub fn runtime_enable() -> CdpCommand {
+    CdpCommand::new("Runtime.enable", serde_json::json!({}))
+}
+
+#[must_use] 
+pub fn runtime_evaluate(expression: &str) -> CdpCommand {
+    CdpCommand::new(
+        "Runtime.evaluate",
+        serde_json::json!({
+            "expression": expression,
+            "returnByValue": true,
+            "awaitPromise": true,
+        }),
+    )
+}
+
+#[must_use] 
+pub fn input_dispatch_mouse_event(type_: &str, x: f64, y: f64, button: &str) -> CdpCommand {
+    CdpCommand::new(
+        "Input.dispatchMouseEvent",
+        serde_json::json!({
+            "type": type_,
+            "x": x,
+            "y": y,
+            "button": button,
+            "clickCount": 1,
+        }),
+    )
+}
+
+#[must_use] 
+pub fn input_dispatch_key_event(type_: &str, key: &str) -> CdpCommand {
+    CdpCommand::new(
+        "Input.dispatchKeyEvent",
+        serde_json::json!({ "type": type_, "key": key }),
+    )
+}
+
+#[must_use] 
+pub fn input_insert_text(text: &str) -> CdpCommand {
+    CdpCommand::new("Input.insertText", serde_json::json!({ "text": text }))
+}
+
+#[must_use]
+pub fn browser_get_version() -> CdpCommand {
+    CdpCommand::new("Browser.getVersion", serde_json::json!({}))
+}
+
+/// Inject a script that runs before every page's scripts.
+/// Used by the stealth engine for anti-detection patches.
+#[must_use]
+pub fn page_add_script_to_evaluate_on_new_document(source: &str) -> CdpCommand {
+    CdpCommand::new(
+        "Page.addScriptToEvaluateOnNewDocument",
+        serde_json::json!({ "source": source }),
+    )
+}
+
+// ── Response parsers ─────────────────────────────────────────────────
+
+/// Parse `Page.navigate` → frameId + loaderId.
+#[derive(Debug, Clone)]
+pub struct NavigationResult {
+    pub frame_id: String,
+    pub loader_id: String,
+}
+
+#[must_use] 
+pub fn parse_navigation_result(result: &Json) -> NavigationResult {
+    NavigationResult {
+        frame_id: result["frameId"].as_str().unwrap_or("").to_string(),
+        loader_id: result["loaderId"].as_str().unwrap_or("").to_string(),
+    }
+}
+
+/// Extract root node id from `DOM.getDocument`.
+pub fn parse_dom_node_id(result: &Json) -> Result<i32, CdpError> {
+    result["root"]["nodeId"]
+        .as_i64()
+        .map(|v| v as i32)
+        .ok_or_else(|| CdpError {
+            code: -1,
+            message: "missing root.nodeId in DOM.getDocument response".into(),
+        })
+}
+
+/// Extract nodeId from `DOM.querySelector`. Returns error on nodeId=0 (not found).
+pub fn parse_query_selector_result(result: &Json) -> Result<i32, CdpError> {
+    result["nodeId"]
+        .as_i64()
+        .map(|v| v as i32)
+        .filter(|id| *id != 0)
+        .ok_or_else(|| CdpError {
+            code: -1,
+            message: "selector not found (nodeId=0)".into(),
+        })
+}
+
+/// Extract `outerHTML` from `DOM.getOuterHTML`.
+pub fn parse_outer_html(result: &Json) -> Result<String, CdpError> {
+    result["outerHTML"]
+        .as_str()
+        .map(String::from)
+        .ok_or_else(|| CdpError {
+            code: -1,
+            message: "missing outerHTML".into(),
+        })
+}
+
+/// Bounding box from `DOM.getBoxModel`.
+#[derive(Debug, Clone)]
+pub struct BoxModel {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+pub fn parse_box_model(result: &Json) -> Result<BoxModel, CdpError> {
+    let quad = &result["model"]["content"];
+    let x1 = quad[0].as_f64().unwrap_or(0.0);
+    let y1 = quad[1].as_f64().unwrap_or(0.0);
+    let x2 = quad[4].as_f64().unwrap_or(0.0);
+    let y2 = quad[5].as_f64().unwrap_or(0.0);
+    Ok(BoxModel {
+        x: x1,
+        y: y1,
+        width: x2 - x1,
+        height: y2 - y1,
+    })
+}
+
+/// Parse `Runtime.evaluate` result.
+pub fn parse_evaluate_result(result: &Json) -> Result<Json, CdpError> {
+    if let Some(exception) = result.get("exceptionDetails") {
+        let text = exception["text"].as_str().unwrap_or("unknown JS exception");
+        return Err(CdpError {
+            code: -1,
+            message: format!("JS exception: {text}"),
+        });
+    }
+    Ok(result["result"]["value"].clone())
+}
+
+/// Decode base64 screenshot data from `Page.captureScreenshot`.
+pub fn parse_screenshot_result(result: &Json) -> Result<Vec<u8>, CdpError> {
+    let data = result["data"].as_str().ok_or_else(|| CdpError {
+        code: -1,
+        message: "missing data in screenshot response".into(),
+    })?;
+    // Use a simple inline base64 decoder — avoids pulling in a crate.
+    base64_decode(data).ok_or_else(|| CdpError {
+        code: -1,
+        message: "base64 decode failed".into(),
+    })
+}
+
+/// Parse `Page.getFrameTree` — returns the frame tree JSON.
+#[must_use] 
+pub fn parse_frame_tree(result: &Json) -> Json {
+    result["frameTree"].clone()
+}
+
+// ── Domain helpers ────────────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct PageInfo {
+    pub url: String,
+    pub title: String,
+    pub loaded: bool,
+}
+
+/// Extract page metadata from a frame tree.
+#[must_use] 
+pub fn parse_page_info(frame_tree: &Json) -> PageInfo {
+    let frame = &frame_tree["frame"];
+    PageInfo {
+        url: frame["url"].as_str().unwrap_or("").to_string(),
+        title: frame["name"].as_str().unwrap_or("").to_string(),
+        loaded: true,
+    }
+}
+
+// ── Simple base64 decoder (no external crate needed) ─────────────────
+
+fn base64_decode(input: &str) -> Option<Vec<u8>> {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut buf = Vec::with_capacity(input.len() * 3 / 4);
+    let mut accum = 0u32;
+    let mut bits = 0u32;
+
+    for b in input.bytes() {
+        if b == b'=' {
+            break;
+        }
+        if b.is_ascii_whitespace() {
+            continue;
+        }
+        let idx = CHARS.iter().position(|&c| c == b)? as u32;
+        accum = (accum << 6) | idx;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            buf.push((accum >> bits) as u8);
+            accum &= (1 << bits) - 1;
+        }
+    }
+    Some(buf)
+}
