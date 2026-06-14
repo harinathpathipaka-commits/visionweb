@@ -1,0 +1,19 @@
+from typing import Dict
+
+
+DOMAIN_KEYWORDS: Dict[str, str] = {
+    "saas": "finance.saas.smb",
+    "mrr": "finance.saas.smb",
+    "arr": "finance.saas.smb",
+    "ltv": "finance.saas.smb",
+    "cac": "finance.saas.smb",
+    "churn": "finance.saas.smb",
+}
+
+
+def route_domain(query: str) -> str:
+    lower = query.lower()
+    for key, domain in DOMAIN_KEYWORDS.items():
+        if key in lower:
+            return domain
+    return "general"

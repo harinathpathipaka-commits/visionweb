@@ -1,0 +1,26 @@
+from __future__ import annotations
+
+from typing import List
+
+from .ingestion import ingest_csv, profile_csv, save_file
+from .models import IngestionSummary, SchemaMapping
+from .storage import init_storage
+
+
+def upload_csv(db_path: str, filename: str, content_type: str, data: bytes) -> int:
+    init_storage(db_path)
+    return save_file(db_path, filename, content_type, data)
+
+
+def profile_file(data: bytes):
+    return profile_csv(data)
+
+
+def run_ingestion(
+    db_path: str,
+    file_id: int,
+    data: bytes,
+    mappings: List[SchemaMapping],
+) -> IngestionSummary:
+    init_storage(db_path)
+    return ingest_csv(db_path, file_id, data, mappings)

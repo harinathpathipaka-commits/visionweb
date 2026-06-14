@@ -1,0 +1,5 @@
+//! Vector index management.
+//!
+//! Automatically selects brute-force search for < 100K records
+//! and IVF_PQ for ≥ 100K records. Index is rebuilt incrementally
+//! as new decision records are inserted.

@@ -1,0 +1,287 @@
+from __future__ import annotations
+
+import json
+import sqlite3
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
+
+from .models import ConflictDetail
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _elasticity_signs(
+    sympy_expr: str,
+    parameters: Dict[str, float],
+    input_vars: List[str],
+) -> Dict[str, float]:
+    """Compute elasticity signs of an equation w.r.t. each input variable at its parameters.
+
+    Returns dict of variable_name → sign (+1, -1, or 0 for flat/unknown).
+    """
+    if not sympy_expr or not parameters:
+        return {}
+    try:
+        import sympy
+        expr = sympy.sympify(sympy_expr)
+        param_syms = {sympy.Symbol(k): v for k, v in parameters.items()}
+        var_syms = {sympy.Symbol(v): sympy.Symbol(v) for v in input_vars}
+        subs_expr = expr.subs(param_syms)
+        signs: Dict[str, float] = {}
+        for var in input_vars:
+            try:
+                deriv = sympy.diff(subs_expr, sympy.Symbol(var))
+                if deriv.is_number:
+                    val = float(deriv)
+                elif deriv.free_symbols:
+                    mid = (deriv.subs({s: 1.0 for s in deriv.free_symbols}))
+                    val = float(mid)
+                else:
+                    val = float(deriv)
+                if val > 1e-10:
+                    signs[var] = 1.0
+                elif val < -1e-10:
+                    signs[var] = -1.0
+                else:
+                    signs[var] = 0.0
+            except Exception:
+                signs[var] = 0.0
+        return signs
+    except Exception:
+        return {}
+
+
+def check_conflict(
+    new_expr: str,
+    new_params: Dict[str, float],
+    new_input_vars: List[str],
+    new_output_var: str,
+    existing_equations: List[Dict[str, Any]],
+) -> List[ConflictDetail]:
+    """Check if a new equation conflicts with any existing equations.
+
+    Each existing equation entry must have:
+        equation_id, sympy_ast, parameters_json, input_vars, output_var
+
+    Returns list of ConflictDetail for each detected conflict.
+    """
+    new_signs = _elasticity_signs(new_expr, new_params, new_input_vars)
+    if not new_signs:
+        return []
+
+    conflicts: List[ConflictDetail] = []
+    for existing in existing_equations:
+        if existing.get("output_var") != new_output_var:
+            continue
+        existing_params = existing.get("parameters", {})
+        if isinstance(existing_params, str):
+            existing_params = json.loads(existing_params)
+        existing_inputs = existing.get("input_vars", [])
+        existing_signs = _elasticity_signs(
+            existing.get("sympy_ast", ""),
+            existing_params,
+            existing_inputs,
+        )
+
+        for var, new_sign in new_signs.items():
+            old_sign = existing_signs.get(var, 0.0)
+            if new_sign == 0.0 or old_sign == 0.0:
+                continue
+            if (new_sign > 0 > old_sign) or (new_sign < 0 < old_sign):
+                conflicts.append(ConflictDetail(
+                    equation_id_a=existing["equation_id"],
+                    equation_id_b=-1,  # new equation, not yet stored
+                    variable_pair=f"{var}→{new_output_var}",
+                    reason=f"Opposite elasticity signs: existing {old_sign:+.0f} vs new {new_sign:+.0f}",
+                    elasticity_a=old_sign,
+                    elasticity_b=new_sign,
+                    resolution_status="open",
+                ))
+    return conflicts
+
+
+def compare_elasticity_signs(
+    eq_a: Dict[str, Any],
+    eq_b: Dict[str, Any],
+    shared_input_vars: List[str],
+) -> List[Tuple[str, str, float, float]]:
+    """Compare elasticity signs for shared input variables between two equations.
+
+    Returns list of (variable, sign_a, sign_b, agreement) where agreement = 1 if
+    signs match, 0 if one is flat, -1 if contradictory.
+    """
+    params_a = eq_a.get("parameters", {})
+    params_b = eq_b.get("parameters", {})
+    if isinstance(params_a, str):
+        params_a = json.loads(params_a)
+    if isinstance(params_b, str):
+        params_b = json.loads(params_b)
+
+    signs_a = _elasticity_signs(eq_a.get("sympy_ast", ""), params_a, shared_input_vars)
+    signs_b = _elasticity_signs(eq_b.get("sympy_ast", ""), params_b, shared_input_vars)
+
+    results: List[Tuple[str, str, float, float]] = []
+    for var in shared_input_vars:
+        sa = signs_a.get(var, 0.0)
+        sb = signs_b.get(var, 0.0)
+        if sa == 0.0 or sb == 0.0:
+            agreement = 0.0
+        elif (sa > 0 and sb > 0) or (sa < 0 and sb < 0):
+            agreement = 1.0
+        else:
+            agreement = -1.0
+        results.append((var, str(sa), str(sb), agreement))
+    return results
+
+
+def resolution_workflow(
+    conflict: ConflictDetail,
+    db_path: str,
+) -> Dict[str, Any]:
+    """Generate a resolution plan for a detected conflict.
+
+    Returns dict with action, reason, and human_review fields.
+    """
+    if conflict.resolution_status == "resolved":
+        return {"action": "none", "reason": "already resolved"}
+
+    return {
+        "action": "human_review",
+        "reason": conflict.reason,
+        "equation_id_a": conflict.equation_id_a,
+        "equation_id_b": conflict.equation_id_b,
+        "variable_pair": conflict.variable_pair,
+        "suggested_resolution": (
+            "Compare holdout performance of both equations. "
+            "Retain the one with lower MAPE and higher R²_adj. "
+            "If both pass all gates, retain the one fitted on more observations."
+        ),
+    }
+
+
+def flag_conflicting(
+    db_path: str,
+    equation_id_a: int,
+    equation_id_b: int,
+    conflict_detail: ConflictDetail,
+) -> int:
+    """Persist a conflict flag to the database. Returns the conflict_id."""
+    with sqlite3.connect(db_path) as conn:
+        cur = conn.execute(
+            """INSERT INTO equation_conflicts
+               (equation_id_a, equation_id_b, variable_pair, reason,
+                elasticity_a, elasticity_b, resolution_status, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                equation_id_a,
+                equation_id_b,
+                conflict_detail.variable_pair,
+                conflict_detail.reason,
+                conflict_detail.elasticity_a,
+                conflict_detail.elasticity_b,
+                "open",
+                _now(),
+            ),
+        )
+        return cur.lastrowid
+
+
+def resolve_conflict(db_path: str, conflict_id: int) -> None:
+    """Mark a conflict as resolved."""
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE equation_conflicts SET resolution_status = 'resolved', resolved_at = ? WHERE conflict_id = ?",
+            (_now(), conflict_id),
+        )
+
+
+def get_open_conflicts(db_path: str) -> List[Dict[str, Any]]:
+    """List all unresolved conflicts."""
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT * FROM equation_conflicts WHERE resolution_status = 'open' ORDER BY created_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def check_and_flag_conflicts(
+    db_path: str,
+    new_expr: str,
+    new_params: Dict[str, float],
+    new_input_vars: List[str],
+    new_output_var: str,
+    domain: str,
+) -> List[int]:
+    """Full pipeline: check new equation against all active equations in domain,
+    flag any conflicts found, and return the conflict IDs."""
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """SELECT e.equation_id, ev.sympy_ast, ev.parameters_json
+               FROM equation_library e
+               JOIN equation_versions ev ON e.active_version_id = ev.version_id
+               WHERE e.domain = ? AND e.active_version_id IS NOT NULL""",
+            (domain,),
+        ).fetchall()
+
+    existing = [
+        {
+            "equation_id": r["equation_id"],
+            "sympy_ast": r["sympy_ast"],
+            "parameters": json.loads(r["parameters_json"]),
+            "input_vars": new_input_vars,
+            "output_var": new_output_var,
+        }
+        for r in rows
+    ]
+
+    conflicts = check_conflict(new_expr, new_params, new_input_vars, new_output_var, existing)
+    conflict_ids: List[int] = []
+    for c in conflicts:
+        row = get_or_create_mirror_equation(db_path, new_expr, new_params, domain)
+        mirror_id = row if row else -1
+        cid = flag_conflicting(db_path, c.equation_id_a, mirror_id, c)
+        conflict_ids.append(cid)
+    return conflict_ids
+
+
+def get_or_create_mirror_equation(
+    db_path: str,
+    sympy_expr: str,
+    parameters: Dict[str, float],
+    domain: str,
+) -> Optional[int]:
+    """Find an equation in the library matching the given expression and parameters.
+
+    Returns equation_id if found, None if not matchable.
+    """
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            """SELECT e.equation_id, ev.sympy_ast, ev.parameters_json
+               FROM equation_library e
+               JOIN equation_versions ev ON e.active_version_id = ev.version_id
+               WHERE e.domain = ? AND e.active_version_id IS NOT NULL""",
+            (domain,),
+        ).fetchall()
+        for row in rows:
+            eq_id, existing_expr, existing_params_json = row
+            if existing_expr == sympy_expr:
+                existing_params = json.loads(existing_params_json)
+                if _params_close(parameters, existing_params):
+                    return eq_id
+    return None
+
+
+def _params_close(a: Dict[str, float], b: Dict[str, float], rtol: float = 0.01) -> bool:
+    if set(a.keys()) != set(b.keys()):
+        return False
+    for k in a:
+        if a[k] == 0 and b[k] == 0:
+            continue
+        denom = max(abs(a[k]), abs(b[k]), 1e-10)
+        if abs(a[k] - b[k]) / denom > rtol:
+            return False
+    return True

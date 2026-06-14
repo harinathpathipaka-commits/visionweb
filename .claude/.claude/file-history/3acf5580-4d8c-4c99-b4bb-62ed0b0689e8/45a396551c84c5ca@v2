@@ -1,0 +1,84 @@
+/**
+ * check-mv.ts — Query MV specifically for sudoku actions
+ */
+import { createClient } from '@supabase/supabase-js';
+
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  console.error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY env vars are required.');
+  process.exit(1);
+}
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const CUSTOMER_ID = process.env.BENCHMARK_CUSTOMER_ID;
+if (!CUSTOMER_ID) {
+  console.error('BENCHMARK_CUSTOMER_ID env var is required.');
+  process.exit(1);
+}
+
+async function main() {
+  console.log('1️⃣  MV rows for customer 08b6a750...');
+  const { data: mvRows, error: mvErr } = await supabase
+    .from('mv_action_scores')
+    .select('*')
+    .eq('customer_id', CUSTOMER_ID);
+  
+  if (mvErr) {
+    console.log(`❌ Error: ${mvErr.message}`);
+    return;
+  }
+  
+  console.log(`Found ${mvRows?.length ?? 0} MV rows for this customer\n`);
+  for (const r of (mvRows ?? [])) {
+    console.log(`  action: ${(r.action_name ?? '').padEnd(22)} | context: ${(r.context_id ?? '').slice(0, 8)}... | attempts: ${String(r.total_attempts).padEnd(4)} | conf: ${r.confidence} | raw_sr: ${r.raw_success_rate} | wsr: ${r.weighted_success_rate}`);
+  }
+
+  // 2. Check the context_ids for sudoku tasks
+  console.log('\n2️⃣  dim_contexts for this customer:');
+  const { data: contexts } = await supabase
+    .from('dim_contexts')
+    .select('context_id, issue_type, environment')
+    .eq('customer_id', CUSTOMER_ID);
+  
+  for (const c of (contexts ?? [])) {
+    console.log(`  ${c.context_id} | issue_type: ${c.issue_type} | env: ${c.environment}`);
+  }
+
+  // 3. Check fact_outcomes for this customer  
+  console.log('\n3️⃣  fact_outcomes for this customer (last 10):');
+  const { data: outcomes } = await supabase
+    .from('fact_outcomes')
+    .select('outcome_id, action_id, context_id, success, task_name, timestamp')
+    .eq('customer_id', CUSTOMER_ID)
+    .order('timestamp', { ascending: false })
+    .limit(10);
+  
+  for (const o of (outcomes ?? [])) {
+    console.log(`  ${(o.task_name ?? '').padEnd(20)} | action: ${(o.action_id ?? '').slice(0,8)}... | success: ${o.success} | ctx: ${(o.context_id ?? '').slice(0,8)}...`);
+  }
+
+  // 4. Count total outcomes for this customer
+  const { count } = await supabase
+    .from('fact_outcomes')
+    .select('outcome_id', { count: 'exact', head: true })
+    .eq('customer_id', CUSTOMER_ID);
+  
+  console.log(`\n4️⃣  Total outcomes for this customer: ${count}`);
+
+  // 5. Check if the MV HAVING clause might be filtering
+  // The MV has: HAVING COUNT(*) >= 1
+  // So any row with at least 1 outcome should appear.
+  // But let's check if the action is being filtered by is_deleted or is_synthetic
+  console.log('\n5️⃣  Checking filters - any deleted/synthetic outcomes?');
+  const { data: filtered } = await supabase
+    .from('fact_outcomes')
+    .select('is_deleted, is_synthetic, outcome_id')
+    .eq('customer_id', CUSTOMER_ID)
+    .or('is_deleted.eq.true,is_synthetic.eq.true');
+  
+  console.log(`  Deleted/synthetic outcomes: ${filtered?.length ?? 0}`);
+}
+
+main().catch(err => { console.error('Fatal:', err); process.exit(1); });

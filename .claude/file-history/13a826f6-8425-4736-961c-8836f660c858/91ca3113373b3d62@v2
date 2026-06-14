@@ -1,0 +1,12 @@
+//! Chrome DevTools Protocol client.
+//!
+//! Manages Chromium process lifecycle (spawn, monitor, kill) and provides
+//! a typed CDP WebSocket command/response layer. Implements
+//! [`ans_core::BrowserBackend`].
+
+pub mod client;
+pub mod command;
+pub mod process;
+
+/// Re-export the CDP-backed browser implementation.
+pub use client::CdpBackend;

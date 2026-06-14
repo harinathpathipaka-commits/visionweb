@@ -1,0 +1,252 @@
+---
+name: session-anchor
+description: Complete EL project state at end of 2026-06-01 session — all phases complete through Phase 5, 495 tests, 19 v2 endpoints, 9 new modules, ready for Phase 6
+metadata:
+  type: project
+  originSessionId: d409ae57-c891-4778-9e11-32ea2497080d
+---
+
+# EL (Equation Layer) — Session Anchor
+
+**Date:** 2026-06-01 | **Tests:** 495 passing, 0 failures | **Phases:** 0-5 complete | **Next:** Phase 6
+
+## Where We Are
+
+Started with 405 tests (D1-D6). Built 6 phases of production-grade capabilities. Now at 495 tests across 9 new modules, 19 new v2 API endpoints.
+
+## What We Built This Session
+
+### Phase 0 — Critical Bug Fixes ([[project_phase0_bugs_fixed]])
+14 bugs fixed across 8 files:
+- **B1**: `evaluate_at` field added to SolveRequest (x_value was silently dropped — all D6 tests evaluated at wrong point)
+- **B2**: `find_equation()` closed DB connection fixed (Python 3.12+ crash)
+- **B3**: Jacobian-based covariance replaces hardcoded `np.eye*0.01` — real uncertainty now
+- **B5**: `structural_validity()` wired into `choose_best()` — domain constraints now enforced
+- **B12/B13**: Swallowed exceptions now logged
+- **B16**: Shapiro-Wilk NaN p-value handled
+- **B8**: Scale-aware MAPE threshold
+- **B18**: Worker query uses var_hash instead of domain
+- **B19**: `promote_version()` sets drift_status='stable'
+- **B20**: Formatter "inf%" → "N/A"
+- **B27**: API `unit` field now populated from query parsing
+- **B32**: SIGTERM guarded for Windows
+- **B33**: Content type check hardened
+
+### Phase 1 — What-if + Graph + Ledger ([[project_phase1_whatif_graph]])
+- `POST /v2/what-if` — counterfactual evaluation at arbitrary x
+- `POST /v2/graph/path` — multi-hop derivation path finding
+- `GET /v2/graph/variables` / `summary` — graph introspection
+- `GET /v2/variables` / `{name}` — ledger variable queries
+- `src/ledger_query.py` — observation retrieval, time series, aligned pairs
+- EquationGraph wired into pipeline — auto-registers after solve(), library hits also registered
+- Module-level graph shared across API calls
+
+### Phase 2 — Multi-Variable ([[project_phase2_multivar]])
+- `src/multivar.py` — OLS regression, correlation matrix, partial dependence (pure numpy/scipy)
+- `src/categorical.py` — auto-detect and encode categorical variables (one-hot, label)
+- `src/discovery.py` — variable importance ranking, pairwise relationship discovery
+- `POST /v2/solve` — multi-variable: y = f(x1, x2, x3, ...) with p-values, importance
+- `POST /v2/discover` — rank variables by predictive power
+- `POST /v2/correlations` — find all pairwise relationships
+- Zero new dependencies
+
+### Phase 3 — Time-Series Forecast ([[project_phase3_forecast]])
+- `src/forecast.py` — trend extraction, seasonality detection (autocorrelation), decomposition, forecast
+- Expanding CIs: σ × √(1+h)
+- `POST /v2/forecast` — values + horizon → forecasts + CI bands
+
+### Phase 4 — Composition + Decomposition ([[project_phase4_composition]])
+- `src/composition.py` — FormulaRegistry with 11 built-in SaaS formulas
+- Formulas: ARR, LTV, NRR, CAC payback, revenue, profit, ROI, margin, conversion, MRR growth, gross profit
+- `POST /v2/decompose` — break metric into driver contributions
+- `POST /v2/explain` — attribute period-over-period change to specific drivers
+- `GET /v2/formulas` — list all formulas
+
+### Phase 5 — Explanation + Causal + Cohort ([[project_phase5_explain_causal]])
+- `src/explanation.py` — structured NL driver explanations from fit results
+- `src/causal.py` — Granger causality, partial correlation, confounding detection
+- `src/cohort.py` — segment comparison, quantile splits, fit comparison
+- `POST /v2/explain-fit` — NL explanation of model drivers
+- `POST /v2/causal/granger` — temporal causality test
+- `POST /v2/causal/confounding` — confounder check
+- `POST /v2/cohort/compare` — segment comparison
+- `POST /v2/cohort/by-category` — split by category
+
+## Complete Module Inventory
+
+### Pre-existing (before this session)
+`src/api.py`, `src/models.py`, `src/pipeline.py`, `src/compute.py`, `src/fitting.py`,
+`src/formatter.py`, `src/gate.py`, `src/correlation.py`, `src/domain_router.py`,
+`src/epistemic_parser.py`, `src/fallback_router.py`, `src/probabilistic.py`,
+`src/ingestion.py`, `src/ingestion_api.py`, `src/temporal.py`, `src/temporal_alignment.py`,
+`src/storage.py`, `src/cache.py`, `src/auth.py`, `src/rate_limit.py`, `src/config.py`,
+`src/metrics.py`, `src/logging_setup.py`, `src/db.py`, `src/pysr_discovery.py`,
+`src/epistemic_ledger.py`, `src/equation_graph.py`, `src/worker.py`
+
+### New (built this session)
+| Module | Phase | Purpose |
+|--------|-------|---------|
+| `src/ledger_query.py` | 1 | Observation retrieval from ledger |
+| `src/multivar.py` | 2 | Multivariate OLS, correlation, partial dependence |
+| `src/categorical.py` | 2 | Categorical detection and encoding |
+| `src/discovery.py` | 2 | Variable importance ranking |
+| `src/forecast.py` | 3 | Trend, seasonality, decomposition, forecast |
+| `src/composition.py` | 4 | Formula registry, decomposition, change attribution |
+| `src/explanation.py` | 5 | NL driver explanations |
+| `src/causal.py` | 5 | Granger causality, confounding detection |
+| `src/cohort.py` | 5 | Segment comparison |
+
+### Modified (significantly)
+`src/api.py` — 19 new endpoints across all phases
+`src/pipeline.py` — graph wiring, evaluate_at threading, Jacobian covariance, unit extraction
+`src/models.py` — jacobian on EquationFit, evaluate_at + unit on SolveResult
+`src/fitting.py` — Jacobian storage, scale-aware MAPE, Shapiro NaN, structural_validity wiring, logged exceptions
+`src/probabilistic.py` — fixed _hessian_from_jacobian, residual_std on laplace_from_fit
+`src/storage.py` — find_equation fix, promote_version drift_status
+`src/worker.py` — variable query fix, SIGTERM guard
+`src/formatter.py` — inf% display, math import
+
+## Complete API Endpoint Inventory
+
+### v1 (pre-existing)
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | /v1/health | Health check |
+| GET | /metrics | Prometheus metrics |
+| POST | /v1/solve | Univariate equation solve |
+| POST | /v1/ingest | CSV upload |
+| GET | /v1/equations/{id} | Equation detail |
+| GET | /v1/equations/{id}/versions | Equation version history |
+| GET | /v1/ledger/{trace_id} | Epistemic ledger events |
+
+### v2 (built this session)
+| Method | Path | Phase |
+|--------|------|-------|
+| POST | /v2/what-if | 1 |
+| POST | /v2/graph/path | 1 |
+| GET | /v2/graph/variables | 1 |
+| GET | /v2/graph/summary | 1 |
+| GET | /v2/variables | 1 |
+| GET | /v2/variables/{name} | 1 |
+| POST | /v2/solve | 2 |
+| POST | /v2/discover | 2 |
+| POST | /v2/correlations | 2 |
+| POST | /v2/forecast | 3 |
+| POST | /v2/decompose | 4 |
+| POST | /v2/explain | 4 |
+| GET | /v2/formulas | 4 |
+| POST | /v2/explain-fit | 5 |
+| POST | /v2/causal/granger | 5 |
+| POST | /v2/causal/confounding | 5 |
+| POST | /v2/cohort/compare | 5 |
+| POST | /v2/cohort/by-category | 5 |
+
+## Test Inventory
+
+| File | Tests | Phase |
+|------|-------|-------|
+| test_api.py | ~9 | Pre-existing |
+| test_compute.py | ~9 | Pre-existing |
+| test_connectors.py | ~5 | Pre-existing |
+| test_correlation.py | ~14 | Pre-existing |
+| test_equation_graph.py | ~8 | Pre-existing |
+| test_fallback.py | ~8 | Pre-existing |
+| test_fitting.py | ~18 | Pre-existing |
+| test_gate.py | ~2 | Pre-existing |
+| test_ingestion.py | ~3 | Pre-existing |
+| test_parser.py | ~5 | Pre-existing |
+| test_pipeline.py | ~11 | Pre-existing |
+| test_probabilistic.py | ~9 | Pre-existing |
+| test_temporal.py | ~15 | Pre-existing |
+| test_d1_adversarial.py | ~45 | D1-D5 |
+| test_d2_statistical.py | ~30 | D1-D5 |
+| test_d3_reliability.py | ~25 | D1-D5 |
+| test_d4_integrity.py | ~45 | D1-D5 |
+| test_d5_integration.py | ~40 | D1-D5 |
+| test_d6_comparative.py | 19 | D6 |
+| **test_phase1_whatif_graph.py** | 12 | Phase 1 |
+| **test_phase2_multivar.py** | 23 | Phase 2 |
+| **test_phase3_forecast.py** | 18 | Phase 3 |
+| **test_phase4_composition.py** | 19 | Phase 4 |
+| **test_phase5_explain_causal_cohort.py** | 18 | Phase 5 |
+
+## Key Architectural State
+
+### Module-level singletons
+- `pipeline._equation_graph` — shared EquationGraph, initialized lazily from DB
+- `composition._registry` — shared FormulaRegistry with 11 built-in formulas
+
+### Graph wiring
+```
+solve() → library_hit → _register_in_graph()
+solve() → _fit_and_store() → promote_version() → _register_in_graph()
+  ↓
+get_equation_graph(db_path) → _load_graph_from_library() (on first access)
+  ↓
+/v2/graph/* endpoints ← get_equation_graph()
+```
+
+### Categorical encoding
+```
+auto_encode(columns)
+  → detect_categorical(vals)
+    → strings → categorical
+    → numeric, ≤2 unique → binary (label)
+    → numeric, >2 unique → continuous (passthrough)
+  → binary → label_encode
+  → multi-cat → one_hot_encode(drop_first)
+```
+
+### Probabilistic pipeline
+```
+fit_canonical_families → store result.jac on EquationFit
+  → solve() computes: fn(x_train), residuals = y - y_pred, residual_std
+  → _hessian_from_jacobian(jac, residuals) → covariance
+  → laplace_from_fit(params, cov, eq, x, residual_std) → CI + noise
+```
+
+## Real Questions EL Can Now Answer
+
+| Question | How |
+|----------|-----|
+| "What drives churn?" | POST /v2/discover → variable ranking |
+| "How sensitive is revenue to CAC?" | POST /v1/solve → elasticity |
+| "What if pricing changes?" | POST /v2/what-if |
+| "Which variable matters most?" | POST /v2/solve → importance |
+| "What happens next quarter?" | POST /v2/forecast |
+| "What drives NRR?" | POST /v2/decompose |
+| "Why did profit change?" | POST /v2/explain → per-driver attribution |
+| "Does X cause Y?" | POST /v2/causal/granger |
+| "How does churn differ by segment?" | POST /v2/cohort/compare |
+| "Can I chain price→demand→revenue?" | POST /v2/graph/path |
+
+## Test Command
+```bash
+python -m pytest tests/ -q
+```
+**495 passed, 0 failed, 29 warnings** (all warnings pre-existing numerical edge cases)
+
+## Next: Phase 6 (Data Pipeline Integration)
+Per the Architect's plan:
+1. Wire ledger data retrieval into solve() — `solve_by_variable(db_path, x_var, y_var)` 
+2. Smart query endpoint — `/v2/query` that takes NL question, detects variables, retrieves from ledger, fits, explains
+3. Auto-ingestion → auto-analysis pipeline
+
+### Files to create/modify in Phase 6
+- `src/api.py` — `/v2/query` endpoint
+- `src/pipeline.py` — `solve_from_ledger()` function
+- Optional: `src/smart_query.py` — NLP → variable mapping → fit pipeline
+
+## Dependencies
+- Python 3.14 with numpy, scipy, sympy, fastapi, pydantic, networkx
+- No additional libraries needed (all pure numpy/scipy)
+- Telco dataset: `WA_Fn-UseC_-Telco-Customer-Churn.csv` at project root (7,043 rows)
+
+## Related Memories
+- [[project_d6_complete]] — D6 baseline (pre-Phase 0)
+- [[project_phase0_bugs_fixed]] — Phase 0 details
+- [[project_phase1_whatif_graph]] — Phase 1 details
+- [[project_phase2_multivar]] — Phase 2 details
+- [[project_phase3_forecast]] — Phase 3 details
+- [[project_phase4_composition]] — Phase 4 details
+- [[project_phase5_explain_causal]] — Phase 5 details

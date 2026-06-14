@@ -1,0 +1,247 @@
+# Equation Layer v3 — Production Core + Future Roadmap
+
+> **Constraint**: LLM extracts variables *and* proposes equations. No pre-defined library.
+> **Goal**: v2 reliability + v1 computational power + clear upgrade path.
+
+---
+
+## 1. Architecture — 6 Layers
+
+```
+QUERY + OBSERVATIONS
+        │
+        ▼
+┌────────────────────────┐
+│  LAYER 1               │
+│  Epistemic Parser      │  LLM with strict JSON schema:
+│  (Hypothesis Generator)│  → Extract variables, values, units, domains
+│                        │  → Propose 1-3 candidate equation forms
+│                        │  → Tag causal direction (associational)
+│                        │  → Flag any stated assumptions
+└───────────┬────────────┘
+            │ {candidates, variables, context}
+            ▼
+┌────────────────────────┐
+│  LAYER 2               │
+│  Correlation Engine    │  Fast matrix: ρ(xᵢ, xⱼ) for all pairs.
+│  + Drift Detector      │  Partial correlation strips confounders.
+│                        │  Drift: flag if historical ρ differs from
+│                        │  current window. Structural break signal.
+│                        │  → Block fit if ρ < threshold for claimed pair
+└───────────┬────────────┘
+            │ {validated candidates, correlation map, drift flags}
+            ▼
+┌────────────────────────┐
+│  LAYER 3               │
+│  Fitter + Validator    │  For each candidate form:
+│                        │    - Nonlinear least squares (scipy.optimize)
+│                        │    - Compute R²_adj, AIC, holdout MAPE
+│                        │    - Residual analysis: pattern? → reject.
+│                        │  Select winner. Validate on HOLDOUT fold.
+│                        │  If no candidate passes → reject all.
+│                        │  Equation stored as SymPy AST + fitted params.
+└───────────┬────────────┘
+            │ {validated equation, params, stats, residuals}
+            ▼
+┌────────────────────────┐
+│  LAYER 4               │
+│  Computational Core    │  Symbolic + numerical math, zero ML:
+│  (Derivatives)         │  → Evaluate answer at input values
+│                        │  → Symbolic derivatives (SymPy.diff)
+│                        │  → Sensitivity map: ∂f/∂xᵢ at point
+│                        │  → Curvature: ∂²f/∂xᵢ² at point
+│                        │  → Cross-partials: ∂²f/∂xᵢ∂xⱼ
+└───────────┬────────────┘
+            │ {answer, derivatives, equation}
+            ▼
+┌────────────────────────┐
+│  LAYER 5               │
+│  Probabilistic         │  Parameters are distributions, not points.
+│  Integrator            │  
+│  (Reinserted)          │  Primary (default): Laplace Approximation
+│                        │    - Gaussian N(θ*, Σ) around MAP estimate
+│                        │    - Sample parameters, evaluate f(θ)
+│                        │    - Output: E[answer], σ, 95% CI, tail risk
+│                        │  
+│                        │  Upgrade (optional): Full Bayesian via PyMC
+│                        │    - Specify priors on parameters
+│                        │    - MCMC chains (NUTS sampler)
+│                        │    - Posterior predictive distribution
+│                        │    - Use when priors are strong/domain-validated
+│                        │  
+│                        │  Integration over uncertainty:
+│                        │    E[answer] = ∫ f(θ) · p(θ) dθ
+│                        │    Preserved: path context, how variables arrived
+└───────────┬────────────┘
+            │ {answer, uncertainty, credibility, tail risk}
+            ▼
+┌────────────────────────┐
+│  LAYER 6               │
+│  Confidence Gate &     │  Hard thresholds (non-configurable):
+│  Formatter             │    n ≥ 15, R²_adj ≥ 0.6, holdout MAPE ≤ 20%,
+│                        │    posterior width below threshold,
+│                        │    no drift flag, no conflict flag.
+│                        │  Fail any → structured "insufficient data".
+│                        │  Pass all → minimal LLM formats to prose.
+└───────────┬────────────┘
+            │
+            ▼
+         OUTPUT
+```
+
+**Layer 5 — Probabilistic Integrator** is the reinserted v1 component.
+- **Default**: Laplace approximation — Gaussian around the fitted MAP estimate. Fast, assumption-light, no sampler tuning.
+- **Upgrade path**: Full Bayesian via PyMC when the domain has strong, validated priors that justify the engineering cost.
+
+---
+
+## 2. The Integration — Restored, Modernized
+
+In v1, integration was a full Bayesian pipeline that dominated Layer 5. In v3, it is a **two-tier system**:
+
+### Tier 1: Laplace Approximation (default, always-on)
+After the fitter returns parameters `θ*` and covariance `Σ`:
+1. Define `q(θ) = N(θ*; Σ)` — a multivariate Gaussian centered at the MAP.
+2. Draw 10,000 samples from `q(θ)`.
+3. Evaluate `f(θ_sample)` for each.
+4. Derive: mean, standard deviation, 95% credible interval, P(answer > k).
+
+**Why this is integration**: We are integrating the function over the parameter uncertainty distribution. The output is a full distribution over answers, not a single point. Same mathematical result as Bayesian inference, but in milliseconds instead of minutes.
+
+### Tier 2: Full Bayesian via PyMC (opt-in, per-equation)
+When a domain expert supplies strong priors (e.g., "price elasticity is normally around -1.5 in our industry"):
+1. Encode priors: `E ~ N(-1.5, 0.5)`.
+2. Run NUTS sampler via PyMC.
+3. Check convergence: R-hat < 1.01, ESS > 400.
+4. Posterior predictive: `p(answer | data) = ∫ p(answer | θ) · p(θ | data) dθ`.
+
+**Trigger condition**: only when prior knowledge is strong and sample size is small (`n < 30`), where regularization from priors outweighs the MCMC overhead.
+
+---
+
+## 3. Stack — Production Core (v2) + Advancement Roadmap
+
+### Current Production Stack (Day 1)
+
+| Component | Choice | Why |
+|---|---|---|
+| Symbolic math | SymPy | Exact derivatives, equation composition, no GPU dependency |
+| Optimization | scipy.optimize | L-BFGS-B, trust-region: robust, fast, 0-latency |
+| Probabilistic integration | scipy.stats, numpy | Laplace approximation + bootstrap as default |
+| Persistence | SQLite + JSONB | Zero operational overhead, structured equation rows |
+| LLM layer | OpenAI/Anthropic API | Schema-constrained extraction |
+| Correlation | numpy/scipy.stats | Partial correlation, drift detection |
+| Graph queries | NetworkX | Multi-hop equation chains |
+| Epistemic ledger | SQLite append-only log | Audit trail |
+
+### Future Advancement Map
+
+The following tools are **architected for, but not required on day one**. Each has a clear adoption trigger.
+
+| Tool / Technology | What It Enables | Adoption Trigger |
+|---|---|---|
+| **JAX** | GPU-accelerated autodiff, JIT compilation, massive-scale gradients | >100-parameter equations, real-time inference at 1000+ QPS, or neural-hybrid models |
+| **PySR** | Automated equation discovery when LLM cannot propose forms | Zero candidates pass validation repeatedly; domain has unknown governing laws |
+| **PyMC (full Bayesian)** | Hierarchical models, complex priors, scientific-grade uncertainty | Small data + strong priors; publication-grade inference requirements |
+| **Chroma / Pinecone / Vector DB** | Semantic pre-filtering across millions of equations in a multi-tenant deployment | >100K active equations, distributed query, need for approximate nearest-neighbor search |
+| **DuckDB / Postgres** | Columnar/relational analytics on equation library, cross-equation aggregation | Complex analytical queries over equation metadata at scale |
+| **Graph DB (Neo4j)** | Native multi-hop causal reasoning, cycle detection in equation graph | Equation graph grows beyond 10K nodes, requires complex pathfinding |
+| **Numba** | JIT compilation of hot numerical loops | Profiled bottleneck in bootstrap or residual analysis |
+
+---
+
+## 4. Why Each Advanced Tool Is Worth Keeping on the Roadmap
+
+| Tool | The Problem It Solves | Why Not Day 1 |
+|---|---|---|
+| **JAX** | v2's SymPy + numerical evaluation is O(1ms) for scalar equations. JAX becomes necessary when you differentiate through *compositions* of 100+ equations or batch-evaluate 10,000 parameter configurations simultaneously. | Adds GPU dependency, binary size, JIT warmup latency. SymPy handles 99% of quantitative business questions. |
+| **PySR** | Sometimes the true relationship is genuinely unknown (e.g., material science, biological systems). LLM cannot propose a form it has never seen. PySR explores function space systematically. | Stochastic search; can overfit noise; adds minutes of latency. For business/finance relationships, LLM + structured validation is usually sufficient. |
+| **PyMC** | When you have 8 observations and a domain expert who *knows* the prior, full Bayesian inference extracts signal that frequentist methods cannot. | Requires prior engineering, MCMC diagnostics, convergence checking. Laplace approximation gives the same interval for well-behaved posteriors at 1/1000th the cost. |
+| **Vector DB** | When you have 1 million equations across 500 customers, SQL exact match by variable set is still instant (<5ms). Vector similarity only helps when exact variable names differ but semantic meaning overlaps. | Exact variable matching is more reliable for equations. Semantic drift in vector space can return structurally wrong matches. |
+
+---
+
+## 5. Architecture Extensibility Points
+
+The v3 pipeline has **defined extension slots** where advanced tools plug in without rewriting the core:
+
+```
+LAYER 3 — Fitter + Validator
+  └── Extension Slot A: Alternative Fitter
+      ├── Default: scipy.optimize.least_squares
+      ├── Advanced: JAX-opt (GPU-accelerated, large parameter spaces)
+      └── Fallback: PySR (when no candidate fits)
+
+LAYER 5 — Probabilistic Integrator
+  └── Extension Slot B: Uncertainty Engine
+      ├── Default: Laplace approximation + Bootstrap
+      ├── Advanced: PyMC (full MCMC when priors justify it)
+      └── Future: Variational Inference (PyMC ADVI for very large posteriors)
+
+LAYER 4 — Computational Core
+  └── Extension Slot C: Differentiation Backend
+      ├── Default: SymPy exact + numerical evaluation
+      ├── Advanced: JAX autodiff (for neural-symbolic hybrids)
+      └── Future: Forward-mode autodiff (for R^n → R functions)
+
+PERSISTENCE
+  └── Extension Slot D: Storage Backend
+      ├── Default: SQLite (single-node, zero ops)
+      ├── Advanced: PostgreSQL (multi-tenant, concurrent writes)
+      └── Future: Vector DB (semantic pre-filtering at massive scale)
+```
+
+---
+
+## 6. Data Flow (with Integration Restored)
+
+**Query**: "If we raise price by 10%, how does revenue change?"
+
+**Observations**: 30 rows of (Price, Revenue, CAC, Churn).
+
+**Layer 1 — Epistemic Parser**
+- Extracts: `Price (P)`, `Revenue (R)`, `CAC (C)`, `Churn (H)`.
+- Proposes: `R = a·P + b`, `R = a·P^b`, `R = a·exp(b·P)`.
+
+**Layer 2 — Correlation Engine**
+- `ρ(P, R) = -0.74`. Partial `ρ(P, R|C) = -0.61`. Pass.
+
+**Layer 3 — Fitter + Validator**
+- `power` wins: `R = 2.1M · P^(-1.4)`, R²=0.82, holdout MAPE=8%.
+- Params: `a = 2.1M (σ=0.12M)`, `b = -1.4 (σ=0.18)`.
+
+**Layer 4 — Computational Core**
+- `P = 110` → `R = 284,500`.
+- `dR/dP = -2,580`. `d²R/dP² > 0` (decelerating).
+
+**Layer 5 — Probabilistic Integrator (REINSERTED)**
+- **Laplace mode** (default):
+  - Draw 10,000 samples from `N([2.1M, -1.4], Σ)`.
+  - Evaluate `R(θ_sample)` at `P = 110` for each.
+  - Result: `E[R] = 284,500`, `σ = 18,200`, `CI = [252,300, 319,100]`.
+  - Tail risk: `P(R > 300,000) = 19%`.
+- **PyMC mode** (if activated for this equation):
+  - Priors: `a ~ N(2M, 0.5M)`, `b ~ N(-1.5, 0.5)`.
+  - NUTS sampler: 4 chains × 1000 draws.
+  - Converged: R-hat = 1.002, ESS = 1,847.
+  - Posterior predictive at `P = 110`: same mean, slightly wider CI due to prior regularization.
+
+**Layer 6 — Confidence Gate & Formatter**
+- All thresholds pass → formatted output with full uncertainty profile.
+
+---
+
+## 7. Summary
+
+v3 retains everything from v2:
+- 6 layers (was 5 — Integration is back as Layer 5)
+- Holdout validation, Equation Graph, Conflict Detector, Epistemic Ledger
+- Bootstrap as fast default uncertainty method
+
+And restores the computational ambition of v1:
+- **Probabilistic Integration** is a first-class layer, not removed
+- **Laplace approximation** is the default, making uncertainty quantification instant
+- **Full Bayesian (PyMC)** is an opt-in upgrade mode for small-data + strong-prior scenarios
+- **JAX, PySR, PyMC, Vector DB** are all defined on the advancement roadmap with clear adoption triggers
+
+The system is **boring by default, powerful by extension**. It ships fast, proves value, then upgrades component by component based on measured need.

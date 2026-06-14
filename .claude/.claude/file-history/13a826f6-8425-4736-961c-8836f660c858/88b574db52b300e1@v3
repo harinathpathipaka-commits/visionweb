@@ -1,0 +1,21 @@
+[package]
+name = "ans-core"
+version.workspace = true
+edition.workspace = true
+description = "Core domain types, traits, and enums shared across Agent Nervous System crates"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+ans-proto.workspace = true
+async-trait.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

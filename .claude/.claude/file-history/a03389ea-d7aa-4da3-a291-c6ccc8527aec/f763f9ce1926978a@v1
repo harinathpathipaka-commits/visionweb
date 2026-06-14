@@ -1,0 +1,12 @@
+- [Implementation Plan](implementation-plan.md) — Full product build: all 4 layers including Agent Web. No phasing.
+- [Agent Web Architecture](agent-web-architecture.md) — The complete 4-layer architecture: purpose-built agent browser, Nervous System, and Decision Intelligence
+- [Decision Intelligence Layer](decision-intelligence-layer.md) — Inbuilt feedback loop (NOT middleware) that scores actions/tools per context and selects from scored memory
+- [Phase 1 Complete](phase1-complete.md) — Browser Control layer done: Chromium CDP, session management, gRPC server, daemon. CI green across all 13 crates.
+- [Phase 2 Complete](phase2-complete.md) — Perception layer done: DOM distillation (3 modes), page diff engine, screenshot RPC. CI green, 13 new tests.
+- [Phase 7 Complete](phase7-complete.md) — Signal Router + Daemon Integration: ContradictionResolver (5-level hierarchy), SignalRouter (relevance scoring, noise suppression), wired into gRPC submit_eye_reports. CI green, 10 new tests.
+- [Phase 8 Complete](phase8-complete.md) — Layer 1 Gateway done: MCP server (10 tools), REST API (8 endpoints), WebSocket server, all wired to real gRPC backend. Daemon starts both servers concurrently on 50051/50052.
+- [Phase 9 Complete](phase9-complete.md) — Hardening done: zero production unwraps, lint-clean workspace, expanded injection defense, secured auth, 11 integration tests, 10 criterion benchmarks.
+- [Production Gaps](production-gaps.md) — 7 remaining gaps: clippy warnings, observability, CI/CD, containerization, load testing, budget E2E, Chrome matrix
+- [Roadmap 37→100%](roadmap-37-to-100.md) — Prioritized 6-priority roadmap: wire GPT-4o-mini, implement 5 Eyes, intelligence pipeline, decision layer, production hardening, dashboard/CLI
+- [OpenAI Embedding Switch Complete](openai-embedding-switch-complete.md) — text-embedding-3-small (1536-dim) replaced local SentenceTransformer; 252 tests pass
+- [Product Status May 2026](product-status-may-2026.md) — Full status: Python layer (32 files, 252 tests) and Rust daemon (14 crates) with known gaps

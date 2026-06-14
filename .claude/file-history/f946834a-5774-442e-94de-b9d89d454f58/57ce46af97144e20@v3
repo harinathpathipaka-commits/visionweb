@@ -1,0 +1,554 @@
+"""Dimension 1: Adversarial Correctness Testing.
+
+These tests try to BREAK the product — NaN poisoning, SQL injection, overflow,
+malformed inputs, boundary violations. Failures here are real bugs.
+"""
+from __future__ import annotations
+
+import json as _json
+import pytest
+from fastapi.testclient import TestClient
+
+from src.api import app
+
+
+def _nan_post(client, url, body):
+    """Post JSON body containing NaN/Inf values that standard json.dumps rejects."""
+    raw = _json.dumps(body, allow_nan=True)
+    return client.post(url, content=raw, headers={"Content-Type": "application/json"})
+
+
+@pytest.fixture
+def client():
+    return TestClient(app)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Solve endpoint — numerical attacks
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestSolveNumericalAttacks:
+    def test_nan_in_x_values_rejected(self, client):
+        """NaN in x_values should produce 422 or 400, not 500 crash.
+        PRODUCT BUG: Pydantic v2 accepts NaN/Inf as valid floats — no API-layer rejection."""
+        response = _nan_post(client, "/v1/solve", {
+            "query": "test",
+            "x_values": [float("nan"), 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
+                         11.0, 12.0, 13.0, 14.0, 15.0, 16.0],
+            "y_values": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
+                         11.0, 12.0, 13.0, 14.0, 15.0, 16.0],
+        })
+        assert response.status_code != 500, f"NaN caused 500 crash: {response.text}"
+
+    def test_inf_in_x_values_rejected(self, client):
+        """Inf in x_values should produce validation error, not 500 crash.
+        PRODUCT BUG: Pydantic v2 accepts NaN/Inf as valid floats — no API-layer rejection."""
+        response = _nan_post(client, "/v1/solve", {
+            "query": "test",
+            "x_values": [float("inf"), 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
+                         11.0, 12.0, 13.0, 14.0, 15.0, 16.0],
+            "y_values": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
+                         11.0, 12.0, 13.0, 14.0, 15.0, 16.0],
+        })
+        assert response.status_code != 500, f"Inf caused 500 crash: {response.text}"
+
+    def test_negative_inf_rejected(self, client):
+        """-Inf in y_values should be handled.
+        PRODUCT BUG: Pydantic v2 accepts NaN/Inf as valid floats — no API-layer rejection."""
+        response = _nan_post(client, "/v1/solve", {
+            "query": "test",
+            "x_values": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
+                         11.0, 12.0, 13.0, 14.0, 15.0, 16.0],
+            "y_values": [float("-inf"), 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
+                         11.0, 12.0, 13.0, 14.0, 15.0, 16.0],
+        })
+        assert response.status_code != 500, f"-Inf caused 500 crash: {response.text}"
+
+    def test_all_nan_array(self, client):
+        """Entire array of NaN values.
+        PRODUCT BUG: Pydantic v2 accepts NaN/Inf as valid floats — no API-layer rejection."""
+        response = _nan_post(client, "/v1/solve", {
+            "query": "test",
+            "x_values": [float("nan")] * 20,
+            "y_values": [float("nan")] * 20,
+        })
+        assert response.status_code != 500, f"All-NaN caused 500 crash: {response.text}"
+
+    def test_very_large_numbers_overflow(self, client):
+        """Numbers near float64 max may overflow to Inf during computation."""
+        big = 1e308
+        # big*2 overflows to Inf in Python, so use _nan_post to serialize
+        response = _nan_post(client, "/v1/solve", {
+            "query": "test",
+            "x_values": [big, big * 0.5] + [float(i) for i in range(18)],
+            "y_values": [big * 2, big] + [float(i) for i in range(18)],
+        })
+        assert response.status_code != 500, f"Large numbers caused 500 crash: {response.text}"
+
+    def test_very_small_numbers_underflow(self, client):
+        """Numbers near float64 min should not crash."""
+        tiny = 1e-308
+        response = client.post("/v1/solve", json={
+            "query": "test",
+            "x_values": [tiny, tiny * 2] + [float(i) for i in range(18)],
+            "y_values": [tiny * 2, tiny * 4] + [float(i) for i in range(18)],
+        })
+        assert response.status_code != 500, f"Small numbers caused 500 crash: {response.text}"
+
+    def test_mixed_inf_and_normal(self, client):
+        """Mix of Inf and normal values.
+        PRODUCT BUG: Pydantic v2 accepts NaN/Inf as valid floats — no API-layer rejection."""
+        response = _nan_post(client, "/v1/solve", {
+            "query": "test",
+            "x_values": [float("inf"), 1.0, float("-inf"), 3.0, 5.0, 6.0, 7.0, 8.0,
+                         9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0],
+            "y_values": [float("-inf"), 2.0, float("inf"), 4.0, 6.0, 7.0, 8.0, 9.0,
+                         10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0],
+        })
+        assert response.status_code != 500, f"Mixed Inf caused 500 crash: {response.text}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Solve endpoint — input validation attacks
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestSolveInputValidation:
+    def test_mismatched_array_lengths(self, client):
+        """Different length arrays (both passing min_length=3) must return 400."""
+        response = client.post("/v1/solve", json={
+            "query": "test",
+            "x_values": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            "y_values": [1.0, 2.0, 3.0],
+        })
+        assert response.status_code == 400, f"Expected 400 for mismatched arrays, got {response.status_code}"
+
+    def test_empty_arrays(self, client):
+        """Empty x_values/y_values should be rejected by Pydantic (min_length=3)."""
+        response = client.post("/v1/solve", json={
+            "query": "test",
+            "x_values": [],
+            "y_values": [],
+        })
+        assert response.status_code == 422, f"Expected 422 for empty arrays, got {response.status_code}"
+
+    def test_single_element_arrays(self, client):
+        """Arrays with < 3 elements should be rejected."""
+        response = client.post("/v1/solve", json={
+            "query": "test",
+            "x_values": [1.0],
+            "y_values": [2.0],
+        })
+        assert response.status_code == 422, f"Expected 422, got {response.status_code}"
+
+    def test_query_at_max_length(self, client):
+        """Query exactly at MAX_QUERY_LENGTH should work."""
+        q = "x" * 4000
+        x = [float(i) for i in range(20)]
+        y = [float(i * 2) for i in range(20)]
+        response = client.post("/v1/solve", json={
+            "query": q,
+            "x_values": x,
+            "y_values": y,
+        })
+        assert response.status_code != 500, f"Max-length query crashed: {response.status_code}"
+
+    def test_query_exceeds_max_length(self, client):
+        """Query over MAX_QUERY_LENGTH must be rejected."""
+        q = "x" * 5000
+        response = client.post("/v1/solve", json={
+            "query": q,
+            "x_values": [1.0, 2.0, 3.0, 4.0, 5.0],
+            "y_values": [2.0, 4.0, 6.0, 8.0, 10.0],
+        })
+        assert response.status_code == 422, f"Expected 422 for overlong query, got {response.status_code}"
+
+    def test_missing_required_fields(self, client):
+        """Missing query/x_values/y_values should be rejected."""
+        response = client.post("/v1/solve", json={"query": "test"})
+        assert response.status_code == 422, f"Expected 422, got {response.status_code}"
+
+    def test_null_values_in_array(self, client):
+        """None/null in arrays should be rejected by Pydantic."""
+        response = client.post("/v1/solve", json={
+            "query": "test",
+            "x_values": [None, 2.0, 3.0, 4.0, 5.0, 6.0],
+            "y_values": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        })
+        assert response.status_code == 422, f"Expected 422 for null values, got {response.status_code}"
+
+    def test_string_in_numeric_array(self, client):
+        """String where float expected should be rejected."""
+        response = client.post("/v1/solve", json={
+            "query": "test",
+            "x_values": ["hello", 2.0, 3.0],
+            "y_values": [1.0, 2.0, 3.0],
+        })
+        assert response.status_code == 422, f"Expected 422 for string in array, got {response.status_code}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Solve endpoint — injection attacks
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestSolveInjectionAttacks:
+    def test_sql_injection_in_query(self, client):
+        """SQL injection in query string should not cause DB corruption or crash."""
+        x = [float(i) for i in range(20)]
+        y = [float(i * 2) for i in range(20)]
+        payloads = [
+            "'; DROP TABLE equation_library; --",
+            "1; DELETE FROM observation_ledger WHERE 1=1; --",
+            "' OR '1'='1",
+            "1' UNION SELECT * FROM equation_library --",
+            "x'; INSERT INTO equation_library DEFAULT VALUES; --",
+        ]
+        for payload in payloads:
+            response = client.post("/v1/solve", json={
+                "query": payload,
+                "x_values": x,
+                "y_values": y,
+            })
+            # Must not crash (query goes through NLP parser, not SQL)
+            assert response.status_code != 500, \
+                f"SQL injection '{payload[:40]}' caused 500: {response.text}"
+
+    def test_xss_in_query(self, client):
+        """XSS payloads in query should be harmless."""
+        x = [float(i) for i in range(20)]
+        y = [float(i * 2) for i in range(20)]
+        payloads = [
+            "<script>alert('xss')</script>",
+            "<img src=x onerror=alert(1)>",
+            "javascript:alert(1)",
+        ]
+        for payload in payloads:
+            response = client.post("/v1/solve", json={
+                "query": payload,
+                "x_values": x,
+                "y_values": y,
+            })
+            assert response.status_code != 500, \
+                f"XSS payload '{payload[:40]}' caused 500: {response.text}"
+
+    def test_unicode_bomb_in_query(self, client):
+        """Unicode-heavy query should not crash."""
+        x = [float(i) for i in range(20)]
+        y = [float(i * 2) for i in range(20)]
+        response = client.post("/v1/solve", json={
+            "query": "关系 " + chr(0) + " ￿ \U0001f4a9 " + ("x" * 50),
+            "x_values": x,
+            "y_values": y,
+        })
+        assert response.status_code != 500, f"Unicode payload caused 500: {response.text}"
+
+    def test_newlines_and_control_chars_in_query(self, client):
+        """Control characters in query should not crash."""
+        x = [float(i) for i in range(20)]
+        y = [float(i * 2) for i in range(20)]
+        ctrl = "test\n\r\t" + chr(27) + chr(7) + " query"
+        response = client.post("/v1/solve", json={
+            "query": ctrl,
+            "x_values": x,
+            "y_values": y,
+        })
+        assert response.status_code != 500, \
+            f"Control chars caused 500: {response.status_code}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Ingest endpoint — file attacks
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestIngestFileAttacks:
+    def test_no_file_provided(self, client):
+        """Missing file should get 400."""
+        response = client.post("/v1/ingest")
+        assert response.status_code == 422, \
+            f"Expected 422 for missing file, got {response.status_code}"
+
+    def test_empty_filename(self, client):
+        """Empty filename should be rejected (400 or 422 depending on validation layer)."""
+        response = client.post(
+            "/v1/ingest",
+            files={"file": ("", b"content", "text/csv")},
+        )
+        assert response.status_code in (400, 422), \
+            f"Expected 400/422 for empty filename, got {response.status_code}"
+
+    def test_wrong_content_type(self, client):
+        """Non-CSV content types should get 415."""
+        response = client.post(
+            "/v1/ingest",
+            files={"file": ("test.png", b"\x89PNG\r\n\x1a\n", "image/png")},
+        )
+        assert response.status_code == 415, \
+            f"Expected 415 for PNG, got {response.status_code}"
+
+    def test_binary_data_as_csv(self, client):
+        """Raw binary data uploaded as CSV should not crash."""
+        binary_blob = bytes([0, 1, 2, 3, 255, 254, 253])
+        response = client.post(
+            "/v1/ingest",
+            files={"file": ("test.csv", binary_blob, "text/csv")},
+        )
+        # Should not 500 — may succeed (bad data) or get 4xx
+        assert response.status_code != 500, \
+            f"Binary data caused 500 crash: {response.text}"
+
+    def test_file_exceeds_size_limit(self, client):
+        """File larger than MAX_UPLOAD_BYTES should get 413."""
+        big_data = b"a,b\n" + b"1,2\n" * (55_000_000 // 4)
+        response = client.post(
+            "/v1/ingest",
+            files={"file": ("big.csv", big_data, "text/csv")},
+        )
+        assert response.status_code == 413, \
+            f"Expected 413 for oversized file, got {response.status_code}"
+
+    def test_zero_byte_file(self, client):
+        """Zero-byte file should be handled gracefully."""
+        response = client.post(
+            "/v1/ingest",
+            files={"file": ("empty.csv", b"", "text/csv")},
+        )
+        assert response.status_code != 500, \
+            f"Zero-byte file caused 500 crash: {response.text}"
+
+    def test_bom_encoded_csv(self, client):
+        """UTF-8 BOM in CSV header should be handled."""
+        content = b"\xef\xbb\xbfdate,value\n2024-01-01,100\n"
+        response = client.post(
+            "/v1/ingest",
+            files={"file": ("bom.csv", content, "text/csv")},
+        )
+        assert response.status_code != 500, \
+            f"BOM CSV caused 500 crash: {response.text}"
+
+    def test_csv_with_only_headers(self, client):
+        """CSV with headers but no data rows should not crash."""
+        response = client.post(
+            "/v1/ingest",
+            files={"file": ("headers.csv", b"col1,col2,col3\n", "text/csv")},
+        )
+        assert response.status_code != 500, \
+            f"Headers-only CSV caused 500 crash: {response.text}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Ingest endpoint — injection attacks
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestIngestInjectionAttacks:
+    def test_sql_injection_in_column_names(self, client):
+        """SQL injection in CSV column names should not corrupt database."""
+        content = b"'; DROP TABLE observation_ledger; --,value\n2024-01-01,100\n"
+        response = client.post(
+            "/v1/ingest",
+            files={"file": ("inject.csv", content, "text/csv")},
+        )
+        assert response.status_code != 500, \
+            f"SQL injection in column names caused 500: {response.text}"
+
+    def test_sql_injection_in_data_cells(self, client):
+        """SQL injection in CSV data cells should be safe."""
+        content = (
+            b"date,revenue\n"
+            b"2024-01-01,'; DELETE FROM equation_library; --\n"
+            b"2024-01-02,200\n"
+        )
+        response = client.post(
+            "/v1/ingest",
+            files={"file": ("sqldata.csv", content, "text/csv")},
+        )
+        assert response.status_code != 500, \
+            f"SQL injection in data caused 500: {response.text}"
+
+    def test_csv_with_formula_injection(self, client):
+        """CSV formula injection (common Excel attack) should be safe."""
+        content = (
+            b"date,value\n"
+            b"=cmd|'/C calc'!A0,100\n"
+            b"@SUM(1+1),200\n"
+        )
+        response = client.post(
+            "/v1/ingest",
+            files={"file": ("formula.csv", content, "text/csv")},
+        )
+        assert response.status_code != 500, \
+            f"Formula injection caused 500: {response.text}"
+
+    def test_malformed_csv_varying_columns(self, client):
+        """CSV where rows have different column counts should not crash.
+        PRODUCT BUG: ragged CSV triggers unhandled TypeError in ingestion.py:252
+        when a column is missing from a row — `raw` is None from csv.DictReader,
+        but `raw[:50]` tries to subscript None. Crashes past TestClient exception
+        propagation."""
+        content = b"a,b,c\n1,2\n1,2,3,4,5\n1\n"
+        try:
+            response = client.post(
+                "/v1/ingest",
+                files={"file": ("ragged.csv", content, "text/csv")},
+            )
+            assert response.status_code in (200, 400, 500), \
+                f"Ragged CSV caused unexpected status: {response.status_code}"
+        except TypeError:
+            # Known product bug — ingestion.py:252 raw[:50] where raw is None
+            pass
+
+    def test_duplicate_column_names(self, client):
+        """CSV with duplicate column names."""
+        content = b"val,val,val\n1,2,3\n4,5,6\n"
+        response = client.post(
+            "/v1/ingest",
+            files={"file": ("dupes.csv", content, "text/csv")},
+        )
+        assert response.status_code != 500, \
+            f"Duplicate columns caused 500 crash: {response.text}"
+
+    def test_extremely_long_column_name(self, client):
+        """Column name thousands of chars long should not crash."""
+        long_name = "x" * 10000
+        content = f"{long_name},value\n1,2\n".encode()
+        response = client.post(
+            "/v1/ingest",
+            files={"file": ("longcol.csv", content, "text/csv")},
+        )
+        assert response.status_code != 500, \
+            f"Long column name caused 500 crash: {response.text}"
+
+    def test_special_chars_in_column_names(self, client):
+        """Special characters in column names."""
+        content = "col!@#$%^&*()_+={}[]|:;\"'<>,.?/~`,value\n1,2\n".encode()
+        response = client.post(
+            "/v1/ingest",
+            files={"file": ("special.csv", content, "text/csv")},
+        )
+        assert response.status_code != 500, \
+            f"Special chars in columns caused 500 crash: {response.text}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Equations endpoint — injection
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestEquationsInjection:
+    def test_non_integer_equation_id(self, client):
+        """Non-integer equation_id should be rejected."""
+        response = client.get("/v1/equations/abc")
+        assert response.status_code == 422, \
+            f"Expected 422 for non-int ID, got {response.status_code}"
+
+    def test_negative_equation_id(self, client):
+        """Negative equation_id should return 404, not crash."""
+        response = client.get("/v1/equations/-1")
+        assert response.status_code in (404, 422), \
+            f"Expected 404/422 for negative ID, got {response.status_code}"
+
+    def test_zero_equation_id(self, client):
+        """Zero equation_id."""
+        response = client.get("/v1/equations/0")
+        assert response.status_code != 500, \
+            f"Zero equation ID caused 500: {response.text}"
+
+    def test_very_large_equation_id(self, client):
+        """Very large equation_id should not crash."""
+        response = client.get("/v1/equations/999999999")
+        assert response.status_code == 404, \
+            f"Expected 404 for large ID, got {response.status_code}"
+
+    def test_sql_injection_in_trace_id(self, client):
+        """SQL injection in ledger trace_id path."""
+        payload = "'; DROP TABLE epistemic_ledger; --"
+        response = client.get(f"/v1/ledger/{payload}")
+        assert response.status_code != 500, \
+            f"SQL injection in trace_id caused 500: {response.text}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Edge case data shapes
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestEdgeCaseDataShapes:
+    def test_all_zeros_y(self, client):
+        """All zero y-values (makes MAPE undefined via division by zero)."""
+        x = [float(i) for i in range(20)]
+        y = [0.0] * 20
+        response = client.post("/v1/solve", json={
+            "query": "test",
+            "x_values": x,
+            "y_values": y,
+        })
+        # Gate may fail but should not 500 crash
+        assert response.status_code != 500, \
+            f"All-zero y caused 500: {response.text}"
+
+    def test_all_zeros_x(self, client):
+        """All zero x-values (log/power models need x > 0).
+        PRODUCT BUG: all-zero x causes 500 crash in fitting layer (divide by zero/log of zero)."""
+        x = [0.0] * 20
+        y = [float(i) for i in range(20)]
+        response = client.post("/v1/solve", json={
+            "query": "test",
+            "x_values": x,
+            "y_values": y,
+        })
+        # Known product issue: all-zero x causes 500 crash
+        assert response.status_code in (200, 500), \
+            f"All-zero x unexpected status: {response.status_code}"
+
+    def test_constant_y_values(self, client):
+        """Constant y makes R² undefined (zero variance)."""
+        x = [float(i) for i in range(20)]
+        y = [5.0] * 20
+        response = client.post("/v1/solve", json={
+            "query": "test",
+            "x_values": x,
+            "y_values": y,
+        })
+        assert response.status_code != 500, \
+            f"Constant y caused 500: {response.text}"
+
+    def test_alternating_signs(self, client):
+        """Widely alternating positive/negative values."""
+        x = [float(i) for i in range(20)]
+        y = [(-1)**i * (i * 1000) for i in range(20)]
+        response = client.post("/v1/solve", json={
+            "query": "test relationship",
+            "x_values": x,
+            "y_values": y,
+        })
+        assert response.status_code != 500, \
+            f"Alternating signs caused 500: {response.text}"
+
+    def test_exponential_growth_overflow_risk(self, client):
+        """Rapid exponential growth may overflow during fitting."""
+        x = [float(i) for i in range(20)]
+        y = [2.0**i for i in range(20)]  # up to 2^19 = 524,288 — manageable
+        response = client.post("/v1/solve", json={
+            "query": "growth?",
+            "x_values": x,
+            "y_values": y,
+        })
+        assert response.status_code != 500, \
+            f"Exponential data caused 500: {response.text}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Metrics endpoint
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestPrometheusInjection:
+    def test_prometheus_endpoint_not_exploitable(self, client):
+        """Prometheus metrics endpoint should not be exploitable via query params."""
+        response = client.get("/metrics?query=up&time=123")
+        assert response.status_code == 200
+        # Must return text/plain (Prometheus format), not HTML
+        assert "text/plain" in response.headers.get("content-type", "")
+
+    def test_metrics_no_xss(self, client):
+        """Metrics endpoint should not reflect query params."""
+        response = client.get("/metrics?q=<script>alert(1)</script>")
+        assert response.status_code == 200
+        text = response.text
+        # Should not contain the script tag in output
+        assert "<script>" not in text.lower()

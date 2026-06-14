@@ -1,0 +1,14 @@
+{
+  "keys": {
+    "admin": {
+      "key": "ans-admin-dev-key-change-in-production",
+      "name": "Default Admin",
+      "permission": "fullaccess"
+    },
+    "dashboard": {
+      "key": "dev-secret-key-123",
+      "name": "Dashboard",
+      "permission": "fullaccess"
+    }
+  }
+}

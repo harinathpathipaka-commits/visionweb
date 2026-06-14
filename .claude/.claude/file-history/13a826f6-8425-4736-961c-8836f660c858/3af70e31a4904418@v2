@@ -1,0 +1,23 @@
+//! Signal router — the central nervous system hub.
+//!
+//! Receives EyeReports from all 5 eyes, scores goal relevance,
+//! suppresses noise, resolves contradictions, and emits a unified
+//! RoutedSignal to the Decision Intelligence Layer.
+
+use ans_core::signal::RoutedSignal;
+
+/// The signal router. Single instance per daemon, shared across sessions.
+pub struct SignalRouter;
+
+impl SignalRouter {
+    /// Route a batch of eye reports into a unified signal.
+    pub fn route(&self, _reports: &[ans_core::signal::EyeReport]) -> RoutedSignal {
+        RoutedSignal {
+            unified_perception: String::new(),
+            alerts: Vec::new(),
+            confidence: 1.0,
+            recommended_action_hint: None,
+            contradictions: Vec::new(),
+        }
+    }
+}

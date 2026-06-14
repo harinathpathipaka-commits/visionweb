@@ -1,0 +1,12 @@
+- [Phase 14 Tests Complete](project_phase14_complete.md) — 116 tests passing, all 7 layers covered, end-to-end and API verified
+- [D1-D5 Testing Complete](project_d1_d5_complete.md) — 386 tests passing, 5 production bugs fixed, domain router scoring, product docs in docs/equation_layer_product_docs.md
+- [Pre-D6 Gaps Fixed](project_pre_d6_gaps_fixed.md) — 5 API response gaps fixed (derivative, elasticity, fallback_action, correlation, drift surfaced; random_seed for reproducibility; 6 files changed)
+- [D6 Complete](project_d6_complete.md) — Real World Comparative Validation: 19 tests on Telco Customer Churn (7,043 rows), 405 total tests passing, EL verified against GPT/Claude/RAG failure modes
+- [Phase 0 Bugs Fixed](project_phase0_bugs_fixed.md) — 14 critical/high bugs fixed across 8 files, Jacobian-based covariance, evaluate_at API field, structural_validity wired
+- [Phase 1 What-If + Graph](project_phase1_whatif_graph.md) — 6 new v2 endpoints, EquationGraph wired into pipeline, ledger_query.py, 417 tests
+- [Phase 2 Multi-Variable](project_phase2_multivar.md) — multivar.py, categorical.py, discovery.py, 3 v2 endpoints, 440 tests, zero new deps
+- [Phase 3 Forecast](project_phase3_forecast.md) — forecast.py, trend/seasonality/decomposition, /v2/forecast, 458 tests
+- [Phase 4 Composition](project_phase4_composition.md) — composition.py, 11 SaaS formulas, /v2/decompose, /v2/explain, 477 tests
+- [Phase 5 Explain + Causal](project_phase5_explain_causal.md) — explanation.py, causal.py, cohort.py, 6 endpoints, 495 tests
+- [Phase 6 Smart Query](project_phase6_smart_query.md) — smart_query.py, /v2/query capstone, 505 tests, ALL 6 phases complete
+- [Session Anchor](session_anchor_2026-06-01.md) — Full project state: all modules, endpoints, test counts, architecture map

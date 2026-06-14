@@ -1,0 +1,104 @@
+from __future__ import annotations
+
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+from scipy import stats as sp_stats
+
+from .models import CorrelationResult
+
+
+def correlation_matrix(
+    x_values: List[float], y_values: List[float]
+) -> Dict[Tuple[str, str], float]:
+    x_arr = np.array(x_values, dtype=np.float64)
+    y_arr = np.array(y_values, dtype=np.float64)
+
+    n = len(x_arr)
+    if n < 3:
+        return {}
+
+    pearson_r, _ = sp_stats.pearsonr(x_arr, y_arr)
+    spearman_r, _ = sp_stats.spearmanr(x_arr, y_arr)
+
+    return {
+        ("x", "y"): float(pearson_r),
+        ("x", "y_spearman"): float(spearman_r),
+    }
+
+
+def partial_correlation(
+    x: List[float],
+    y: List[float],
+    controlling_for: List[float],
+) -> float:
+    x_arr = np.array(x, dtype=np.float64)
+    y_arr = np.array(y, dtype=np.float64)
+    z_arr = np.array(controlling_for, dtype=np.float64)
+
+    n = len(x_arr)
+    if n < 4:
+        return 0.0
+
+    r_xy, _ = sp_stats.pearsonr(x_arr, y_arr)
+    r_xz, _ = sp_stats.pearsonr(x_arr, z_arr)
+    r_yz, _ = sp_stats.pearsonr(y_arr, z_arr)
+
+    denom = np.sqrt((1 - r_xz**2) * (1 - r_yz**2))
+    if abs(denom) < 1e-10:
+        return float(r_xy)
+
+    return float((r_xy - r_xz * r_yz) / denom)
+
+
+def drift_detector(
+    historical_window: List[float],
+    current_window: List[float],
+    threshold: float = 0.2,
+) -> Tuple[bool, float]:
+    if len(historical_window) < 3 or len(current_window) < 3:
+        return False, 0.0
+
+    hist_arr = np.array(historical_window, dtype=np.float64)
+    curr_arr = np.array(current_window, dtype=np.float64)
+
+    r_hist, _ = sp_stats.pearsonr(hist_arr, np.arange(len(hist_arr)))
+    r_curr, _ = sp_stats.pearsonr(curr_arr, np.arange(len(curr_arr)))
+
+    delta = abs(r_hist - r_curr)
+    drifted = delta > threshold
+    return drifted, float(delta)
+
+
+def validate_relationships(
+    rho_map: Dict[Tuple[str, str], float],
+    variable_pairs: List[Tuple[str, str]],
+    min_correlation: float = 0.1,
+) -> Dict[Tuple[str, str], bool]:
+    valid: Dict[Tuple[str, str], bool] = {}
+    for pair in variable_pairs:
+        rho = rho_map.get(pair, 0.0)
+        valid[pair] = abs(rho) >= min_correlation
+    return valid
+
+
+def run_correlation_analysis(
+    x_values: List[float],
+    y_values: List[float],
+    x_historical: Optional[List[float]] = None,
+    y_historical: Optional[List[float]] = None,
+) -> CorrelationResult:
+    rho = correlation_matrix(x_values, y_values)
+
+    drift_flags: Dict[Tuple[str, str], bool] = {}
+    if x_historical is not None and y_historical is not None:
+        rho_current = rho.get(("x", "y"), 0.0)
+        rho_hist, _ = sp_stats.pearsonr(
+            np.array(x_historical, dtype=np.float64),
+            np.array(y_historical, dtype=np.float64),
+        )
+        drift_flags[("x", "y")] = abs(rho_current - rho_hist) > 0.2
+    else:
+        drift_flags[("x", "y")] = False
+
+    return CorrelationResult(rho=rho, drift_flags=drift_flags)

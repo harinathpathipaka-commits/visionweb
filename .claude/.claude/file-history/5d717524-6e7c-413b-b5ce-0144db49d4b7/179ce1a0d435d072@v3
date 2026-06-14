@@ -1,0 +1,170 @@
+"""Embedding generator — sentence-transformers wrapper for context embeddings.
+
+Produces 384-dim embeddings for (action, tool, context) tuples.
+Used by the Decision Intelligence layer for similarity-based retrieval.
+
+Falls back to a lexicographic hash-based embedding when the model cannot
+be loaded (offline, first run without cached model, etc.).
+"""
+
+from __future__ import annotations
+
+import hashlib
+import struct
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+
+import numpy as np
+
+from ans_nerves.config import get_config
+from ans_nerves.logging import get_logger
+
+logger = get_logger(__name__)
+
+_EMBEDDING_DIM = 384
+_MODEL_LOAD_TIMEOUT = 30  # seconds before falling back to hash embeddings
+
+
+class EmbeddingGenerator:
+    """Generates embeddings for context strings using sentence-transformers.
+
+    Singleton — model is loaded once and cached across all calls.
+    Falls back to hash-based embeddings when the model is unavailable.
+    """
+
+    def __init__(self, model_name: str | None = None) -> None:
+        config = get_config()
+        self._model_name = model_name or config.scoring.context_embedding_model
+        self._model: "SentenceTransformer | None" = None  # type: ignore[name-defined]
+        self._model_load_attempted = False
+        self._model_available = False
+
+    @property
+    def dimension(self) -> int:
+        return _EMBEDDING_DIM
+
+    @property
+    def model_available(self) -> bool:
+        """Whether the sentence-transformers model loaded successfully."""
+        if not self._model_load_attempted:
+            self._try_load_model()
+        return self._model_available
+
+    def _try_load_model(self) -> None:
+        self._model_load_attempted = True
+        try:
+            from sentence_transformers import SentenceTransformer
+
+            # Load in a thread so we can timeout if the download hangs
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(SentenceTransformer, self._model_name)
+                self._model = future.result(timeout=_MODEL_LOAD_TIMEOUT)
+
+            self._model_available = True
+            logger.info("EmbeddingGenerator: model '%s' loaded", self._model_name)
+        except FutureTimeoutError:
+            self._model_available = False
+            logger.warning(
+                "EmbeddingGenerator: model '%s' load timed out after %ds. Using fallback embeddings.",
+                self._model_name, _MODEL_LOAD_TIMEOUT,
+            )
+        except Exception as exc:
+            self._model_available = False
+            logger.warning(
+                "EmbeddingGenerator: model '%s' unavailable (%s). Using fallback embeddings.",
+                self._model_name, exc,
+            )
+
+    def embed(self, text: str) -> list[float]:
+        """Generate embedding for a single text string.
+
+        Returns a 384-dim float list. Uses sentence-transformers when
+        available, otherwise falls back to a deterministic hash embedding.
+        """
+        if not text.strip():
+            return [0.0] * _EMBEDDING_DIM
+
+        if self.model_available and self._model is not None:
+            embedding: np.ndarray = self._model.encode(
+                text,
+                normalize_embeddings=True,
+                show_progress_bar=False,
+            )
+            return embedding.tolist()
+
+        return self._fallback_embed(text)
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Generate embeddings for multiple texts."""
+        if not texts:
+            return []
+
+        if self.model_available and self._model is not None:
+            embeddings: np.ndarray = self._model.encode(
+                texts,
+                normalize_embeddings=True,
+                show_progress_bar=False,
+            )
+            return embeddings.tolist()
+
+        return [self._fallback_embed(t) for t in texts]
+
+    @staticmethod
+    def _fallback_embed(text: str) -> list[float]:
+        """Deterministic hash-based embedding when model is unavailable.
+
+        Uses SHA-256 over whitespace-delimited tokens to produce a sparse
+        384-dim vector. Same text always produces the same embedding, and
+        similar texts produce overlapping dimensions — preserving some
+        similarity signal for LanceDB ANN search.
+        """
+        tokens = text.lower().split()
+        if not tokens:
+            return [0.0] * _EMBEDDING_DIM
+
+        vec = np.zeros(_EMBEDDING_DIM, dtype=np.float32)
+
+        for token in set(tokens):  # unique tokens only
+            h = hashlib.sha256(token.encode()).digest()
+            # Use each 4-byte chunk to index a dimension
+            for i in range(0, 32, 4):
+                idx = struct.unpack("<I", h[i:i+4])[0] % _EMBEDDING_DIM
+                vec[idx] += 1.0
+
+        # L2 normalize
+        norm = float(np.linalg.norm(vec))
+        if norm > 0:
+            vec = vec / norm
+
+        return vec.tolist()
+
+    def build_context_text(
+        self,
+        action_type: str = "",
+        selector: str = "",
+        tool: str = "",
+        goal_description: str = "",
+        page_type: str = "",
+    ) -> str:
+        """Build a canonical context string for embedding.
+
+        Format: "action:{action_type} tool:{tool} selector:{selector} goal:{goal_description} page:{page_type}"
+        """
+        parts = [
+            f"action:{action_type}",
+            f"tool:{tool}",
+            f"selector:{selector}",
+            f"goal:{goal_description}",
+            f"page:{page_type}",
+        ]
+        return " ".join(parts)
+
+
+# Singleton
+_generator: EmbeddingGenerator | None = None
+
+
+def get_embedding_generator() -> EmbeddingGenerator:
+    global _generator
+    if _generator is None:
+        _generator = EmbeddingGenerator()
+    return _generator

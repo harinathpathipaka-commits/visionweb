@@ -1,0 +1,88 @@
+{
+  "domain": "general",
+  "variables": {
+    "price": {
+      "unit": "USD",
+      "aliases": ["cost", "unit price", "fee", "rate", "charge"],
+      "typical_range": [0, 1000000],
+      "temporal_granularity": null
+    },
+    "quantity": {
+      "unit": "count",
+      "aliases": ["volume", "units", "amount", "number", "qty", "count"],
+      "typical_range": [0, 10000000],
+      "temporal_granularity": null
+    },
+    "revenue": {
+      "unit": "USD",
+      "aliases": ["sales", "income", "earnings", "top line", "turnover"],
+      "typical_range": [0, 1000000000],
+      "temporal_granularity": null
+    },
+    "cost": {
+      "unit": "USD",
+      "aliases": ["expense", "spend", "expenditure", "outlay"],
+      "typical_range": [0, 1000000000],
+      "temporal_granularity": null
+    },
+    "profit": {
+      "unit": "USD",
+      "aliases": ["earnings", "net income", "bottom line", "gain"],
+      "typical_range": [-1000000000, 1000000000],
+      "temporal_granularity": null
+    },
+    "conversion": {
+      "unit": "percentage",
+      "aliases": ["conversion rate", "success rate", "completion rate"],
+      "typical_range": [0, 100],
+      "temporal_granularity": null
+    },
+    "growth": {
+      "unit": "percentage",
+      "aliases": ["growth rate", "increase", "change", "delta", "uplift"],
+      "typical_range": [-100, 1000],
+      "temporal_granularity": null
+    },
+    "time": {
+      "unit": "days",
+      "aliases": ["duration", "period", "cycle", "length", "span"],
+      "typical_range": [0, 3650],
+      "temporal_granularity": null
+    },
+    "users": {
+      "unit": "count",
+      "aliases": ["people", "individuals", "participants", "customers", "accounts"],
+      "typical_range": [0, 100000000],
+      "temporal_granularity": null
+    },
+    "retention": {
+      "unit": "percentage",
+      "aliases": ["retention rate", "stickiness", "loyalty", "return rate"],
+      "typical_range": [0, 100],
+      "temporal_granularity": null
+    },
+    "satisfaction": {
+      "unit": "score",
+      "aliases": ["nps", "csat", "rating", "score", "satisfaction score"],
+      "typical_range": [0, 100],
+      "temporal_granularity": null
+    },
+    "efficiency": {
+      "unit": "percentage",
+      "aliases": ["productivity", "utilization", "throughput", "yield"],
+      "typical_range": [0, 100],
+      "temporal_granularity": null
+    }
+  },
+  "constraints": {
+    "elasticity_signs": {
+      "price": "negative"
+    }
+  },
+  "common_relationships": [
+    {"independent": "price", "dependent": "quantity", "expected_form": "inverse_power"},
+    {"independent": "quantity", "dependent": "revenue", "expected_form": "linear"},
+    {"independent": "quantity", "dependent": "cost", "expected_form": "linear"},
+    {"independent": "revenue", "dependent": "profit", "expected_form": "linear"}
+  ]
+}

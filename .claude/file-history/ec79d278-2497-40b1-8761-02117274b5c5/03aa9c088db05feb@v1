@@ -1,0 +1,12 @@
+from __future__ import annotations
+
+from typing import Dict
+
+from .models import ComputeResult, EquationFit
+
+
+def evaluate_equation(equation: EquationFit, x_value: float) -> ComputeResult:
+    answer = equation.parameters.get("a", 1.0) * x_value
+    derivatives: Dict[str, float] = {"dY/dX": equation.parameters.get("a", 1.0)}
+    curvature: Dict[str, float] = {"d2Y/dX2": 0.0}
+    return ComputeResult(answer=answer, derivatives=derivatives, curvature=curvature)

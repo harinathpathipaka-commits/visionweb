@@ -1,0 +1,154 @@
+"""Tests for Pre-D7 CSV readiness: csv_analyzer, auto_mapper categorical handling, clean_column, ID detection."""
+from __future__ import annotations
+
+import os
+import tempfile
+
+import pytest
+from fastapi.testclient import TestClient
+
+from src.api import app
+from src.csv_analyzer import read_csv_columns, analyze_csv
+from src.categorical import clean_column, is_id_column, detect_categorical
+from src.auto_mapper import auto_map_columns
+from src.ingestion import profile_csv
+
+
+@pytest.fixture
+def client():
+    return TestClient(app)
+
+
+@pytest.fixture
+def sample_csv():
+    """Create a realistic CSV with mixed types like a Kaggle dataset."""
+    fd, path = tempfile.mkstemp(suffix=".csv")
+    os.close(fd)
+    with open(path, "w") as f:
+        f.write("id,age,income,contract_type,churned\n")
+        f.write("A1,25,50000,monthly,yes\n")
+        f.write("B2,34,75000,annual,no\n")
+        f.write("C3,45,62000,monthly,no\n")
+        f.write("D4,28,48000,monthly,yes\n")
+        f.write("E5,52,95000,annual,no\n")
+        f.write("F6,39,81000,annual,yes\n")
+        f.write("G7,31,55000,monthly,no\n")
+        f.write("H8,47,72000,annual,no\n")
+    yield path
+    try:
+        os.unlink(path)
+    except PermissionError:
+        pass
+
+
+# ── clean_column ─────────────────────────────────────────────────────────────
+
+
+class TestCleanColumn:
+    def test_handles_none(self):
+        result = clean_column([None, "hello", None, "world"])
+        assert result == ["missing", "hello", "missing", "world"]
+
+    def test_handles_whitespace(self):
+        result = clean_column(["  a  ", " b", "c ", ""])
+        assert result == ["a", "b", "c", "missing"]
+
+    def test_handles_nan(self):
+        result = clean_column([float("nan"), "value"])
+        assert result == ["missing", "value"]
+
+    def test_preserves_numeric(self):
+        result = clean_column([1, 2.5, 3])
+        assert result == [1, 2.5, 3]
+
+
+# ── is_id_column ─────────────────────────────────────────────────────────────
+
+
+class TestIDColumn:
+    def test_detects_id_large_dataset(self):
+        # 25 unique IDs out of 25 rows → ID column
+        ids = [f"A{i}" for i in range(25)]
+        assert is_id_column(ids) is True
+
+    def test_not_id_low_cardinality(self):
+        assert is_id_column(["a", "b", "a", "b", "a"] * 5) is False  # 25 rows, 2 unique
+
+
+# ── detect_categorical on strings ────────────────────────────────────────────
+
+
+class TestCategoricalReadiness:
+    def test_numeric_strings_not_categorical(self):
+        """CSV reads numbers as strings — tenure '53', '15', '62' should be numeric."""
+        vals = ["53", "15", "62", "39", "28", "41", "2", "70", "18", "7", "66", "12"]
+        assert detect_categorical(vals) is False  # >10 unique numerics
+
+    def test_binary_strings_are_categorical(self):
+        assert detect_categorical(["Yes", "No", "Yes", "Yes", "No"]) is True
+
+    def test_mixed_alphanumeric_is_categorical(self):
+        assert detect_categorical(["monthly", "annual", "monthly", "annual"]) is True
+
+
+# ── CSV Reading ──────────────────────────────────────────────────────────────
+
+
+class TestReadCSV:
+    def test_reads_all_columns(self, sample_csv):
+        columns, order = read_csv_columns(sample_csv)
+        assert len(order) == 5
+        assert "age" in columns
+        assert "contract_type" in columns
+
+    def test_handles_missing_file(self):
+        with pytest.raises(FileNotFoundError):
+            read_csv_columns("/nonexistent/path.csv")
+
+
+# ── analyze_csv ──────────────────────────────────────────────────────────────
+
+
+class TestAnalyzeCSV:
+    def test_analyzes_with_target(self, sample_csv):
+        result = analyze_csv(sample_csv, target_column="churned")
+        assert result["n_rows"] == 8
+        assert result["target"] == "churned"
+        assert len(result["top_drivers"]) > 0
+        assert "id" not in result.get("numeric_columns", [])  # ID column skipped
+
+    def test_analyze_auto_selects_target(self, sample_csv):
+        result = analyze_csv(sample_csv)
+        assert result["target"] is not None
+        assert result["n_rows"] > 0
+
+    def test_numeric_columns_detected(self, sample_csv):
+        result = analyze_csv(sample_csv, target_column="churned")
+        # age and income should be numeric
+        assert "age" in result["numeric_columns"]
+        assert "income" in result["numeric_columns"]
+
+    def test_categorical_columns_detected(self, sample_csv):
+        result = analyze_csv(sample_csv, target_column="churned")
+        assert "contract_type" in result["categorical_columns"]
+
+
+# ── API Endpoint ─────────────────────────────────────────────────────────────
+
+
+class TestCSVAnalyzeAPI:
+    def test_csv_analyze_endpoint(self, client, sample_csv):
+        resp = client.post("/v2/csv/analyze", json={
+            "csv_path": sample_csv,
+            "target_column": "churned",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["target"] == "churned"
+        assert len(data["top_drivers"]) > 0
+
+    def test_csv_analyze_file_not_found(self, client):
+        resp = client.post("/v2/csv/analyze", json={
+            "csv_path": "/nonexistent/path.csv",
+        })
+        assert resp.status_code == 404

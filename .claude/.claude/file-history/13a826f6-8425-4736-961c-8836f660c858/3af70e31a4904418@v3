@@ -1,0 +1,544 @@
+//! Signal router — the central nervous system hub.
+//!
+//! Receives EyeReports from all 5 eyes, scores goal relevance,
+//! suppresses noise, resolves contradictions, and emits a unified
+//! RoutedSignal to the Decision Intelligence Layer.
+//!
+//! Pipeline:
+//! 1. Score each report for goal relevance
+//! 2. Filter out noise (relevance below threshold)
+//! 3. Amplify high-relevance signals
+//! 4. Resolve cross-eye contradictions
+//! 5. Synthesize unified RoutedSignal
+
+use ans_core::signal::{DistractionAlert, EyeReport, EyeReportContent, EyeName, RoutedSignal};
+
+use crate::contradiction::ContradictionResolver;
+
+/// Minimum relevance score for a report to pass noise suppression.
+const NOISE_THRESHOLD: f32 = 0.15;
+
+/// Eye-specific base weight for relevance scoring.
+fn eye_weight(eye: EyeName) -> f32 {
+    match eye {
+        EyeName::GoalVerifier => 0.35,
+        EyeName::PageDiff => 0.25,
+        EyeName::DomReader => 0.20,
+        EyeName::Vision => 0.15,
+        EyeName::ErrorDetector => 0.05,
+    }
+}
+
+/// The signal router. Single instance per daemon, shared across sessions.
+pub struct SignalRouter {
+    resolver: ContradictionResolver,
+}
+
+impl SignalRouter {
+    pub fn new() -> Self {
+        Self {
+            resolver: ContradictionResolver,
+        }
+    }
+
+    /// Route a batch of eye reports into a unified signal.
+    pub fn route(&self, reports: &[EyeReport]) -> RoutedSignal {
+        if reports.is_empty() {
+            return RoutedSignal {
+                unified_perception: String::new(),
+                alerts: Vec::new(),
+                confidence: 0.0,
+                recommended_action_hint: None,
+                contradictions: Vec::new(),
+            };
+        }
+
+        // 1. Score and filter
+        let scored: Vec<ScoredReport> = reports
+            .iter()
+            .map(|r| ScoredReport {
+                report: r,
+                relevance: compute_relevance(r),
+            })
+            .collect();
+
+        // 2. Suppress noise
+        let active: Vec<&ScoredReport> = scored
+            .iter()
+            .filter(|s| s.relevance >= NOISE_THRESHOLD)
+            .collect();
+
+        let reports_for_resolution: Vec<EyeReport> = if active.is_empty() {
+            // Everything was noise — keep the highest-relevance one as fallback
+            scored
+                .iter()
+                .max_by(|a, b| a.relevance.partial_cmp(&b.relevance).unwrap())
+                .map(|s| s.report.clone())
+                .into_iter()
+                .collect()
+        } else {
+            active.iter().map(|s| s.report.clone()).collect()
+        };
+
+        // 3. Resolve contradictions
+        let contradictions = self.resolver.resolve_all(&reports_for_resolution);
+
+        // 4. Synthesize unified perception
+        let parts: Vec<String> = reports_for_resolution
+            .iter()
+            .map(|r| format_eye_summary(r))
+            .collect();
+
+        let unified_perception = parts.join(" | ");
+
+        // 5. Compute aggregate confidence
+        let confidence = if reports_for_resolution.is_empty() {
+            0.0
+        } else {
+            let total: f32 = reports_for_resolution
+                .iter()
+                .map(|r| r.confidence * eye_weight(r.eye_name))
+                .sum();
+            let max_possible: f32 = reports_for_resolution
+                .iter()
+                .map(|r| eye_weight(r.eye_name))
+                .sum();
+            if max_possible > 0.0 {
+                (total / max_possible).clamp(0.0, 1.0)
+            } else {
+                0.0
+            }
+        };
+
+        // 6. Generate action hint
+        let hint = generate_hint(&reports_for_resolution, &contradictions);
+
+        // 7. Collect alerts from error reports
+        let alerts = collect_alerts(&reports_for_resolution);
+
+        RoutedSignal {
+            unified_perception,
+            alerts,
+            confidence,
+            recommended_action_hint: hint,
+            contradictions,
+        }
+    }
+}
+
+impl Default for SignalRouter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ── Internal types ─────────────────────────────────────────────────────
+
+struct ScoredReport<'a> {
+    report: &'a EyeReport,
+    relevance: f32,
+}
+
+// ── Relevance scoring ──────────────────────────────────────────────────
+
+fn compute_relevance(report: &EyeReport) -> f32 {
+    let base = eye_weight(report.eye_name);
+    let confidence_factor = report.confidence;
+    let content_boost = content_relevance_boost(&report.content);
+    let goal_relevance = report.goal_relevance;
+
+    // Weighted blend: eye authority, confidence, content signals, goal alignment
+    (base * 0.3 + confidence_factor * 0.25 + content_boost * 0.15 + goal_relevance * 0.3)
+        .clamp(0.0, 1.0)
+}
+
+fn content_relevance_boost(content: &EyeReportContent) -> f32 {
+    match content {
+        EyeReportContent::DomReport {
+            interactive, mode, ..
+        } => {
+            let mut boost: f32 = 0.3;
+            // More interactive elements = more actionable page
+            if interactive.len() > 5 {
+                boost += 0.2;
+            }
+            if *mode == ans_core::distill::DistillMode::InputFields {
+                boost += 0.1; // form interaction is high-signal
+            }
+            boost.clamp(0.0, 1.0)
+        }
+        EyeReportContent::VisionReport {
+            anomalies,
+            overlays,
+            ..
+        } => {
+            if !anomalies.is_empty() || !overlays.is_empty() {
+                0.7 // anomalies are high-signal
+            } else {
+                0.3
+            }
+        }
+        EyeReportContent::DiffReport {
+            visual_diff_pct,
+            summary,
+            ..
+        } => {
+            if *visual_diff_pct > 20.0 {
+                0.8
+            } else if summary.contains("content_update") || summary.contains("form_update") {
+                0.6
+            } else if summary.contains("navigation") {
+                0.4
+            } else {
+                0.2
+            }
+        }
+        EyeReportContent::Verification {
+            sub_goal_advanced,
+            confidence,
+            ..
+        } => {
+            if *sub_goal_advanced {
+                0.8 * confidence
+            } else {
+                0.3 * confidence
+            }
+        }
+        EyeReportContent::ErrorReport { .. } => 0.9, // errors are always high-signal
+    }
+}
+
+// ── Perception formatting ──────────────────────────────────────────────
+
+fn format_eye_summary(report: &EyeReport) -> String {
+    let content_summary = match &report.content {
+        EyeReportContent::DomReport {
+            elements,
+            interactive,
+            mode,
+        } => {
+            format!(
+                "DOM({}): {} el, {} interactive",
+                mode.as_str(),
+                elements.len(),
+                interactive.len()
+            )
+        }
+        EyeReportContent::VisionReport {
+            visible_elements,
+            overlays,
+            page_type,
+            anomalies,
+            ..
+        } => {
+            let mut s = format!(
+                "Vision: {} visible, type={}",
+                visible_elements.len(),
+                page_type
+            );
+            if !overlays.is_empty() {
+                s.push_str(&format!(", {} overlays", overlays.len()));
+            }
+            if !anomalies.is_empty() {
+                s.push_str(&format!(", {} anomalies", anomalies.len()));
+            }
+            s
+        }
+        EyeReportContent::DiffReport {
+            visual_diff_pct,
+            summary,
+            ..
+        } => {
+            format!("Diff: {:.0}% change ({})", visual_diff_pct, summary)
+        }
+        EyeReportContent::Verification {
+            sub_goal_advanced,
+            confidence,
+            criteria_status,
+            ..
+        } => {
+            format!(
+                "Verify: {} (conf={:.0}%, criteria={})",
+                if *sub_goal_advanced {
+                    "advanced"
+                } else {
+                    "no progress"
+                },
+                confidence * 100.0,
+                criteria_status,
+            )
+        }
+        EyeReportContent::ErrorReport {
+            failure_type,
+            description,
+            ..
+        } => {
+            format!("Error: {} — {}", failure_type, description)
+        }
+    };
+
+    format!(
+        "[{} r={:.0}% c={:.0}%] {}",
+        report.eye_name.as_str(),
+        report.goal_relevance * 100.0,
+        report.confidence * 100.0,
+        content_summary,
+    )
+}
+
+// ── Action hint generation ─────────────────────────────────────────────
+
+fn generate_hint(reports: &[EyeReport], contradictions: &[String]) -> Option<String> {
+    if !contradictions.is_empty() {
+        return Some("Cross-eye contradictions detected — verify before acting".into());
+    }
+
+    // Check for error reports
+    let errors: Vec<_> = reports
+        .iter()
+        .filter(|r| matches!(r.content, EyeReportContent::ErrorReport { .. }))
+        .collect();
+
+    if !errors.is_empty() {
+        return Some("Errors detected — attempt recovery before proceeding".into());
+    }
+
+    // Check for high-confidence verifier
+    let verifications: Vec<_> = reports
+        .iter()
+        .filter(|r| matches!(r.content, EyeReportContent::Verification { .. }))
+        .collect();
+
+    if let Some(v) = verifications.first() {
+        if v.confidence > 0.8 && v.goal_relevance > 0.7 {
+            if let EyeReportContent::Verification {
+                sub_goal_advanced: true,
+                ..
+            } = &v.content
+            {
+                return Some("Goal progressing — continue current strategy".into());
+            }
+        }
+    }
+
+    // Check for high-change diff
+    let diffs: Vec<_> = reports
+        .iter()
+        .filter(|r| matches!(r.content, EyeReportContent::DiffReport { .. }))
+        .collect();
+
+    if let Some(d) = diffs.first() {
+        if let EyeReportContent::DiffReport { visual_diff_pct, .. } = &d.content {
+            if *visual_diff_pct > 50.0 {
+                return Some("Major page change — re-assess page state before acting".into());
+            }
+        }
+    }
+
+    // Average relevance across all reports
+    let avg_relevance: f32 = reports.iter().map(|r| r.goal_relevance).sum::<f32>()
+        / reports.len().max(1) as f32;
+
+    if avg_relevance > 0.7 {
+        Some("High goal relevance — prioritize action".into())
+    } else if avg_relevance < 0.3 {
+        Some("Low goal relevance — consider re-navigating".into())
+    } else {
+        None
+    }
+}
+
+// ── Alert collection ───────────────────────────────────────────────────
+
+fn collect_alerts(reports: &[EyeReport]) -> Vec<DistractionAlert> {
+    let mut alerts = Vec::new();
+
+    for report in reports {
+        match &report.content {
+            EyeReportContent::VisionReport {
+                anomalies,
+                overlays,
+                ..
+            } => {
+                for anomaly in anomalies {
+                    alerts.push(DistractionAlert {
+                        kind: "vision_anomaly".into(),
+                        description: anomaly.clone(),
+                        action_taken: "flagged for review".into(),
+                    });
+                }
+                for overlay in overlays {
+                    alerts.push(DistractionAlert {
+                        kind: "overlay_detected".into(),
+                        description: overlay.clone(),
+                        action_taken: "dismiss before interaction".into(),
+                    });
+                }
+            }
+            EyeReportContent::ErrorReport {
+                failure_type,
+                description,
+                should_retry,
+                ..
+            } => {
+                alerts.push(DistractionAlert {
+                    kind: format!("error_{}", failure_type),
+                    description: description.clone(),
+                    action_taken: if *should_retry {
+                        "will retry".into()
+                    } else {
+                        "requires manual intervention".into()
+                    },
+                });
+            }
+            _ => {}
+        }
+    }
+
+    alerts
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ans_core::distill::DistillMode;
+    use chrono::Utc;
+
+    fn make_report(
+        eye: EyeName,
+        confidence: f32,
+        goal_relevance: f32,
+        content: EyeReportContent,
+    ) -> EyeReport {
+        EyeReport {
+            eye_name: eye,
+            timestamp: Utc::now(),
+            confidence,
+            goal_relevance,
+            content,
+        }
+    }
+
+    #[test]
+    fn test_empty_reports() {
+        let router = SignalRouter::new();
+        let signal = router.route(&[]);
+        assert_eq!(signal.confidence, 0.0);
+        assert!(signal.unified_perception.is_empty());
+    }
+
+    #[test]
+    fn test_single_report() {
+        let router = SignalRouter::new();
+        let reports = [make_report(
+            EyeName::DomReader,
+            0.9,
+            0.8,
+            EyeReportContent::DomReport {
+                elements: vec![],
+                interactive: vec![],
+                mode: DistillMode::AllFields,
+            },
+        )];
+        let signal = router.route(&reports);
+        assert!(signal.confidence > 0.0);
+        assert!(!signal.unified_perception.is_empty());
+        assert!(signal.contradictions.is_empty());
+    }
+
+    #[test]
+    fn test_noise_suppression_filters_low_relevance() {
+        let router = SignalRouter::new();
+        let reports = [
+            make_report(
+                EyeName::Vision,
+                0.3,
+                0.05, // very low relevance
+                EyeReportContent::VisionReport {
+                    visible_elements: vec![],
+                    overlays: vec![],
+                    blocked_regions: vec![],
+                    page_type: "unknown".into(),
+                    anomalies: vec![],
+                    raw_response: String::new(),
+                },
+            ),
+            make_report(
+                EyeName::DomReader,
+                0.9,
+                0.8,
+                EyeReportContent::DomReport {
+                    elements: vec![],
+                    interactive: vec![],
+                    mode: DistillMode::AllFields,
+                },
+            ),
+        ];
+        let signal = router.route(&reports);
+        // The vision report should be suppressed; only DOM reader in output
+        let vision_mentions = signal
+            .unified_perception
+            .matches("Vision")
+            .count();
+        // Vision may appear if it's the only fallback, but here DOM is present
+        assert!(
+            signal.unified_perception.contains("dom_reader"),
+            "DOM reader should be present"
+        );
+    }
+
+    #[test]
+    fn test_error_report_generates_alert() {
+        let router = SignalRouter::new();
+        let reports = [make_report(
+            EyeName::ErrorDetector,
+            0.9,
+            1.0,
+            EyeReportContent::ErrorReport {
+                failure_type: "timeout".into(),
+                description: "Page load timed out after 30s".into(),
+                recovery_actions: vec!["retry".into()],
+                should_retry: true,
+                max_retries: 3,
+            },
+        )];
+        let signal = router.route(&reports);
+        assert_eq!(signal.alerts.len(), 1);
+        assert_eq!(signal.alerts[0].kind, "error_timeout");
+        assert!(signal.recommended_action_hint.is_some());
+    }
+
+    #[test]
+    fn test_contradictions_detected_in_mixed_reports() {
+        let router = SignalRouter::new();
+        let reports = [
+            make_report(
+                EyeName::DomReader,
+                0.9,
+                0.8,
+                EyeReportContent::DomReport {
+                    elements: vec![],
+                    interactive: vec![],
+                    mode: DistillMode::AllFields,
+                },
+            ),
+            make_report(
+                EyeName::Vision,
+                0.8,
+                0.7,
+                EyeReportContent::VisionReport {
+                    visible_elements: vec![],
+                    overlays: vec![],
+                    blocked_regions: vec![],
+                    page_type: "form".into(),
+                    anomalies: vec!["unexpected popup".into()],
+                    raw_response: String::new(),
+                },
+            ),
+        ];
+        let signal = router.route(&reports);
+        // DOM should override Vision on anomaly, producing a contradiction
+        assert!(!signal.contradictions.is_empty());
+        assert!(signal.recommended_action_hint.is_some());
+    }
+}

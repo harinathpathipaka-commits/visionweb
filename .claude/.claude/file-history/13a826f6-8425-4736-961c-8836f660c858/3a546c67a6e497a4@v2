@@ -1,0 +1,8 @@
+//! WebSocket server for streaming events to external agents.
+//!
+//! Agents that need real-time feedback (goal progress, eye reports,
+//! injection alerts) connect here. Events are JSON-serialized and
+//! pushed as they happen.
+
+/// The WebSocket server — event stream for connected agents.
+pub struct WebSocketServer;

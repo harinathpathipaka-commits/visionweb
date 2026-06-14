@@ -1,0 +1,18 @@
+//! Cost tracking and budget enforcement.
+//!
+//! Tracks LLM/Vision API spend per-goal and globally (per API key).
+//! Implements the 4-level circuit breaker:
+//!
+//! ```text
+//! Normal(>20%) → Conservative(10-20%) → Critical(5-10%) → Emergency(<5%)
+//! ```
+//!
+//! Before every LLM call, the budget tracker checks the current mode
+//! and either allows, throttles, or blocks the call. Budget state is
+//! persisted to LanceDB for crash recovery.
+
+pub mod circuit_breaker;
+pub mod tracker;
+
+pub use circuit_breaker::CircuitBreaker;
+pub use tracker::BudgetTracker;

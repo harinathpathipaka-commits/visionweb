@@ -1,0 +1,8 @@
+{
+  "id": "2",
+  "subject": "Phase 2: Missing Layers — Build epistemic_parser.py, correlation.py, formatter.py",
+  "description": "Create L1 (LLM extraction), L2 (correlation + drift), L7 (LLM formatter) from scratch.",
+  "status": "completed",
+  "blocks": [],
+  "blockedBy": []
+}

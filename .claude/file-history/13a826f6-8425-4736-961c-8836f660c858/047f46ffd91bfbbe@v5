@@ -1,0 +1,110 @@
+[workspace]
+members = [
+    "crates/ans-proto",
+    "crates/ans-core",
+    "crates/ans-daemon",
+    "crates/ans-cdp",
+    "crates/ans-distill",
+    "crates/ans-diff",
+    "crates/ans-immune",
+    "crates/ans-goal",
+    "crates/ans-signal",
+    "crates/ans-ipc",
+    "crates/ans-storage",
+    "crates/ans-budget",
+    "crates/ans-gateway",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "UNLICENSED"
+repository = "https://github.com/agent-nervous-system/ans"
+authors = ["Agent Nervous System Team"]
+
+[workspace.dependencies]
+# ── Async Runtime ──────────────────────────────────────────
+tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+
+# ── gRPC ───────────────────────────────────────────────────
+tonic = "0.12"
+prost = "0.13"
+tonic-build = "0.12"
+
+# ── Serialization ──────────────────────────────────────────
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# ── Arrow / Data ───────────────────────────────────────────
+arrow = "53"
+arrow-flight = "53"
+parquet = "53"
+
+# ── Utilities ──────────────────────────────────────────────
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+clap = { version = "4", features = ["derive"] }
+
+# ── Async Traits ───────────────────────────────────────────
+async-trait = "0.1"
+futures-util = { version = "0.3", features = ["sink"] }
+
+# ── Web / HTTP ─────────────────────────────────────────────
+axum = { version = "0.7", features = ["ws"] }
+tower = "0.5"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+hyper = "1"
+
+# ── WebSocket (CDP) ────────────────────────────────────────
+tokio-tungstenite = "0.24"
+tungstenite = "0.24"
+
+# ── Error Handling ─────────────────────────────────────────
+eyre = "0.6"
+color-eyre = "0.6"
+
+# ── Testing ────────────────────────────────────────────────
+tokio-test = "0.4"
+pretty_assertions = "1"
+criterion = "0.5"
+
+# ── Internal Crates ────────────────────────────────────────
+ans-proto = { path = "crates/ans-proto" }
+ans-core = { path = "crates/ans-core" }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+unused_must_use = "deny"
+rust_2018_idioms = { level = "deny", priority = -1 }
+# Relaxed in Phase 0 (scaffolding); tightened in Phase 9:
+missing_docs = "allow"
+unused_variables = "allow"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+# Packages don't inherit workspace metadata fields
+cargo_common_metadata = "allow"
+unwrap_used = "deny"
+expect_used = "warn"
+dbg_macro = "deny"
+# Relaxed in Phase 0 (scaffolding):
+todo = "allow"
+print_stdout = "allow"
+print_stderr = "allow"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+panic = "abort"
+strip = true

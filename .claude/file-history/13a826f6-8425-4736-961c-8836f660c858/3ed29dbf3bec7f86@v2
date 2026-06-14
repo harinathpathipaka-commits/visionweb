@@ -1,0 +1,35 @@
+---
+name: implementation-phases
+description: Phase 1 builds everything on Chrome (no Agent Web). Agent Web is a future phase. The Decision Intelligence Layer scores actions/tools per context and selects by looking at scored memory.
+metadata: 
+  node_type: memory
+  type: project
+  originSessionId: 13a826f6-8425-4736-961c-8836f660c858
+---
+
+## Rule
+
+**Phase 1:** Build the full product on Chrome/Playwright — Nervous System, 5 Eyes, Decision Intelligence Layer — everything except the Agent Web browser. Chrome is good enough for now. The Agent Web is a future phase.
+
+**Why:** Get the architecture working and proven first. The Agent Web is a ground-up browser — that's a massive engineering effort. Don't block the rest of the system on it.
+
+**How to apply:** Layer 2 (Agent Web) is replaced by Chrome + Playwright in Phase 1. Layers 3 (Nervous System + Eyes) and 4 (Decision Intelligence) are built on top of existing browser infrastructure. The architecture is designed so the Agent Web can be swapped in later without changing layers 3 and 4.
+
+## Decision Intelligence Layer: Scoring Mechanism
+
+After every action, the agent scores it:
+
+```
+Score(action, tool, context/task_type) = f(
+    outcome,        // success or failure
+    results,        // what was produced
+    error_message,  // if failed — why
+    business_outcome // did the goal advance?
+)
+```
+
+When the agent faces a similar context/task type again, it picks the best action/tool by looking at the scored memory — highest-scoring action for that context wins.
+
+This is not complex ML. It's a pragmatic scoring table keyed by (context_type, action, tool) → score. The agent learns from its own execution history within the same session and across sessions.
+
+**Related:** [[agent-web-architecture]] [[decision-intelligence-layer]]

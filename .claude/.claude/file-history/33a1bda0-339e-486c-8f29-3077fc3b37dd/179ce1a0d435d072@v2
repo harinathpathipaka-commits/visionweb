@@ -1,0 +1,161 @@
+"""Embedding generator — local all-MiniLM-L6-v2 primary, OpenAI fallback, hash last-resort.
+
+all-MiniLM-L6-v2: 384-dim, fast init, runs locally with no API cost.
+Falls back to OpenAI text-embedding-3-small (1536-dim) if local model unavailable.
+Last resort: deterministic hash-based embedding.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import struct
+from typing import Any
+
+import numpy as np
+import httpx
+from openai import AsyncOpenAI
+
+from ans_nerves.config import get_config, get_vision_api_key
+from ans_nerves.logging import get_logger
+
+logger = get_logger(__name__)
+
+_LOCAL_MODEL_NAME = "all-MiniLM-L6-v2"
+_LOCAL_DIM = 384
+
+
+class EmbeddingGenerator:
+    """Local BGE-M3 embeddings with OpenAI fallback."""
+
+    def __init__(self, model_name: str | None = None) -> None:
+        config = get_config()
+        self._model_name = model_name or config.llm.embedding_model
+        self._dimension = config.llm.embedding_dim
+        self._client: AsyncOpenAI | None = None
+        self._local_model: Any = None
+        self._local_available: bool | None = None  # None = not tried yet
+
+    @property
+    def dimension(self) -> int:
+        return self._dimension
+
+    @property
+    def model_available(self) -> bool:
+        if self._local_available is None:
+            try:
+                from sentence_transformers import SentenceTransformer
+                self._local_model = SentenceTransformer(_LOCAL_MODEL_NAME)
+                self._local_available = True
+                logger.info("all-MiniLM-L6-v2 embedding model loaded (384-dim)")
+            except Exception:
+                self._local_available = False
+                logger.info("all-MiniLM-L6-v2 not available, will use OpenAI fallback")
+        return self._local_available
+
+    def _ensure_client(self) -> AsyncOpenAI:
+        if self._client is None:
+            api_key = get_vision_api_key()
+            self._client = AsyncOpenAI(
+                api_key=api_key,
+                timeout=httpx.Timeout(10.0),
+                max_retries=1,
+            )
+        return self._client
+
+    async def _call_openai(self, texts: list[str]) -> list[list[float]]:
+        client = self._ensure_client()
+        response = await client.embeddings.create(
+            model=self._model_name, input=texts, dimensions=_LOCAL_DIM,
+        )
+        return [d.embedding for d in sorted(response.data, key=lambda d: d.index)]
+
+    async def embed_async(self, text: str) -> list[float]:
+        if not text.strip():
+            return [0.0] * self._dimension
+
+        # 1. Local BGE-M3 (fast, free)
+        if self.model_available and self._local_model is not None:
+            try:
+                emb = self._local_model.encode(text, normalize_embeddings=True)
+                return self._pad_or_truncate(emb.tolist(), self._dimension)
+            except Exception:
+                pass
+
+        # 2. OpenAI fallback
+        try:
+            results = await self._call_openai([text])
+            return self._pad_or_truncate(results[0], self._dimension)
+        except Exception as exc:
+            logger.debug("Embedding API failed: %s, using hash fallback", exc)
+
+        # 3. Hash fallback
+        return self._fallback_embed(text)
+
+    async def embed_batch_async(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+
+        # 1. Local model
+        if self.model_available and self._local_model is not None:
+            try:
+                embeddings = self._local_model.encode(
+                    texts, normalize_embeddings=True, show_progress_bar=False,
+                )
+                return [self._pad_or_truncate(e.tolist(), self._dimension) for e in embeddings]
+            except Exception:
+                pass
+
+        # 2. OpenAI
+        try:
+            non_empty = [t if t.strip() else " " for t in texts]
+            results = await self._call_openai(non_empty)
+            return [self._pad_or_truncate(r, self._dimension) for r in results]
+        except Exception as exc:
+            logger.debug("Batch embedding API failed: %s, using hash fallback", exc)
+
+        # 3. Hash fallback
+        return [self._fallback_embed(t) for t in texts]
+
+    def _fallback_embed(self, text: str) -> list[float]:
+        tokens = text.lower().split()
+        if not tokens:
+            return [0.0] * self._dimension
+        vec = np.zeros(self._dimension, dtype=np.float32)
+        for token in set(tokens):
+            h = hashlib.sha256(token.encode()).digest()
+            for i in range(0, 32, 4):
+                idx = struct.unpack("<I", h[i: i + 4])[0] % self._dimension
+                vec[idx] += 1.0
+        norm = float(np.linalg.norm(vec))
+        if norm > 0:
+            vec = vec / norm
+        return vec.tolist()
+
+    def build_context_text(
+        self, action_type: str = "", selector: str = "",
+        tool: str = "", goal_description: str = "", page_type: str = "",
+    ) -> str:
+        parts = [
+            f"action:{action_type}", f"tool:{tool}", f"selector:{selector}",
+            f"goal:{goal_description}", f"page:{page_type}",
+        ]
+        return " ".join(parts)
+
+    @staticmethod
+    def _pad_or_truncate(vec: list[float], target_dim: int) -> list[float]:
+        if len(vec) == target_dim:
+            return vec
+        if len(vec) > target_dim:
+            return vec[:target_dim]
+        return vec + [0.0] * (target_dim - len(vec))
+
+
+# Singleton
+_generator: EmbeddingGenerator | None = None
+
+
+def get_embedding_generator() -> EmbeddingGenerator:
+    global _generator
+    if _generator is None:
+        _generator = EmbeddingGenerator()
+    return _generator

@@ -1,0 +1,79 @@
+use crate::ingestion::{ObservationDraft, QualityIssue};
+
+/// Run quality checks on observations: outlier detection, range validation.
+pub fn check_quality(
+    observations: &[ObservationDraft],
+    z_threshold: f64,
+    min_value: f64,
+    max_value: f64,
+) -> (Vec<ObservationDraft>, Vec<QualityIssue>) {
+    let mut clean: Vec<ObservationDraft> = Vec::new();
+    let mut issues: Vec<QualityIssue> = Vec::new();
+
+    // Group by variable for per-variable outlier detection.
+    let mut by_var: std::collections::HashMap<String, Vec<&ObservationDraft>> =
+        std::collections::HashMap::new();
+    for obs in observations {
+        by_var.entry(obs.variable.clone()).or_default().push(obs);
+    }
+
+    for (_, group) in &by_var {
+        let mean = group.iter().map(|o| o.value).sum::<f64>() / group.len() as f64;
+        let variance = group
+            .iter()
+            .map(|o| (o.value - mean).powi(2))
+            .sum::<f64>()
+            / group.len() as f64;
+        let std = variance.sqrt();
+
+        for obs in group {
+            let mut rejected = false;
+
+            // Range check
+            if obs.value < min_value {
+                issues.push(QualityIssue {
+                    row_index: obs.row_index,
+                    column_name: String::new(),
+                    code: "below_min".into(),
+                    severity: "error".into(),
+                    message: format!("Value {} below minimum {}", obs.value, min_value),
+                });
+                rejected = true;
+            }
+            if obs.value > max_value && max_value > min_value {
+                issues.push(QualityIssue {
+                    row_index: obs.row_index,
+                    column_name: String::new(),
+                    code: "above_max".into(),
+                    severity: "error".into(),
+                    message: format!("Value {} above maximum {}", obs.value, max_value),
+                });
+                rejected = true;
+            }
+
+            // Outlier check
+            if std > 0.0 {
+                let z = (obs.value - mean).abs() / std;
+                if z > z_threshold {
+                    issues.push(QualityIssue {
+                        row_index: obs.row_index,
+                        column_name: String::new(),
+                        code: "outlier".into(),
+                        severity: "warning".into(),
+                        message: format!(
+                            "Value {} is {:.1} std deviations from mean {:.2}",
+                            obs.value, z, mean
+                        ),
+                    });
+                    rejected = true;
+                }
+            }
+
+            if !rejected {
+                clean.push((*obs).clone());
+            }
+        }
+    }
+
+    (clean, issues)
+}

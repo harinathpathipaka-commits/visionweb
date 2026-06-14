@@ -1,0 +1,28 @@
+//! Page diff engine.
+//!
+//! Computes structural differences between two distilled DOM trees.
+//! Uses Zhang-Shasha tree edit distance for accurate structural diff.
+//! Runs automatically after every action — the Goal Verifier consumes
+//! the diff to check sub-goal criteria.
+
+use ans_core::distill::DistilledPage;
+
+/// The page differ. Created once, called after every action.
+pub struct PageDiffer;
+
+impl PageDiffer {
+    /// Compute diff between two page snapshots.
+    pub fn diff(&self, _before: &DistilledPage, _after: &DistilledPage) -> DiffOutput {
+        todo!("Phase 2: DOM + Diff")
+    }
+}
+
+/// The output of a diff computation.
+pub struct DiffOutput {
+    pub added: Vec<String>,
+    pub removed: Vec<String>,
+    pub modified: Vec<String>,
+    pub visual_diff_pct: f32,
+    pub summary: String,
+    pub is_same_page: bool,
+}

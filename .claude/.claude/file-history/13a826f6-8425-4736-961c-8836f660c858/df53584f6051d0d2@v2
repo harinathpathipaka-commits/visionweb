@@ -1,0 +1,28 @@
+"""Error Detector Eye — failure classification + recovery strategies.
+
+Runs only when an action fails. Classifies failures into:
+silent_fail, wrong_element, blocked_interaction, state_mismatch,
+goal_drift, timeout, navigation_error.
+
+Produces a RecoveryStrategy with ordered recovery actions.
+"""
+
+from .base import BaseEye, EyeReport
+
+
+class ErrorDetectorEye(BaseEye):
+    """Detects and classifies action failures, suggests recovery."""
+
+    name = "error_detector"
+
+    async def observe(self, session_id: str, page_data: dict) -> EyeReport:
+        return EyeReport(
+            eye_name=self.name,
+            content={
+                "failure_type": "silent_fail",
+                "description": "",
+                "recovery_actions": [],
+                "should_retry": False,
+                "max_retries": 1,
+            },
+        )

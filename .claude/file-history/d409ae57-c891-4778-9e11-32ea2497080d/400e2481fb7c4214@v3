@@ -1,0 +1,167 @@
+from __future__ import annotations
+
+import csv
+import os
+from typing import Any, Dict, List, Optional, Tuple
+
+from .categorical import clean_column, detect_categorical, auto_encode
+from .discovery import rank_variables, discover_relationships
+from .multivar import fit_multivariate
+
+
+def read_csv_columns(
+    csv_path: str,
+    encoding: str = "utf-8",
+    max_rows: int = 100_000,
+) -> Tuple[Dict[str, List], List[str]]:
+    """Read a CSV and return {column_name: [values]} plus the list of column names in order.
+
+    Handles: missing values, mixed types, empty files, bad encoding.
+    """
+    if not os.path.exists(csv_path):
+        raise FileNotFoundError(f"CSV not found: {csv_path}")
+
+    columns: Dict[str, List] = {}
+    col_order: List[str] = []
+    n_rows = 0
+
+    # Try the specified encoding, fall back to common alternatives
+    for enc in [encoding, "utf-8-sig", "latin-1", "cp1252", "utf-8"]:
+        try:
+            with open(csv_path, "r", encoding=enc, errors="replace") as f:
+                reader = csv.DictReader(f)
+                if reader.fieldnames is None:
+                    continue
+                col_order = list(reader.fieldnames)
+                columns = {name: [] for name in col_order}
+                for row in reader:
+                    for name in col_order:
+                        columns[name].append(row.get(name, ""))
+                    n_rows += 1
+                    if n_rows >= max_rows:
+                        break
+            break
+        except (UnicodeDecodeError, csv.Error):
+            continue
+
+    return columns, col_order
+
+
+def analyze_csv(
+    csv_path: str,
+    target_column: Optional[str] = None,
+    encoding: str = "utf-8",
+    top_k: int = 10,
+) -> Dict[str, Any]:
+    """Full CSV analysis pipeline: read → clean → detect → encode → fit → rank.
+
+    If target_column is None, auto-selects the last numeric column.
+    Returns {columns, categorical, target, drivers, relationships, fit}.
+    """
+    # 1. Read
+    columns, col_order = read_csv_columns(csv_path, encoding=encoding)
+    if not columns:
+        return {"error": "Could not read CSV or no columns found", "columns": []}
+
+    n_rows = max(len(v) for v in columns.values()) if columns else 0
+
+    # 2. Clean and separate numeric vs categorical
+    cleaned: Dict[str, List] = {}
+    numeric_cols: Dict[str, List[float]] = {}
+    categorical_cols: Dict[str, bool] = {}
+
+    for name, vals in columns.items():
+        cleaned[name] = clean_column(vals)
+
+    # Try numeric conversion first — CSV reads everything as string
+    for name, vals in cleaned.items():
+        num_vals: List[float] = []
+        success_count = 0
+        for v in vals:
+            try:
+                num_vals.append(float(v))
+                success_count += 1
+            except (ValueError, TypeError):
+                num_vals.append(0.0)
+        # If >80% of values parse as float, treat as numeric
+        is_numeric = success_count > len(vals) * 0.8 and len(vals) > 0
+        if is_numeric:
+            numeric_cols[name] = num_vals
+            categorical_cols[name] = detect_categorical(num_vals)  # Re-check on numeric
+        else:
+            categorical_cols[name] = True  # String column → categorical
+
+    # 4. Auto-select target and convert to numeric if needed
+    if target_column is None or target_column not in cleaned:
+        # Pick the last column with variance (often the target in Kaggle datasets)
+        for name in reversed(col_order):
+            vals = cleaned[name]
+            unique = set(str(v) for v in vals if v is not None)
+            if len(unique) > 1:
+                target_column = name
+                break
+        if target_column is None:
+            return {"error": "No target column found", "columns": col_order}
+
+    target_raw = cleaned.get(target_column, [])
+    if not target_raw:
+        return {"error": f"Target column '{target_column}' empty", "columns": col_order}
+
+    # Convert target to numeric: binary strings → 0/1, else try float
+    unique_target = list(set(str(v) for v in target_raw if v is not None))
+    if len(unique_target) == 2 and any(v.lower() in ("yes", "no", "true", "false") for v in unique_target):
+        # Binary string target (e.g., Churn: Yes/No) → encode to 0/1
+        pos_value = next(v for v in unique_target if v.lower() in ("yes", "true"))
+        target_values = [1.0 if str(v) == pos_value else 0.0 for v in target_raw]
+    elif all(t in numeric_cols.get(target_column, []) for t in [0]):  # Already numeric
+        target_values = numeric_cols[target_column]
+    else:
+        # Try to label-encode
+        try:
+            target_values = [float(v) for v in target_raw]
+        except (ValueError, TypeError):
+            from .categorical import label_encode
+            target_values, _ = label_encode(target_raw)
+
+    # 5. Encode categorical predictors for multi-variable analysis
+    encoded_predictors = auto_encode(
+        {k: cleaned[k] for k in cleaned if k != target_column},
+        categorical_flags={k: v for k, v in categorical_cols.items() if k != target_column},
+    )
+    # Build full numeric dict for ranking
+    all_numeric = {**encoded_predictors, target_column: target_values}
+    drivers = rank_variables(all_numeric, target_column, target_values, top_k=top_k)
+
+    # 6. Fit top predictors (multi-variable)
+    predictor_cols = [d["variable"] for d in drivers[:min(top_k, len(drivers))]
+                      if d["variable"] in all_numeric and d["variable"] != target_column]
+
+    fit_result = None
+    if predictor_cols:
+        X = {p: all_numeric[p] for p in predictor_cols}
+        if X:
+            fit_result = fit_multivariate(X, target_values)
+
+    # 7. Pairwise relationships
+    key_cols = [target_column] + predictor_cols[:min(5, len(predictor_cols))]
+    subset = {k: all_numeric[k] for k in key_cols if k in all_numeric}
+    relationships = discover_relationships(subset, min_correlation=0.1)
+
+    return {
+        "csv_path": csv_path,
+        "n_rows": n_rows,
+        "n_columns": len(columns),
+        "columns": col_order,
+        "categorical_columns": [k for k, v in categorical_cols.items() if v],
+        "numeric_columns": list(numeric_cols.keys()),
+        "target": target_column,
+        "top_drivers": drivers,
+        "fit": {
+            "r2": round(fit_result["r2"], 4) if fit_result else None,
+            "adj_r2": round(fit_result["adj_r2"], 4) if fit_result else None,
+            "aic": round(fit_result["aic"], 2) if fit_result else None,
+            "coefficients": {k: round(v, 6) for k, v in fit_result.get("coefficients", {}).items()} if fit_result else {},
+            "variable_importance": fit_result.get("variable_importance", {}) if fit_result else {},
+        } if fit_result else None,
+        "pairwise_relationships": relationships,
+    }

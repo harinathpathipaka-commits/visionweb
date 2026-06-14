@@ -1,0 +1,4 @@
+//! Serialize/deserialize distilled DOM for Arrow IPC and gRPC.
+//!
+//! Converts between [`DistilledPage`] and the protobuf [`DistilledDom`]
+//! message type. Also supports Arrow RecordBatch for bulk transfers.

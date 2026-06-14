@@ -1,0 +1,249 @@
+"""Decision Intelligence — feedback loop tying embeddings, scoring, and storage.
+
+The core loop: action → outcome → score → embed → store → retrieve.
+
+DecisionIntelligence is the main entry point for the decision layer.
+It records every (action, tool, context) tuple with its outcome, stores it
+in LanceDB with a vector embedding, and can query the best actions for
+any given context via ANN similarity search.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from typing import Any
+
+from ans_nerves.scoring.embeddings import EmbeddingGenerator, get_embedding_generator
+from ans_nerves.scoring.scorer import DecisionScorer, ImmediateOutcome, ShortTermOutcome
+from ans_nerves.scoring.store import LanceDBStore, get_store
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ScoredAction:
+    """A retrieved scored action with its metadata."""
+
+    id: str = ""
+    action_type: str = ""
+    selector: str = ""
+    tool: str = ""
+    context_type: str = ""
+    composite_score: float = 0.0
+    outcome_score: float = 0.0
+    result_score: float = 0.0
+    error_penalty: float = 0.0
+    business_outcome: float = 0.0
+    use_count: int = 0
+    last_used_at: int = 0
+    distance: float = 0.0
+
+
+@dataclass
+class ActionRecord:
+    """Input data for recording a completed action."""
+
+    session_id: str = ""
+    goal_id: str = ""
+    action_type: str = ""
+    selector: str = ""
+    value: str = ""
+    tool: str = ""
+    context_type: str = ""
+    goal_description: str = ""
+    page_type: str = ""
+    action_succeeded: bool = False
+    results_produced: str = ""
+    error_message: str | None = None
+    goal_advanced: bool = False
+    criterion_met: str | None = None
+    sub_goal_completed: bool = False
+    execution_time_ms: int = 0
+
+
+class DecisionIntelligence:
+    """Feedback loop: score → embed → store → retrieve.
+
+    Usage:
+        di = DecisionIntelligence()
+
+        # After each action:
+        di.record_action(ActionRecord(
+            session_id="s1", goal_id="g1",
+            action_type="click", selector="#search-btn",
+            action_succeeded=True, goal_advanced=True,
+        ))
+
+        # Before taking the next action:
+        best = di.query_best_actions(
+            action_type="click",
+            goal_description="Find flights from Delhi to Mumbai",
+        )
+
+        # When long-term business outcomes arrive:
+        di.report_outcome(record_id="abc123", business_outcome=0.9)
+    """
+
+    def __init__(
+        self,
+        embedder: EmbeddingGenerator | None = None,
+        store: LanceDBStore | None = None,
+        scorer: DecisionScorer | None = None,
+    ) -> None:
+        self._embedder = embedder or get_embedding_generator()
+        self._store = store or get_store()
+        self._scorer = scorer or DecisionScorer()
+
+    @property
+    def store(self) -> LanceDBStore:
+        return self._store
+
+    @property
+    def total_records(self) -> int:
+        return self._store.count()
+
+    def record_action(self, record: ActionRecord) -> str:
+        """Score an action outcome, embed its context, and persist to LanceDB.
+
+        Returns the record ID for later outcome updates.
+        """
+        # 1. Score the action
+        composite_score = self._scorer.score(
+            action_succeeded=record.action_succeeded,
+            results_summary=record.results_produced,
+            error_message=record.error_message,
+            goal_advanced=record.goal_advanced,
+        )
+
+        immediate = ImmediateOutcome(
+            action_succeeded=record.action_succeeded,
+            results_produced=record.results_produced,
+            error_message=record.error_message,
+            execution_time_ms=record.execution_time_ms,
+        )
+
+        short_term = ShortTermOutcome(
+            goal_advanced=record.goal_advanced,
+            criterion_met=record.criterion_met,
+            sub_goal_completed=record.sub_goal_completed,
+        )
+
+        outcome_score = immediate.score()
+        result_score = short_term.score()
+        error_penalty = 0.0 if record.action_succeeded else (
+            0.5 if record.error_message and "timeout" in record.error_message
+            else 1.0
+        )
+
+        # 2. Build context text and embed it
+        context_text = self._embedder.build_context_text(
+            action_type=record.action_type,
+            selector=record.selector,
+            tool=record.tool,
+            goal_description=record.goal_description,
+            page_type=record.page_type,
+        )
+        embedding = self._embedder.embed(context_text)
+
+        # 3. Store in LanceDB
+        record_id = self._store.store(
+            session_id=record.session_id,
+            goal_id=record.goal_id,
+            action_type=record.action_type,
+            selector=record.selector,
+            value=record.value,
+            tool=record.tool,
+            context_type=record.context_type,
+            context_text=context_text,
+            embedding=embedding,
+            outcome_score=outcome_score,
+            result_score=result_score,
+            error_penalty=error_penalty,
+            business_outcome=0.0,  # populated later via report_outcome
+            error_message=record.error_message or "",
+        )
+
+        logger.debug(
+            "record_action: id=%s action=%s score=%.3f",
+            record_id,
+            record.action_type,
+            composite_score,
+        )
+        return record_id
+
+    def query_best_actions(
+        self,
+        *,
+        action_type: str = "",
+        selector: str = "",
+        tool: str = "",
+        goal_description: str = "",
+        page_type: str = "",
+        context_type: str | None = None,
+        k: int = 5,
+        min_score: float = 0.0,
+    ) -> list[ScoredAction]:
+        """Find the best past actions for the current context via ANN search.
+
+        Embeds the current context and queries LanceDB for similar successful
+        actions, ranked by composite score.
+        """
+        context_text = self._embedder.build_context_text(
+            action_type=action_type,
+            selector=selector,
+            tool=tool,
+            goal_description=goal_description,
+            page_type=page_type,
+        )
+        embedding = self._embedder.embed(context_text)
+
+        results = self._store.query(
+            embedding=embedding,
+            k=k,
+            min_score=min_score,
+            context_type=context_type,
+        )
+
+        return [
+            ScoredAction(
+                id=r.get("id", ""),
+                action_type=r.get("action_type", ""),
+                selector=r.get("selector", ""),
+                tool=r.get("tool", ""),
+                context_type=r.get("context_type", ""),
+                composite_score=r.get("composite_score", 0.0),
+                outcome_score=r.get("outcome_score", 0.0),
+                result_score=r.get("result_score", 0.0),
+                error_penalty=r.get("error_penalty", 0.0),
+                business_outcome=r.get("business_outcome", 0.0),
+                use_count=r.get("use_count", 0),
+                last_used_at=r.get("last_used_at", 0),
+                distance=r.get("distance", 1.0),
+            )
+            for r in results
+        ]
+
+    def report_outcome(
+        self,
+        record_id: str,
+        *,
+        business_outcome: float | None = None,
+        result_score: float | None = None,
+        error_penalty: float | None = None,
+    ) -> bool:
+        """Update a stored action record with long-term business outcomes.
+
+        Called asynchronously when business outcomes materialize.
+        """
+        return self._store.update_outcome(
+            record_id,
+            business_outcome=business_outcome,
+            result_score=result_score,
+            error_penalty=error_penalty,
+            increment_use=True,
+        )
+
+    def record_batch(self, records: list[ActionRecord]) -> list[str]:
+        """Record multiple actions at once."""
+        return [self.record_action(r) for r in records]

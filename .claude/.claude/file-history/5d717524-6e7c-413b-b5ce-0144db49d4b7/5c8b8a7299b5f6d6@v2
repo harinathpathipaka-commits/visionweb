@@ -1,0 +1,26 @@
+"""Decision scoring engine — the 3-layer business outcome model.
+
+Scores every (action, tool, context) tuple across three temporal layers:
+1. Immediate (t=0)        — Did the action work technically?
+2. Short-term (t=min-hrs) — Did the goal advance in this session?
+3. Long-term (t=days-mon) — Did the business outcome materialize?
+
+Feedback loop: action → outcome → score → embed → store → retrieve.
+Stored in LanceDB with 384-dim context embeddings for ANN similarity search.
+"""
+
+from .embeddings import EmbeddingGenerator, get_embedding_generator
+from .intelligence import ActionRecord, DecisionIntelligence, ScoredAction
+from .scorer import DecisionScorer
+from .store import LanceDBStore, get_store
+
+__all__ = [
+    "DecisionScorer",
+    "DecisionIntelligence",
+    "EmbeddingGenerator",
+    "LanceDBStore",
+    "ActionRecord",
+    "ScoredAction",
+    "get_embedding_generator",
+    "get_store",
+]

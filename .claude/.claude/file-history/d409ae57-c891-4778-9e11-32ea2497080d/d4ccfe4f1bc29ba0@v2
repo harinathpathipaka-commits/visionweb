@@ -1,0 +1,178 @@
+"""Tests for Phase 3: Time-series forecasting."""
+from __future__ import annotations
+
+import math
+
+import pytest
+from fastapi.testclient import TestClient
+
+from src.api import app
+from src.forecast import (
+    extract_trend,
+    detect_seasonality,
+    decompose,
+    forecast,
+)
+
+
+@pytest.fixture
+def client():
+    return TestClient(app)
+
+
+# ── Trend Extraction ─────────────────────────────────────────────────────────
+
+
+class TestTrendExtraction:
+    def test_upward_trend(self):
+        y = [1.0, 2.0, 3.0, 4.0, 5.0]
+        result = extract_trend(y)
+        assert result["slope"] == pytest.approx(1.0, abs=0.01)
+        assert result["intercept"] == pytest.approx(1.0, abs=0.01)
+        assert result["r2"] == pytest.approx(1.0, abs=0.01)
+
+    def test_downward_trend(self):
+        y = [5.0, 4.0, 3.0, 2.0, 1.0]
+        result = extract_trend(y)
+        assert result["slope"] == pytest.approx(-1.0, abs=0.01)
+        assert result["r2"] == pytest.approx(1.0, abs=0.01)
+
+    def test_flat_trend(self):
+        y = [5.0, 5.0, 5.0, 5.0, 5.0]
+        result = extract_trend(y)
+        assert result["slope"] == pytest.approx(0.0, abs=0.01)
+        assert result["r2"] == pytest.approx(0.0, abs=0.01)
+
+    def test_short_series(self):
+        result = extract_trend([1.0, 2.0])
+        assert result["r2"] == 0.0
+
+    def test_with_x_values(self):
+        y = [100.0, 200.0, 300.0]
+        x = [10.0, 20.0, 30.0]
+        result = extract_trend(y, x)
+        assert result["slope"] == pytest.approx(10.0, abs=0.01)
+
+
+# ── Seasonality Detection ────────────────────────────────────────────────────
+
+
+class TestSeasonality:
+    def test_detect_weekly_seasonality(self):
+        # 3 weeks of daily data with weekly pattern
+        y = []
+        for _ in range(3):
+            y.extend([10, 20, 15, 12, 11, 8, 25])  # Sunday spike
+        period = detect_seasonality(y, max_period=14)
+        assert period == 7
+
+    def test_no_seasonality_random(self):
+        import random
+        random.seed(42)
+        y = [random.gauss(0, 1) for _ in range(100)]
+        period = detect_seasonality(y)
+        assert period is None or period < 10  # No strong seasonality
+
+    def test_short_series_no_seasonality(self):
+        period = detect_seasonality([1.0, 2.0, 3.0])
+        assert period is None
+
+
+# ── Decomposition ────────────────────────────────────────────────────────────
+
+
+class TestDecomposition:
+    def test_decompose_returns_components(self):
+        y = list(range(1, 101))
+        result = decompose(y, period=10)
+        assert "trend" in result
+        assert "seasonal" in result
+        assert "residual" in result
+        assert len(result["trend"]) == 100
+        assert result["period"] == 10
+
+    def test_residual_near_zero_for_pure_trend(self):
+        y = [float(i) for i in range(50)]
+        result = decompose(y, period=5)
+        residual = result["residual"]
+        # Residuals should be small for pure linear trend
+        avg_residual = sum(abs(r) for r in residual) / len(residual)
+        assert avg_residual < 2.0
+
+
+# ── Forecast ─────────────────────────────────────────────────────────────────
+
+
+class TestForecast:
+    def test_forecast_linear_upward(self):
+        y = [float(i) for i in range(100)]
+        result = forecast(y, horizon=4)
+        assert len(result["forecasts"]) == 4
+        assert len(result["ci_lower"]) == 4
+        assert len(result["ci_upper"]) == 4
+        # Should predict values above 100
+        assert result["forecasts"][0] > 95
+        assert result["forecasts"][-1] > result["forecasts"][0]  # Upward
+        assert result["trend_slope"] > 0.9
+
+    def test_forecast_expanding_ci(self):
+        y = [float(i) + (i % 5) * 2 for i in range(100)]  # Trend + noise
+        result = forecast(y, horizon=10)
+        # CI should widen with horizon
+        ci_width_1 = result["ci_upper"][0] - result["ci_lower"][0]
+        ci_width_last = result["ci_upper"][-1] - result["ci_lower"][-1]
+        assert ci_width_last > ci_width_1
+
+    def test_forecast_short_series(self):
+        result = forecast([1.0, 2.0], horizon=3)
+        assert result["horizon"] == 3
+        assert result["forecasts"] == [0.0, 0.0, 0.0]  # Empty forecast for n<3
+
+    def test_forecast_with_timestamps(self):
+        y = [100, 110, 105, 120, 115, 130]
+        x = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
+        result = forecast(y, horizon=2, x_values=x)
+        assert len(result["forecasts"]) == 2
+
+    def test_forecast_seasonal(self):
+        # 3 years of quarterly data with Q4 spike
+        y = [10, 12, 11, 25, 11, 13, 12, 28, 12, 14, 13, 32]
+        result = forecast(y, horizon=4, period=4)
+        assert len(result["forecasts"]) == 4
+        # Q4 forecast should be highest
+        assert result["forecasts"][3] > result["forecasts"][0]
+
+
+# ── Forecast API ─────────────────────────────────────────────────────────────
+
+
+class TestForecastAPI:
+    def test_forecast_endpoint(self, client):
+        resp = client.post("/v2/forecast", json={
+            "values": [float(i) for i in range(100)],
+            "horizon": 4,
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["forecasts"]) == 4
+        assert len(data["ci_lower"]) == 4
+        assert len(data["ci_upper"]) == 4
+        assert data["n_obs"] == 100
+
+    def test_forecast_with_period(self, client):
+        y = [10, 12, 11, 25, 11, 13, 12, 28, 12, 14, 13, 32]
+        resp = client.post("/v2/forecast", json={
+            "values": y,
+            "horizon": 4,
+            "period": 4,
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["period"] == 4
+
+    def test_forecast_insufficient_data(self, client):
+        resp = client.post("/v2/forecast", json={
+            "values": [1.0, 2.0],
+            "horizon": 4,
+        })
+        assert resp.status_code == 422  # Min 3 values required

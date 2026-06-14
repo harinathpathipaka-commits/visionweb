@@ -1,0 +1,178 @@
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
+
+from .categorical import auto_encode, detect_all_categorical
+from .multivar import correlation_matrix, fit_multivariate
+
+
+def rank_variables(
+    columns: Dict[str, List[float]],
+    target: str,
+    target_values: List[float],
+    top_k: int = 10,
+) -> List[Dict[str, Any]]:
+    """Rank independent variables by their association with the target.
+
+    Uses multivariate OLS when possible; falls back to univariate correlation.
+    Returns list of {variable, importance, direction, p_value, pearson_r}.
+    """
+    predictors = {k: v for k, v in columns.items() if k != target}
+    if not predictors:
+        return []
+
+    n = len(target_values)
+
+    # Try multivariate fit first
+    try:
+        encoded = auto_encode(predictors)
+        result = fit_multivariate(encoded, target_values)
+        importance = result.get("variable_importance", {})
+        p_values = result.get("p_values", {})
+        coefficients = result.get("coefficients", {})
+        r2_full = result.get("r2", 0.0)
+
+        # Build groups: one-hot columns from same original → one group
+        enc_keys = list(encoded.keys())
+        groups: Dict[str, List[int]] = {}
+        for name in predictors:
+            indices = [i for i, ek in enumerate(enc_keys)
+                       if ek == name or ek.startswith(f"{name}_")]
+            if indices:
+                groups[name] = indices
+
+        # Build design matrix with intercept for grouped partial R²
+        n_obs = len(target_values)
+        y_arr = np.array(target_values, dtype=np.float64)
+        X_full = np.column_stack([np.array(encoded[ek], dtype=np.float64) for ek in enc_keys])
+        X_full = np.column_stack([np.ones(n_obs), X_full])  # intercept at col 0
+        ss_tot = float(np.sum((y_arr - np.mean(y_arr)) ** 2))
+
+        # Compute full-model fit once
+        coeffs_full = np.linalg.lstsq(X_full, y_arr, rcond=None)[0]
+        y_pred_full = X_full @ coeffs_full
+        ss_res_full = float(np.sum((y_arr - y_pred_full) ** 2))
+        r2_full = 1.0 - ss_res_full / ss_tot if ss_tot > 0 else 0.0
+
+        # Grouped importance: drop ALL columns in group, refit, measure R² drop
+        group_importance: Dict[str, float] = {}
+        for name, col_indices in groups.items():
+            if len(col_indices) == 1:
+                # Single-column group — use per-column importance from fit result
+                ek = enc_keys[col_indices[0]]
+                group_importance[name] = importance.get(ek, 0.0)
+            else:
+                # Multi-column group — drop all simultaneously
+                drop_cols = [idx + 1 for idx in col_indices]  # +1 for intercept offset
+                X_reduced = np.delete(X_full, drop_cols, axis=1)
+                try:
+                    coeffs_r = np.linalg.lstsq(X_reduced, y_arr, rcond=None)[0]
+                    y_pred_r = X_reduced @ coeffs_r
+                    ss_res_r = float(np.sum((y_arr - y_pred_r) ** 2))
+                    r2_r = 1.0 - ss_res_r / ss_tot if ss_tot > 0 else 0.0
+                    group_importance[name] = max(0.0, r2_full - r2_r)
+                except np.linalg.LinAlgError:
+                    group_importance[name] = 0.0
+
+        # Normalize grouped importances to sum to 1
+        total_gi = sum(group_importance.values())
+        if total_gi > 0:
+            group_importance = {k: v / total_gi for k, v in group_importance.items()}
+
+        ranked = []
+        for name in predictors:
+            imp = group_importance.get(name, 0.0)
+            p_val = 1.0
+            coeff = 0.0
+            for enc_key, enc_imp in importance.items():
+                if enc_key == name or enc_key.startswith(f"{name}_"):
+                    p_val = min(p_val, p_values.get(enc_key, 1.0))
+                    if coeff == 0.0:
+                        coeff = coefficients.get(enc_key, 0.0)
+
+            if imp == 0.0:
+                # Fall back to univariate
+                pearson = _pearson_r(columns.get(name, []), target_values)
+                imp = abs(pearson)
+                p_val = _pearson_p(pearson, n)
+                coeff = pearson
+
+            ranked.append({
+                "variable": name,
+                "importance": round(imp, 6),
+                "direction": "positive" if coeff > 0 else "negative",
+                "p_value": round(p_val, 6),
+                "pearson_r": round(_pearson_r(columns.get(name, []), target_values), 6),
+            })
+
+        ranked.sort(key=lambda x: x["importance"], reverse=True)
+        return ranked[:top_k]
+
+    except Exception:
+        pass
+
+    # Fallback: univariate Pearson correlation ranking
+    ranked = []
+    for name, vals in predictors.items():
+        if len(vals) < 3:
+            continue
+        pearson = _pearson_r(vals, target_values)
+        ranked.append({
+            "variable": name,
+            "importance": round(abs(pearson), 6),
+            "direction": "positive" if pearson > 0 else "negative",
+            "p_value": round(_pearson_p(pearson, n), 6) if n > 2 else 1.0,
+            "pearson_r": round(pearson, 6),
+        })
+    ranked.sort(key=lambda x: x["importance"], reverse=True)
+    return ranked[:top_k]
+
+
+def discover_relationships(
+    columns: Dict[str, List[float]],
+    min_correlation: float = 0.1,
+) -> List[Dict[str, Any]]:
+    """Discover all pairwise relationships above a threshold.
+
+    Returns [{x, y, pearson_r, direction, significance}].
+    """
+    corr = correlation_matrix(columns)
+    results = []
+    names = list(columns.keys())
+    for i in range(len(names)):
+        for j in range(i + 1, len(names)):
+            r = corr[names[i]][names[j]]
+            if abs(r) >= min_correlation:
+                n = min(len(columns[names[i]]), len(columns[names[j]]))
+                results.append({
+                    "x": names[i],
+                    "y": names[j],
+                    "pearson_r": round(r, 6),
+                    "direction": "positive" if r > 0 else "negative",
+                    "significance": "high" if abs(r) > 0.5 else "medium" if abs(r) > 0.3 else "low",
+                    "n_obs": n,
+                })
+    results.sort(key=lambda x: abs(x["pearson_r"]), reverse=True)
+    return results
+
+
+def _pearson_r(x_vals: List[float], y_vals: List[float]) -> float:
+    """Compute Pearson r safely."""
+    x = np.array(x_vals, dtype=np.float64)
+    y = np.array(y_vals, dtype=np.float64)
+    mask = np.isfinite(x) & np.isfinite(y)
+    if mask.sum() < 3:
+        return 0.0
+    r = float(np.corrcoef(x[mask], y[mask])[0, 1])
+    return 0.0 if np.isnan(r) else r
+
+
+def _pearson_p(r: float, n: int) -> float:
+    """Approximate p-value for Pearson r using t-distribution."""
+    from scipy import stats as sp_stats
+    if n <= 2 or abs(r) >= 1.0:
+        return 0.0 if abs(r) >= 1.0 else 1.0
+    t_stat = r * np.sqrt((n - 2) / (1 - r * r))
+    return float(2.0 * sp_stats.t.sf(abs(t_stat), n - 2))

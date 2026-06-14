@@ -1,0 +1,24 @@
+[package]
+name = "ans-diff"
+version.workspace = true
+edition.workspace = true
+description = "Page diff engine — Zhang-Shasha tree edit distance on distilled DOM"
+
+[dependencies]
+ans-proto.workspace = true
+ans-core.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+ans-core.workspace = true
+
+[[bench]]
+name = "diff_bench"
+harness = false
+
+[lints]
+workspace = true

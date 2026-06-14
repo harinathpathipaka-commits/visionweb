@@ -1,0 +1,143 @@
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
+from .models import Variable, ExtractionResult
+
+EXTRACTION_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "variables": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "unit": {"type": "string"},
+                    "time_window": {"type": "string", "nullable": True},
+                },
+                "required": ["name", "unit"],
+            },
+        },
+        "assumptions": {"type": "array", "items": {"type": "string"}},
+        "domain": {"type": "string"},
+    },
+    "required": ["variables", "assumptions", "domain"],
+}
+
+SYSTEM_PROMPT = """You are an epistemic parser. Your ONLY job is to extract structured information from a quantitative query.
+- Extract variables with their names and units
+- Identify stated or implied assumptions
+- Classify the domain
+- NEVER propose equations, formulas, or functional relationships
+- NEVER suggest mathematical forms like "linear", "exponential", "power law"
+- Return ONLY the JSON object, no additional text"""
+
+EXTRACTION_SCHEMA_TEXT = """
+Return a JSON object with:
+{
+  "variables": [{"name": "string", "unit": "string", "time_window": "string or null"}],
+  "assumptions": ["string"],
+  "domain": "string"
+}
+"""
+
+
+@dataclass(frozen=True)
+class ExtractionContext:
+    domain: str
+    ontology_variables: List[Dict[str, Any]]
+    examples: List[Dict[str, Any]]
+
+
+def build_extraction_prompt(query: str, domain: str, ontology: Optional[Dict[str, Any]] = None) -> str:
+    ontology_text = ""
+    if ontology:
+        known_vars = ontology.get("variables", {})
+        if known_vars:
+            ontology_text = "\nKnown variables in this domain:\n"
+            for var_name, var_info in known_vars.items():
+                synonyms = ", ".join(var_info.get("synonyms", []))
+                ontology_text += f"  - {var_name} ({var_info.get('unit', '')}): also known as {synonyms}\n"
+
+    return f"""Domain: {domain}
+{ontology_text}
+Query: {query}
+
+{EXTRACTION_SCHEMA_TEXT}"""
+
+
+def parse_query(
+    query: str,
+    domain: str,
+    ontology: Optional[Dict[str, Any]] = None,
+    llm_client: Optional[Any] = None,
+) -> ExtractionResult:
+    if llm_client is not None and hasattr(llm_client, "messages"):
+        return _parse_with_llm(query, domain, ontology, llm_client)
+    return _parse_rule_based(query, domain)
+
+
+def _parse_with_llm(
+    query: str,
+    domain: str,
+    ontology: Optional[Dict[str, Any]],
+    llm_client: Any,
+) -> ExtractionResult:
+    prompt = build_extraction_prompt(query, domain, ontology)
+    try:
+        response = llm_client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1024,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        content = response.content[0].text if isinstance(response.content, list) else response.content
+        parsed = json.loads(content)
+    except Exception:
+        return _parse_rule_based(query, domain)
+
+    variables = [
+        Variable(name=v["name"], unit=v.get("unit", ""))
+        for v in parsed.get("variables", [])
+    ]
+    assumptions = parsed.get("assumptions", [])
+    parsed_domain = parsed.get("domain", domain)
+    return ExtractionResult(variables=variables, assumptions=assumptions, domain=parsed_domain)
+
+
+def _parse_rule_based(query: str, domain: str) -> ExtractionResult:
+    lower = query.lower()
+    variables: List[Variable] = []
+    assumptions: List[str] = []
+
+    var_patterns = [
+        ("revenue", "USD"),
+        ("price", "USD"),
+        ("cac", "USD"),
+        ("churn", "percentage"),
+        ("mrr", "USD"),
+        ("arr", "USD"),
+        ("ltv", "USD"),
+        ("growth", "percentage"),
+        ("margin", "percentage"),
+        ("conversion", "percentage"),
+        ("traffic", "count"),
+        ("users", "count"),
+    ]
+
+    for var_name, var_unit in var_patterns:
+        if var_name in lower:
+            variables.append(Variable(name=var_name, unit=var_unit))
+
+    if "increase" in lower or "raise" in lower:
+        assumptions.append("directional_change_in_input")
+    if "%" in lower or "percent" in lower:
+        assumptions.append("percentage_change_scenario")
+
+    if not variables:
+        variables = [Variable(name="input", unit="unit"), Variable(name="output", unit="unit")]
+
+    return ExtractionResult(variables=variables, assumptions=assumptions, domain=domain)

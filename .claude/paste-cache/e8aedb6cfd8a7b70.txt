@@ -1,0 +1,42 @@
+2026-05-30T02:32:29.897625Z  INFO ans_gateway: Gateway starting on 127.0.0.1:50052
+2026-05-30T02:32:35.260943Z  INFO ans_goal::store: Goal inserted goal_id=4e3ce6a0-38b2-428a-a64d-b17126801e33
+2026-05-30T02:32:40.435427Z  INFO ans_goal::store: Goal inserted goal_id=2ff583b3-e9b8-431b-aa1f-80f6bd1a752f
+2026-05-30T02:32:40.807948Z  INFO ans_ipc::session: Creating session session_id=9d7c42ec-2281-4440-8113-c9f0883a49ea goal_id=4e3ce6a0-38b2-428a-a64d-b17126801e33
+2026-05-30T02:32:40.811105Z  INFO ans_cdp::process: Launching Chromium exe=C:\Program Files\Google\Chrome\Application\chrome.exe port=62288 user_data_dir=C:\Users\kusta\AppData\Local\Temp\ans-chromium-7bd70229-4fa0-40a0-8c7d-5a1e45c6b340 stealth=true
+
+DevTools listening on ws://127.0.0.1:62288/devtools/browser/ced37c35-0d1b-4e45-93c3-d268cda64301
+[30228:17840:0530/080241.067:ERROR:ui\gl\direct_composition_support.cc:243] GetGpuDriverOverlayInfo: Failed to retrieve video device
+2026-05-30T02:32:41.335628Z  INFO ans_cdp::process: Chromium ready debug_url=ws://127.0.0.1:62288/devtools/browser/ced37c35-0d1b-4e45-93c3-d268cda64301 page_url=ws://127.0.0.1:62288/devtools/page/29B835BE9B5014E66FB338D4D2297FA3
+2026-05-30T02:32:41.340864Z  INFO ans_cdp::client: Injecting stealth scripts count=13 level=Standard
+2026-05-30T02:32:41.351750Z  INFO ans_cdp::client: CDP backend ready
+2026-05-30T02:32:43.927334Z  INFO ans_ipc::session: Creating session session_id=355f7ce6-123e-4069-b937-1a76d887e279 goal_id=2ff583b3-e9b8-431b-aa1f-80f6bd1a752f
+2026-05-30T02:32:43.929763Z  INFO ans_cdp::process: Launching Chromium exe=C:\Program Files\Google\Chrome\Application\chrome.exe port=60113 user_data_dir=C:\Users\kusta\AppData\Local\Temp\ans-chromium-b61c3fb4-0373-4535-b811-216a5b3a45b9 stealth=true
+[26568:34368:0530/080244.173:ERROR:google_apis\gcm\engine\registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+
+DevTools listening on ws://127.0.0.1:60113/devtools/browser/14f05f7d-adc8-4335-9f64-4c18870cb45b
+[31320:15956:0530/080244.206:ERROR:ui\gl\direct_composition_support.cc:243] GetGpuDriverOverlayInfo: Failed to retrieve video device
+2026-05-30T02:32:44.452724Z  INFO ans_cdp::process: Chromium ready debug_url=ws://127.0.0.1:60113/devtools/browser/14f05f7d-adc8-4335-9f64-4c18870cb45b page_url=ws://127.0.0.1:60113/devtools/page/75D08495D4477B98F3EC6A01FD7DDA52
+2026-05-30T02:32:44.461768Z  INFO ans_cdp::client: Injecting stealth scripts count=13 level=Standard
+2026-05-30T02:32:44.480264Z  INFO ans_cdp::client: CDP backend ready
+[18976:10912:0530/080250.731:ERROR:google_apis\gcm\engine\registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+2026-05-30T02:32:51.333582Z  INFO ans_goal::store: Goal sub-goals updated from decomposer goal_id=4e3ce6a0-38b2-428a-a64d-b17126801e33 sub_goal_count=2.0
+2026-05-30T02:32:51.334524Z  INFO ans_goal::store: Goal progress updated goal_id=4e3ce6a0-38b2-428a-a64d-b17126801e33 progress=0
+2026-05-30T02:32:53.295344Z  INFO ans_goal::store: Goal sub-goals updated from decomposer goal_id=2ff583b3-e9b8-431b-aa1f-80f6bd1a752f sub_goal_count=1.0
+2026-05-30T02:32:53.295593Z  INFO ans_goal::store: Goal progress updated goal_id=2ff583b3-e9b8-431b-aa1f-80f6bd1a752f progress=0
+Created TensorFlow Lite XNNPACK delegate for CPU.
+2026-05-30T02:32:57.880172Z  INFO ans_ipc::session: Closing session session_id=9d7c42ec-2281-4440-8113-c9f0883a49ea
+2026-05-30T02:32:57.880369Z  INFO ans_cdp::client: Closing CDP backend
+2026-05-30T02:32:57.880525Z DEBUG ans_cdp::process: Killing Chromium child process pid=26568
+2026-05-30T02:32:57.885299Z  WARN ans_cdp::process: Failed to remove temp user-data dir dir=C:\Users\kusta\AppData\Local\Temp\ans-chromium-7bd70229-4fa0-40a0-8c7d-5a1e45c6b340 e=Os { code: 32, kind: Uncategorized, message: "The process cannot access the file because it is being used by another process." }
+2026-05-30T02:32:57.887067Z  INFO ans_goal::store: Goal progress updated goal_id=4e3ce6a0-38b2-428a-a64d-b17126801e33 progress=0
+2026-05-30T02:32:58.008574Z ERROR ans_cdp::client: CDP WebSocket read error e=Io(Os { code: 10054, kind: ConnectionReset, message: "An existing connection was forcibly closed by the remote host." })
+2026-05-30T02:32:58.008836Z DEBUG ans_cdp::client: CDP reader task exiting
+2026-05-30T02:32:58.437325Z  INFO ans_ipc::server: Python AgentLoop completed goal_id=4e3ce6a0-38b2-428a-a64d-b17126801e33
+2026-05-30T02:33:00.250412Z  INFO ans_ipc::session: Closing session session_id=355f7ce6-123e-4069-b937-1a76d887e279
+2026-05-30T02:33:00.250738Z  INFO ans_cdp::client: Closing CDP backend
+2026-05-30T02:33:00.250956Z DEBUG ans_cdp::process: Killing Chromium child process pid=18976
+2026-05-30T02:33:00.255722Z  WARN ans_cdp::process: Failed to remove temp user-data dir dir=C:\Users\kusta\AppData\Local\Temp\ans-chromium-b61c3fb4-0373-4535-b811-216a5b3a45b9 e=Os { code: 32, kind: Uncategorized, message: "The process cannot access the file because it is being used by another process." }
+2026-05-30T02:33:00.257105Z  INFO ans_goal::store: Goal progress updated goal_id=2ff583b3-e9b8-431b-aa1f-80f6bd1a752f progress=0
+2026-05-30T02:33:00.337010Z ERROR ans_cdp::client: CDP WebSocket read error e=Io(Os { code: 10054, kind: ConnectionReset, message: "An existing connection was forcibly closed by the remote host." })
+2026-05-30T02:33:00.337271Z DEBUG ans_cdp::client: CDP reader task exiting
+2026-05-30T02:33:00.845185Z  INFO ans_ipc::server: Python AgentLoop completed goal_id=2ff583b3-e9b8-431b-aa1f-80f6bd1a752f

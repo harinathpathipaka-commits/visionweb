@@ -1,0 +1,111 @@
+/// DOM distillation mode — what the agent needs from the page right now.
+///
+/// Maps directly to `agent-nervous-system.md` design and the gRPC
+/// `DistilledDom.mode` field. Each mode strips progressively less:
+///
+/// | Mode       | Strips                    | Keeps                        |
+/// |------------|---------------------------|------------------------------|
+/// | TextOnly   | All non-text, all styling | Visible text content only    |
+/// | InputFields| Non-interactive elements  | Text + forms + buttons       |
+/// | AllFields  | Nothing (metadata added)  | Everything + semantic labels |
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum DistillMode {
+    /// Reading content, search results, documentation pages.
+    TextOnly,
+    /// Form interaction, data entry, checkout flows.
+    InputFields,
+    /// Comprehensive page understanding (debug, initial exploration).
+    AllFields,
+}
+
+impl DistillMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::TextOnly => "text_only",
+            Self::InputFields => "input_fields",
+            Self::AllFields => "all_fields",
+        }
+    }
+}
+
+/// A single element after distillation.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DistilledElement {
+    pub tag: String,
+    pub text: String,
+    pub attributes: std::collections::HashMap<String, String>,
+    pub role: Option<String>,
+    pub is_visible: bool,
+    pub bounding_box: Option<BoundingBox>,
+    pub children: Vec<usize>,
+}
+
+/// Pixel bounding box for an element.
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+pub struct BoundingBox {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+/// An element the agent can interact with.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct InteractiveElement {
+    pub selector: String,
+    pub element_type: InteractiveType,
+    pub label: String,
+    pub placeholder: Option<String>,
+    pub current_value: Option<String>,
+    pub is_visible: bool,
+    pub is_enabled: bool,
+    pub bounding_box: Option<BoundingBox>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum InteractiveType {
+    Button,
+    Input,
+    Select,
+    Textarea,
+    Link,
+    Checkbox,
+    Radio,
+}
+
+/// Semantic block — a meaningful region of the page.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SemanticBlock {
+    pub block_type: BlockType,
+    pub text_content: String,
+    /// Indices into the elements vector.
+    pub element_indices: Vec<usize>,
+    /// How relevant is this block to the current goal? 0.0–1.0.
+    pub goal_relevance_score: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum BlockType {
+    Navigation,
+    MainContent,
+    Form,
+    Sidebar,
+    Footer,
+    Ad,
+    CookieBanner,
+    Popup,
+    Unknown,
+}
+
+/// The result of distilling a page. This is what the agent sees.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DistilledPage {
+    pub mode: DistillMode,
+    pub url: String,
+    pub title: String,
+    pub elements: Vec<DistilledElement>,
+    pub interactive: Vec<InteractiveElement>,
+    pub semantic_blocks: Vec<SemanticBlock>,
+    pub distraction_flags: Vec<crate::immune::DistractionFlag>,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+}

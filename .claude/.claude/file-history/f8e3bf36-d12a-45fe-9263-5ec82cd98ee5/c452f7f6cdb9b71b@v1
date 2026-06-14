@@ -1,0 +1,373 @@
+"""Shared LLM client — model-agnostic via OpenAI-compatible SDK.
+
+Uses prompt-only JSON instructions (no response_format API flags)
+so it works identically on DeepSeek, GPT-4o, Claude, and any compatible API.
+"""
+
+from __future__ import annotations
+
+import json
+import time
+from dataclasses import dataclass, field
+from typing import Any
+
+import httpx
+from openai import AsyncOpenAI
+from openai.types.chat import (
+    ChatCompletion,
+    ChatCompletionContentPartParam,
+    ChatCompletionMessageParam,
+)
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
+
+from ans_nerves.config import get_api_key, get_vision_api_key, get_config
+from ans_nerves.logging import get_logger
+
+logger = get_logger(__name__)
+
+_JSON_INSTRUCTION = "\n\nRespond ONLY with valid JSON. No markdown fences, no extra text."
+
+
+@dataclass
+class TokenUsage:
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    cost_cents: float = 0.0
+
+
+@dataclass
+class LLMResponse:
+    content: str
+    parsed: dict[str, Any] | None = None
+    usage: TokenUsage = field(default_factory=TokenUsage)
+    model: str = ""
+    latency_ms: float = 0.0
+
+
+class LLMClient:
+    """Async LLM client — model-agnostic, prompt-only JSON instructions."""
+
+    def __init__(self) -> None:
+        config = get_config()
+        api_key = get_api_key()
+        self._model = config.llm.model
+        self._base_url = config.llm.base_url
+        self._max_tokens = config.llm.max_tokens
+        self._temperature = config.llm.temperature
+        self._max_retries = config.llm.max_retries
+        self._timeout = config.llm.request_timeout_secs
+        self._cost_input = config.llm.cost_per_1k_input_tokens
+        self._cost_output = config.llm.cost_per_1k_output_tokens
+
+        self._client = AsyncOpenAI(
+            api_key=api_key,
+            base_url=self._base_url,
+            timeout=httpx.Timeout(self._timeout),
+            max_retries=0,
+        )
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    # ── Public API ──────────────────────────────────────────
+
+    async def complete(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        json_mode: bool = True,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> LLMResponse:
+        """Send a prompt and optionally parse JSON from the response."""
+        system = system_prompt + _JSON_INSTRUCTION if json_mode else system_prompt
+        messages: list[ChatCompletionMessageParam] = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_prompt},
+        ]
+
+        t0 = time.monotonic()
+        completion = await self._call(
+            messages,
+            max_tokens=max_tokens or self._max_tokens,
+            temperature=temperature if temperature is not None else self._temperature,
+        )
+        latency_ms = (time.monotonic() - t0) * 1000.0
+
+        content = completion.choices[0].message.content or ""
+        usage = self._extract_usage(completion)
+
+        return LLMResponse(
+            content=content,
+            parsed=self._parse_json(content) if json_mode else None,
+            usage=usage,
+            model=completion.model,
+            latency_ms=latency_ms,
+        )
+
+    async def complete_structured(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        json_schema: dict[str, Any],
+        *,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> LLMResponse:
+        """Send a prompt with a JSON schema embedded in the prompt text.
+
+        No response_format API flag — works on any model.
+        """
+        schema_text = json.dumps(json_schema, indent=2)
+        system = (
+            system_prompt
+            + f"\n\nYou MUST respond with valid JSON matching this schema:\n{schema_text}"
+            + _JSON_INSTRUCTION
+        )
+        messages: list[ChatCompletionMessageParam] = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_prompt},
+        ]
+
+        t0 = time.monotonic()
+        completion = await self._call(
+            messages,
+            max_tokens=max_tokens or self._max_tokens,
+            temperature=temperature if temperature is not None else self._temperature,
+        )
+        latency_ms = (time.monotonic() - t0) * 1000.0
+
+        content = completion.choices[0].message.content or ""
+        usage = self._extract_usage(completion)
+
+        return LLMResponse(
+            content=content,
+            parsed=self._parse_json(content),
+            usage=usage,
+            model=completion.model,
+            latency_ms=latency_ms,
+        )
+
+    async def complete_vision(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        screenshot_base64: str,
+        *,
+        json_schema: dict[str, Any] | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> LLMResponse:
+        """Send a screenshot + prompt. Routes to vision provider (GPT-4o)."""
+        config = get_config()
+        client = self._client
+        model = self._model
+        vis_temp = temperature if temperature is not None else self._temperature
+
+        # If vision provider differs, create a temporary client for it
+        if config.llm.vision_provider != config.llm.provider:
+            client = AsyncOpenAI(
+                api_key=get_vision_api_key(),
+                base_url=config.llm.vision_base_url,
+                timeout=httpx.Timeout(self._timeout),
+                max_retries=0,
+            )
+            model = config.llm.vision_model
+
+        system = system_prompt
+        if json_schema is not None:
+            schema_text = json.dumps(json_schema, indent=2)
+            system += f"\n\nYou MUST respond with valid JSON matching this schema:\n{schema_text}"
+        system += _JSON_INSTRUCTION
+
+        user_content: list[ChatCompletionContentPartParam] = [
+            {"type": "text", "text": user_prompt},
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/png;base64,{screenshot_base64}",
+                    "detail": "auto",
+                },
+            },
+        ]
+
+        messages: list[ChatCompletionMessageParam] = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_content},
+        ]
+
+        t0 = time.monotonic()
+        completion = await client.chat.completions.create(
+            model=model,
+            messages=messages,
+            max_tokens=max_tokens or self._max_tokens,
+            temperature=vis_temp,
+        )
+        latency_ms = (time.monotonic() - t0) * 1000.0
+
+        content = completion.choices[0].message.content or ""
+        usage = self._extract_usage(completion)
+
+        return LLMResponse(
+            content=content,
+            parsed=self._parse_json(content),
+            usage=usage,
+            model=completion.model,
+            latency_ms=latency_ms,
+        )
+
+    # ── Internals ───────────────────────────────────────────
+
+    async def _call(
+        self,
+        messages: list[ChatCompletionMessageParam],
+        max_tokens: int,
+        temperature: float,
+    ) -> ChatCompletion:
+        @retry(
+            stop=stop_after_attempt(self._max_retries),
+            wait=wait_exponential(multiplier=1, min=1, max=30),
+            retry=retry_if_exception_type(
+                (httpx.TimeoutException, httpx.RemoteProtocolError)
+            ),
+            reraise=True,
+        )
+        async def _do_call() -> ChatCompletion:
+            return await self._client.chat.completions.create(
+                model=self._model,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+
+        # Retry on empty response with temperature bump
+        current_temp = temperature
+        for attempt in range(self._max_retries + 1):
+            try:
+                completion = await _do_call()
+            except Exception:
+                if attempt == self._max_retries:
+                    raise
+                continue
+
+            content = completion.choices[0].message.content or ""
+            if content.strip():
+                return completion
+
+            logger.warning(
+                "LLM returned empty response (attempt %d/%d), retrying with temp=%.2f...",
+                attempt + 1, self._max_retries + 1, current_temp,
+            )
+            if attempt < self._max_retries:
+                current_temp = min(current_temp + 0.15, 1.0)
+
+        return completion  # last attempt, even if empty
+
+    @staticmethod
+    def _strip_fences(content: str) -> str:
+        """Remove markdown code fences from LLM output."""
+        cleaned = content.strip()
+        if cleaned.startswith("```"):
+            lines = cleaned.split("\n")
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            cleaned = "\n".join(lines).strip()
+        return cleaned
+
+    @classmethod
+    def _parse_json(cls, content: str) -> dict[str, Any] | None:
+        """Parse JSON from LLM output, handling common LLM mistakes."""
+        if not content.strip():
+            return None
+
+        cleaned = cls._strip_fences(content)
+
+        # Try 1: direct parse
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            pass
+
+        # Try 2: repair common LLM JSON issues
+        repaired = cls._repair_json(cleaned)
+        if repaired:
+            try:
+                return json.loads(repaired)
+            except json.JSONDecodeError:
+                pass
+
+        return None
+
+    @staticmethod
+    def _repair_json(text: str) -> str | None:
+        """Attempt to repair common LLM JSON output mistakes."""
+        import re
+
+        # Remove trailing commas before ] or }
+        text = re.sub(r',\s*([}\]])', r'\1', text)
+
+        # Find and extract outermost JSON object/array
+        first_brace = text.find('{')
+        first_bracket = text.find('[')
+        if first_brace == -1 and first_bracket == -1:
+            return None
+
+        start = first_brace if first_brace != -1 else first_bracket
+        if first_brace != -1:
+            end = text.rfind('}')
+        else:
+            end = text.rfind(']')
+
+        if end > start:
+            text = text[start:end + 1]
+
+        # Close unbalanced braces/brackets (truncated output)
+        open_braces = text.count('{') - text.count('}')
+        open_brackets = text.count('[') - text.count(']')
+        if 0 < open_braces + open_brackets <= 3:
+            text += ']' * open_brackets
+            text += '}' * open_braces
+        elif open_braces + open_brackets > 3:
+            return None
+
+        return text
+
+    def _extract_usage(self, completion: ChatCompletion) -> TokenUsage:
+        if completion.usage is None:
+            return TokenUsage()
+
+        prompt_tokens = completion.usage.prompt_tokens
+        completion_tokens = completion.usage.completion_tokens
+        total = completion.usage.total_tokens
+        cost = (
+            prompt_tokens * self._cost_input
+            + completion_tokens * self._cost_output
+        ) / 1000.0 * 100.0
+
+        return TokenUsage(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total,
+            cost_cents=round(cost, 4),
+        )
+
+
+# Global singleton
+_client: LLMClient | None = None
+
+
+def get_llm_client() -> LLMClient:
+    global _client
+    if _client is None:
+        _client = LLMClient()
+    return _client

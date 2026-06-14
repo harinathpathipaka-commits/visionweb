@@ -1,0 +1,138 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+
+_ONTOLOGY_CACHE: Dict[str, Dict[str, Any]] = {}
+_ONTOLOGIES_DIR = Path(__file__).parent / "ontologies"
+
+
+DOMAIN_KEYWORDS: Dict[str, List[str]] = {
+    "finance.saas.smb": [
+        "mrr", "arr", "cac", "ltv", "churn", "saas", "subscriber",
+        "arpu", "burn rate", "runway", "pipeline", "expansion revenue",
+        "ndr", "net revenue retention", "logo", "subscription",
+    ],
+    "finance.ecommerce": [
+        "ecommerce", "e-commerce", "gmv", "aov", "cart", "checkout",
+        "basket", "order value", "traffic", "visitors", "sessions",
+        "inventory", "returns", "shipping", "fulfillment",
+    ],
+}
+
+DOMAIN_PATTERNS: List[Tuple[str, str]] = [
+    ("finance.saas.smb", r"\b(mrr|arr|cac|ltv|saas|churn|arpu)\b"),
+    ("finance.ecommerce", r"\b(gmv|aov|ecomm|cart|basket)\b"),
+]
+
+
+def route_domain(query: str) -> str:
+    """Classify a natural-language query to the most specific domain."""
+    lower = query.lower()
+
+    for domain, pattern in DOMAIN_PATTERNS:
+        import re
+        if re.search(pattern, lower):
+            return domain
+
+    for domain, keywords in DOMAIN_KEYWORDS.items():
+        for kw in keywords:
+            if kw in lower:
+                return domain
+
+    return "general"
+
+
+def load_ontology(domain: str) -> Dict[str, Any]:
+    """Load the variable ontology for a domain, caching in memory."""
+    if domain in _ONTOLOGY_CACHE:
+        return _ONTOLOGY_CACHE[domain]
+
+    ontology_path = _ONTOLOGIES_DIR / f"{domain.replace('.', '_')}.json"
+    if not ontology_path.exists():
+        for candidate in _ONTOLOGIES_DIR.glob("*.json"):
+            try:
+                data = json.loads(candidate.read_text(encoding="utf-8"))
+                if data.get("domain") == domain:
+                    ontology_path = candidate
+                    break
+            except (json.JSONDecodeError, KeyError):
+                continue
+
+    if not ontology_path.exists():
+        general_path = _ONTOLOGIES_DIR / "general.json"
+        if general_path.exists():
+            ontology = json.loads(general_path.read_text(encoding="utf-8"))
+        else:
+            ontology = {"domain": "general", "variables": {}, "constraints": {}, "common_relationships": []}
+    else:
+        ontology = json.loads(ontology_path.read_text(encoding="utf-8"))
+
+    merged = _merge_with_general(ontology, domain)
+    _ONTOLOGY_CACHE[domain] = merged
+    return merged
+
+
+def _merge_with_general(domain_ontology: Dict[str, Any], domain: str) -> Dict[str, Any]:
+    if domain == "general":
+        return domain_ontology
+
+    general_path = _ONTOLOGIES_DIR / "general.json"
+    if not general_path.exists():
+        return domain_ontology
+
+    general = json.loads(general_path.read_text(encoding="utf-8"))
+    merged_vars = dict(general.get("variables", {}))
+    merged_vars.update(domain_ontology.get("variables", {}))
+    merged_constraints = dict(general.get("constraints", {}))
+    merged_constraints.update(domain_ontology.get("constraints", {}))
+
+    return {
+        "domain": domain_ontology.get("domain", domain),
+        "variables": merged_vars,
+        "constraints": merged_constraints,
+        "common_relationships": domain_ontology.get("common_relationships", []),
+    }
+
+
+def resolve_variable(name: str, ontology: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Resolve a variable name to its canonical ontology entry."""
+    variables = ontology.get("variables", {})
+    lower = name.lower().strip()
+
+    if lower in variables:
+        return variables[lower]
+
+    for var_name, var_info in variables.items():
+        aliases = var_info.get("aliases", [])
+        if lower in aliases or any(alias in lower or lower in alias for alias in aliases):
+            return var_info
+
+    return None
+
+
+def get_expected_relationship(
+    independent: str, dependent: str, ontology: Dict[str, Any]
+) -> Optional[Dict[str, str]]:
+    for rel in ontology.get("common_relationships", []):
+        if rel.get("independent") == independent and rel.get("dependent") == dependent:
+            return rel
+        if rel.get("independent") == dependent and rel.get("dependent") == independent:
+            return rel
+    return None
+
+
+def list_available_domains() -> List[str]:
+    domains: List[str] = []
+    for path in _ONTOLOGIES_DIR.glob("*.json"):
+        if path.name == "__init__":
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if "domain" in data:
+                domains.append(data["domain"])
+        except (json.JSONDecodeError, KeyError):
+            continue
+    return sorted(domains)

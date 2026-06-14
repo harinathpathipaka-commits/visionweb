@@ -1,0 +1,86 @@
+//! Platform-abstracted Arrow IPC via memory-mapped files.
+//!
+//! Bulk data (screenshots, large DOM trees) travels via Arrow IPC,
+//! not gRPC payloads. The gRPC message carries only a shared-memory key;
+//! the receiver opens the mmap region and reads the Arrow arrays directly.
+//!
+//! Platform locations:
+//! - Linux: `/dev/shm/ans-{key}.arrow`
+//! - macOS: `$TMPDIR/ans-{key}.arrow`
+//! - Windows: `%TEMP%/ans-{key}.arrow`
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use arrow::array::RecordBatch;
+use arrow::ipc::reader::FileReader;
+use arrow::ipc::writer::FileWriter;
+use uuid::Uuid;
+
+/// A memory-mapped Arrow IPC buffer identified by a random key.
+///
+/// On drop, the backing file is removed from disk.
+pub struct IpcBuffer {
+    path: PathBuf,
+    key: String,
+}
+
+impl IpcBuffer {
+    /// Create a new IPC buffer with a unique key.
+    /// The backing file is created in the platform-appropriate shm directory.
+    pub fn create() -> Result<Self, std::io::Error> {
+        let key = Uuid::new_v4().to_string();
+        let filename = format!("ans_{}.arrow", key);
+        let path = shm_dir().join(&filename);
+        Ok(Self { path, key })
+    }
+
+    /// The unique key identifying this buffer.
+    /// Pass this to the receiving side via gRPC.
+    pub fn key(&self) -> &str {
+        &self.key
+    }
+
+    /// The full path to the backing file.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Write a single [`RecordBatch`] to the IPC file.
+    pub fn write_batch(&self, batch: &RecordBatch) -> Result<(), arrow::error::ArrowError> {
+        let file = fs::File::create(&self.path)?;
+        let mut writer = FileWriter::try_new(file, &batch.schema())?;
+        writer.write(batch)?;
+        writer.finish()?;
+        Ok(())
+    }
+
+    /// Read a [`RecordBatch`] from the IPC file.
+    pub fn read_batch(&self) -> Result<RecordBatch, arrow::error::ArrowError> {
+        let file = fs::File::open(&self.path)?;
+        let reader = FileReader::try_new(file, None)?;
+        reader.into_iter().next().ok_or_else(|| {
+            arrow::error::ArrowError::IoError(
+                "IPC file is empty".into(),
+                std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "empty IPC file"),
+            )
+        })?
+    }
+}
+
+impl Drop for IpcBuffer {
+    fn drop(&mut self) {
+        if self.path.exists() {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
+}
+
+/// Return the platform-appropriate shared memory directory.
+pub fn shm_dir() -> PathBuf {
+    if cfg!(target_os = "linux") {
+        PathBuf::from("/dev/shm")
+    } else {
+        std::env::temp_dir()
+    }
+}

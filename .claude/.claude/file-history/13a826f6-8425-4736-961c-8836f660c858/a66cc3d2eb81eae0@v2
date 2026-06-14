@@ -1,0 +1,25 @@
+"""Page Diff Eye — change detection between page states.
+
+Wraps the Rust diff engine output. Enriches structural diffs with
+semantic interpretation: "search results updated", "form field filled".
+"""
+
+from .base import BaseEye, EyeReport
+
+
+class PageDiffEye(BaseEye):
+    """Detects and interprets page changes."""
+
+    name = "page_diff"
+
+    async def observe(self, session_id: str, page_data: dict) -> EyeReport:
+        return EyeReport(
+            eye_name=self.name,
+            content={
+                "added": [],
+                "removed": [],
+                "modified": [],
+                "summary": "no_change",
+                "is_same_page": True,
+            },
+        )

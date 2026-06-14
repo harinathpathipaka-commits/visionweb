@@ -1,0 +1,83 @@
+"""Decision scoring engine implementation."""
+
+from dataclasses import dataclass
+
+
+@dataclass
+class ImmediateOutcome:
+    """t=0: Technical success/failure."""
+    action_succeeded: bool = False
+    results_produced: str = ""
+    error_message: str | None = None
+    execution_time_ms: int = 0
+
+    def score(self) -> float:
+        if self.action_succeeded:
+            return 1.0
+        if self.error_message and "timeout" in self.error_message:
+            return 0.2
+        return 0.0
+
+
+@dataclass
+class ShortTermOutcome:
+    """t=minutes-hours: Session-level goal advancement."""
+    goal_advanced: bool = False
+    criterion_met: str | None = None
+    sub_goal_completed: bool = False
+
+    def score(self) -> float:
+        if self.sub_goal_completed:
+            return 1.0
+        if self.goal_advanced:
+            return 0.7
+        if self.criterion_met:
+            return 0.4
+        return 0.0
+
+
+@dataclass
+class LongTermOutcome:
+    """t=days-months: Business impact."""
+    business_goal_achieved: bool = False
+    metric_name: str = ""
+    metric_value: float = 0.0
+
+    def score(self) -> float:
+        if self.business_goal_achieved:
+            return 1.0
+        return max(0.0, min(1.0, self.metric_value))
+
+
+class DecisionScorer:
+    """Scores actions using the 3-layer temporal business outcome model."""
+
+    def score(
+        self,
+        action_succeeded: bool,
+        results_summary: str,
+        error_message: str | None,
+        goal_advanced: bool,
+    ) -> float:
+        """Compute composite score across all populated layers."""
+        immediate = ImmediateOutcome(
+            action_succeeded=action_succeeded,
+            results_produced=results_summary,
+            error_message=error_message,
+        )
+
+        # Short-term and long-term are populated later via webhooks/callbacks
+        # For immediate scoring, we only have the immediate layer.
+        immediate_weight = 0.6
+        short_term_weight = 0.3
+        long_term_weight = 0.1
+
+        score = immediate.score() * immediate_weight
+
+        if goal_advanced:
+            short_term = ShortTermOutcome(goal_advanced=True)
+            score += short_term.score() * short_term_weight
+            # Normalize: only immediate + short_term populated
+            return score / (immediate_weight + short_term_weight)
+
+        return score / immediate_weight

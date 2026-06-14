@@ -1,0 +1,252 @@
+crates\ans-core\src\signal.rs:70:pub struct EyeReport {
+crates\ans-core\src\signal.rs-71-    pub eye_name: EyeName,
+crates\ans-core\src\signal.rs-72-    pub timestamp: chrono::DateTime<chrono::Utc>,
+crates\ans-core\src\signal.rs-73-    pub confidence: f32,
+crates\ans-core\src\signal.rs-74-    pub goal_relevance: f32,
+crates\ans-core\src\signal.rs-75-    pub content: EyeReportContent,
+C:\Users\kusta\ILabs\visionweb\crates\ans-core\src\signal.rs-76-}
+C:\Users\kusta\ILabs\visionweb\crates\ans-core\src\signal.rs-77-
+C:\Users\kusta\ILabs\visionweb\crates\ans-core\src\signal.rs-78-/// The unified signal produced by the Signal Router after
+C:\Users\kusta\ILabs\visionweb\crates\ans-core\src\signal.rs-79-/// synthesizing all eye reports and resolving contradictions.
+crates\ans-core\src\signal.rs-80-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+C:\Users\kusta\ILabs\visionweb\crates\ans-core\src\signal.rs-81-pub struct RoutedSignal {
+C:\Users\kusta\ILabs\visionweb\crates\ans-core\src\signal.rs-82-    /// Natural language summary for the Decision Intelligence Layer.
+crates\ans-core\src\signal.rs-83-    pub unified_perception: String,
+C:\Users\kusta\ILabs\visionweb\crates\ans-core\src\signal.rs-84-    /// Distractions detected and actions taken.
+crates\ans-core\src\signal.rs-85-    pub alerts: Vec<DistractionAlert>,
+C:\Users\kusta\ILabs\visionweb\crates\ans-core\src\signal.rs-86-    /// Overall confidence in the synthesis.
+crates\ans-core\src\signal.rs-87-    pub confidence: f32,
+C:\Users\kusta\ILabs\visionweb\crates\ans-core\src\signal.rs-88-    /// Hint for what action to take next (may be empty).
+crates\ans-core\src\signal.rs-89-    pub recommended_action_hint: Option<String>,
+C:\Users\kusta\ILabs\visionweb\crates\ans-core\src\signal.rs-90-    /// Cross-eye contradictions that were detected and resolved.
+--
+IMPLEMENTATION_PLAN.md:623:pub struct EyeReport {
+IMPLEMENTATION_PLAN.md-624-    pub eye_name: EyeName,        // DOMReader, Vision, Diff, Verifier, ErrorDetector
+IMPLEMENTATION_PLAN.md-625-    pub timestamp: i64,
+IMPLEMENTATION_PLAN.md-626-    pub confidence: f32,
+IMPLEMENTATION_PLAN.md-627-    pub goal_relevance: f32,       // scored by Signal Router
+IMPLEMENTATION_PLAN.md-628-    pub content: EyeReportContent,  // eye-specific payload
+C:\Users\kusta\ILabs\visionweb\IMPLEMENTATION_PLAN.md-629-}
+C:\Users\kusta\ILabs\visionweb\IMPLEMENTATION_PLAN.md-630-
+C:\Users\kusta\ILabs\visionweb\IMPLEMENTATION_PLAN.md-631-pub enum EyeReportContent {
+IMPLEMENTATION_PLAN.md-632-    DomReport { elements: Vec<DistilledElement>, mode: DistillMode },
+IMPLEMENTATION_PLAN.md-633-    VisionReport { visible_elements: Vec<Element>, overlays: Vec<Overlay>, blocked_regions: Vec<Region> },
+C:\Users\kusta\ILabs\visionweb\IMPLEMENTATION_PLAN.md-634-    DiffReport(DiffReport),
+IMPLEMENTATION_PLAN.md-635-    VerificationResult { advanced: bool, reasoning: String },
+IMPLEMENTATION_PLAN.md-636-    ErrorReport { failure_type: FailureType, recovery_strategy: RecoveryStrategy },
+C:\Users\kusta\ILabs\visionweb\IMPLEMENTATION_PLAN.md-637-}
+C:\Users\kusta\ILabs\visionweb\IMPLEMENTATION_PLAN.md-638-
+C:\Users\kusta\ILabs\visionweb\IMPLEMENTATION_PLAN.md-639-pub struct RoutedSignal {
+IMPLEMENTATION_PLAN.md-640-    pub unified_perception: String,  // natural language summary for Decision layer
+IMPLEMENTATION_PLAN.md-641-    pub distractions: Vec<DistractionAlert>,
+IMPLEMENTATION_PLAN.md-642-    pub confidence: f32,
+IMPLEMENTATION_PLAN.md-643-    pub recommended_action_hint: Option<String>,
+--
+crates\ans-ipc\src\subscriber.rs:21:pub struct EyeReportEvent {
+crates\ans-ipc\src\subscriber.rs-22-    pub eye_name: String,
+crates\ans-ipc\src\subscriber.rs-23-    pub goal_id: Uuid,
+crates\ans-ipc\src\subscriber.rs-24-    pub confidence: f32,
+crates\ans-ipc\src\subscriber.rs-25-    pub content: String,
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-26-}
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-27-
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-28-/// Fan-out bus for goal state updates.
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-29-pub struct GoalEventBus {
+crates\ans-ipc\src\subscriber.rs-30-    tx: broadcast::Sender<GoalUpdate>,
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-31-}
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-32-
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-33-impl GoalEventBus {
+crates\ans-ipc\src\subscriber.rs-34-    pub fn new(capacity: usize) -> Self {
+crates\ans-ipc\src\subscriber.rs-35-        let (tx, _) = broadcast::channel(capacity);
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-36-        Self { tx }
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-37-    }
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-38-
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-39-    /// Subscribe to goal updates. Returns a receiver that sees all
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-40-    /// future publishes.
+crates\ans-ipc\src\subscriber.rs-41-    pub fn subscribe(&self) -> broadcast::Receiver<GoalUpdate> {
+--
+crates\ans-ipc\src\subscriber.rs:52:pub struct EyeReportBus {
+crates\ans-ipc\src\subscriber.rs-53-    tx: broadcast::Sender<EyeReportEvent>,
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-54-}
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-55-
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-56-impl EyeReportBus {
+crates\ans-ipc\src\subscriber.rs-57-    pub fn new(capacity: usize) -> Self {
+crates\ans-ipc\src\subscriber.rs-58-        let (tx, _) = broadcast::channel(capacity);
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-59-        Self { tx }
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-60-    }
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-61-
+crates\ans-ipc\src\subscriber.rs-62-    pub fn subscribe(&self) -> broadcast::Receiver<EyeReportEvent> {
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-63-        self.tx.subscribe()
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-64-    }
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-65-
+crates\ans-ipc\src\subscriber.rs-66-    pub fn publish(&self, event: EyeReportEvent) {
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-67-        let _ = self.tx.send(event);
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-68-    }
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-69-}
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-70-
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-71-/// Combined event bus for the daemon.
+C:\Users\kusta\ILabs\visionweb\crates\ans-ipc\src\subscriber.rs-72-pub struct EventBus {
+--
+target\debug\build\ans-proto-dddc5a551c1b29be\out\ans.rs:383:pub struct EyeReport {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-dddc5a551c1b29be\out\ans.rs-384-    /// dom_reader, vision, page_diff, goal_verifier, error_detector
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-dddc5a551c1b29be\out\ans.rs-385-    #[prost(string, tag = "1")]
+target\debug\build\ans-proto-dddc5a551c1b29be\out\ans.rs-386-    pub eye_name: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-dddc5a551c1b29be\out\ans.rs-387-    #[prost(int64, tag = "2")]
+target\debug\build\ans-proto-dddc5a551c1b29be\out\ans.rs-388-    pub timestamp: i64,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-dddc5a551c1b29be\out\ans.rs-389-    #[prost(float, tag = "3")]
+target\debug\build\ans-proto-dddc5a551c1b29be\out\ans.rs-390-    pub confidence: f32,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-dddc5a551c1b29be\out\ans.rs-391-    #[prost(float, tag = "4")]
+target\debug\build\ans-proto-dddc5a551c1b29be\out\ans.rs-392-    pub goal_relevance: f32,
+target\debug\build\ans-proto-dddc5a551c1b29be\out\ans.rs-393-    #[prost(oneof = "eye_report::Content", tags = "10, 11, 12, 13, 14")]
+target\debug\build\ans-proto-dddc5a551c1b29be\out\ans.rs-394-    pub content: ::core::option::Option<eye_report::Content>,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-dddc5a551c1b29be\out\ans.rs-395-}
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-dddc5a551c1b29be\out\ans.rs-396-/// Nested message and enum types in `EyeReport`.
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-dddc5a551c1b29be\out\ans.rs-397-pub mod eye_report {
+target\debug\build\ans-proto-dddc5a551c1b29be\out\ans.rs-398-    #[derive(Clone, PartialEq, ::prost::Oneof)]
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-dddc5a551c1b29be\out\ans.rs-399-    pub enum Content {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-dddc5a551c1b29be\out\ans.rs-400-        #[prost(message, tag = "10")]
+target\debug\build\ans-proto-dddc5a551c1b29be\out\ans.rs-401-        Dom(super::DomReportContent),
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-dddc5a551c1b29be\out\ans.rs-402-        #[prost(message, tag = "11")]
+target\debug\build\ans-proto-dddc5a551c1b29be\out\ans.rs-403-        Vision(super::VisionReportContent),
+--
+target\debug\build\ans-proto-b9f47d571edc6245\out\ans.rs:383:pub struct EyeReport {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-b9f47d571edc6245\out\ans.rs-384-    /// dom_reader, vision, page_diff, goal_verifier, error_detector
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-b9f47d571edc6245\out\ans.rs-385-    #[prost(string, tag = "1")]
+target\debug\build\ans-proto-b9f47d571edc6245\out\ans.rs-386-    pub eye_name: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-b9f47d571edc6245\out\ans.rs-387-    #[prost(int64, tag = "2")]
+target\debug\build\ans-proto-b9f47d571edc6245\out\ans.rs-388-    pub timestamp: i64,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-b9f47d571edc6245\out\ans.rs-389-    #[prost(float, tag = "3")]
+target\debug\build\ans-proto-b9f47d571edc6245\out\ans.rs-390-    pub confidence: f32,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-b9f47d571edc6245\out\ans.rs-391-    #[prost(float, tag = "4")]
+target\debug\build\ans-proto-b9f47d571edc6245\out\ans.rs-392-    pub goal_relevance: f32,
+target\debug\build\ans-proto-b9f47d571edc6245\out\ans.rs-393-    #[prost(oneof = "eye_report::Content", tags = "10, 11, 12, 13, 14")]
+target\debug\build\ans-proto-b9f47d571edc6245\out\ans.rs-394-    pub content: ::core::option::Option<eye_report::Content>,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-b9f47d571edc6245\out\ans.rs-395-}
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-b9f47d571edc6245\out\ans.rs-396-/// Nested message and enum types in `EyeReport`.
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-b9f47d571edc6245\out\ans.rs-397-pub mod eye_report {
+target\debug\build\ans-proto-b9f47d571edc6245\out\ans.rs-398-    #[derive(Clone, PartialEq, ::prost::Oneof)]
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-b9f47d571edc6245\out\ans.rs-399-    pub enum Content {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-b9f47d571edc6245\out\ans.rs-400-        #[prost(message, tag = "10")]
+target\debug\build\ans-proto-b9f47d571edc6245\out\ans.rs-401-        Dom(super::DomReportContent),
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-b9f47d571edc6245\out\ans.rs-402-        #[prost(message, tag = "11")]
+target\debug\build\ans-proto-b9f47d571edc6245\out\ans.rs-403-        Vision(super::VisionReportContent),
+--
+target\debug\build\ans-proto-b5b96add98b0e531\out\ans.rs:383:pub struct EyeReport {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-b5b96add98b0e531\out\ans.rs-384-    /// dom_reader, vision, page_diff, goal_verifier, error_detector
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-b5b96add98b0e531\out\ans.rs-385-    #[prost(string, tag = "1")]
+target\debug\build\ans-proto-b5b96add98b0e531\out\ans.rs-386-    pub eye_name: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-b5b96add98b0e531\out\ans.rs-387-    #[prost(int64, tag = "2")]
+target\debug\build\ans-proto-b5b96add98b0e531\out\ans.rs-388-    pub timestamp: i64,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-b5b96add98b0e531\out\ans.rs-389-    #[prost(float, tag = "3")]
+target\debug\build\ans-proto-b5b96add98b0e531\out\ans.rs-390-    pub confidence: f32,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-b5b96add98b0e531\out\ans.rs-391-    #[prost(float, tag = "4")]
+target\debug\build\ans-proto-b5b96add98b0e531\out\ans.rs-392-    pub goal_relevance: f32,
+target\debug\build\ans-proto-b5b96add98b0e531\out\ans.rs-393-    #[prost(oneof = "eye_report::Content", tags = "10, 11, 12, 13, 14")]
+target\debug\build\ans-proto-b5b96add98b0e531\out\ans.rs-394-    pub content: ::core::option::Option<eye_report::Content>,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-b5b96add98b0e531\out\ans.rs-395-}
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-b5b96add98b0e531\out\ans.rs-396-/// Nested message and enum types in `EyeReport`.
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-b5b96add98b0e531\out\ans.rs-397-pub mod eye_report {
+target\debug\build\ans-proto-b5b96add98b0e531\out\ans.rs-398-    #[derive(Clone, PartialEq, ::prost::Oneof)]
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-b5b96add98b0e531\out\ans.rs-399-    pub enum Content {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-b5b96add98b0e531\out\ans.rs-400-        #[prost(message, tag = "10")]
+target\debug\build\ans-proto-b5b96add98b0e531\out\ans.rs-401-        Dom(super::DomReportContent),
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-b5b96add98b0e531\out\ans.rs-402-        #[prost(message, tag = "11")]
+target\debug\build\ans-proto-b5b96add98b0e531\out\ans.rs-403-        Vision(super::VisionReportContent),
+--
+target\debug\build\ans-proto-a460ce993688e0e5\out\ans.rs:383:pub struct EyeReport {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-a460ce993688e0e5\out\ans.rs-384-    /// dom_reader, vision, page_diff, goal_verifier, error_detector
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-a460ce993688e0e5\out\ans.rs-385-    #[prost(string, tag = "1")]
+target\debug\build\ans-proto-a460ce993688e0e5\out\ans.rs-386-    pub eye_name: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-a460ce993688e0e5\out\ans.rs-387-    #[prost(int64, tag = "2")]
+target\debug\build\ans-proto-a460ce993688e0e5\out\ans.rs-388-    pub timestamp: i64,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-a460ce993688e0e5\out\ans.rs-389-    #[prost(float, tag = "3")]
+target\debug\build\ans-proto-a460ce993688e0e5\out\ans.rs-390-    pub confidence: f32,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-a460ce993688e0e5\out\ans.rs-391-    #[prost(float, tag = "4")]
+target\debug\build\ans-proto-a460ce993688e0e5\out\ans.rs-392-    pub goal_relevance: f32,
+target\debug\build\ans-proto-a460ce993688e0e5\out\ans.rs-393-    #[prost(oneof = "eye_report::Content", tags = "10, 11, 12, 13, 14")]
+target\debug\build\ans-proto-a460ce993688e0e5\out\ans.rs-394-    pub content: ::core::option::Option<eye_report::Content>,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-a460ce993688e0e5\out\ans.rs-395-}
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-a460ce993688e0e5\out\ans.rs-396-/// Nested message and enum types in `EyeReport`.
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-a460ce993688e0e5\out\ans.rs-397-pub mod eye_report {
+target\debug\build\ans-proto-a460ce993688e0e5\out\ans.rs-398-    #[derive(Clone, PartialEq, ::prost::Oneof)]
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-a460ce993688e0e5\out\ans.rs-399-    pub enum Content {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-a460ce993688e0e5\out\ans.rs-400-        #[prost(message, tag = "10")]
+target\debug\build\ans-proto-a460ce993688e0e5\out\ans.rs-401-        Dom(super::DomReportContent),
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-a460ce993688e0e5\out\ans.rs-402-        #[prost(message, tag = "11")]
+target\debug\build\ans-proto-a460ce993688e0e5\out\ans.rs-403-        Vision(super::VisionReportContent),
+--
+target\debug\build\ans-proto-971f2fc076f56386\out\ans.rs:383:pub struct EyeReport {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-971f2fc076f56386\out\ans.rs-384-    /// dom_reader, vision, page_diff, goal_verifier, error_detector
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-971f2fc076f56386\out\ans.rs-385-    #[prost(string, tag = "1")]
+target\debug\build\ans-proto-971f2fc076f56386\out\ans.rs-386-    pub eye_name: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-971f2fc076f56386\out\ans.rs-387-    #[prost(int64, tag = "2")]
+target\debug\build\ans-proto-971f2fc076f56386\out\ans.rs-388-    pub timestamp: i64,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-971f2fc076f56386\out\ans.rs-389-    #[prost(float, tag = "3")]
+target\debug\build\ans-proto-971f2fc076f56386\out\ans.rs-390-    pub confidence: f32,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-971f2fc076f56386\out\ans.rs-391-    #[prost(float, tag = "4")]
+target\debug\build\ans-proto-971f2fc076f56386\out\ans.rs-392-    pub goal_relevance: f32,
+target\debug\build\ans-proto-971f2fc076f56386\out\ans.rs-393-    #[prost(oneof = "eye_report::Content", tags = "10, 11, 12, 13, 14")]
+target\debug\build\ans-proto-971f2fc076f56386\out\ans.rs-394-    pub content: ::core::option::Option<eye_report::Content>,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-971f2fc076f56386\out\ans.rs-395-}
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-971f2fc076f56386\out\ans.rs-396-/// Nested message and enum types in `EyeReport`.
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-971f2fc076f56386\out\ans.rs-397-pub mod eye_report {
+target\debug\build\ans-proto-971f2fc076f56386\out\ans.rs-398-    #[derive(Clone, PartialEq, ::prost::Oneof)]
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-971f2fc076f56386\out\ans.rs-399-    pub enum Content {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-971f2fc076f56386\out\ans.rs-400-        #[prost(message, tag = "10")]
+target\debug\build\ans-proto-971f2fc076f56386\out\ans.rs-401-        Dom(super::DomReportContent),
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-971f2fc076f56386\out\ans.rs-402-        #[prost(message, tag = "11")]
+target\debug\build\ans-proto-971f2fc076f56386\out\ans.rs-403-        Vision(super::VisionReportContent),
+--
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs:383:pub struct EyeReport {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-384-    /// dom_reader, vision, page_diff, goal_verifier, error_detector
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-385-    #[prost(string, tag = "1")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-386-    pub eye_name: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-387-    #[prost(int64, tag = "2")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-388-    pub timestamp: i64,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-389-    #[prost(float, tag = "3")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-390-    pub confidence: f32,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-391-    #[prost(float, tag = "4")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-392-    pub goal_relevance: f32,
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-393-    #[prost(oneof = "eye_report::Content", tags = "10, 11, 12, 13, 14")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-394-    pub content: ::core::option::Option<eye_report::Content>,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-395-}
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-396-/// Nested message and enum types in `EyeReport`.
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-397-pub mod eye_report {
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-398-    #[derive(Clone, PartialEq, ::prost::Oneof)]
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-399-    pub enum Content {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-400-        #[prost(message, tag = "10")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-401-        Dom(super::DomReportContent),
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-402-        #[prost(message, tag = "11")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-403-        Vision(super::VisionReportContent),
+--
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs:383:pub struct EyeReport {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-384-    /// dom_reader, vision, page_diff, goal_verifier, error_detector
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-385-    #[prost(string, tag = "1")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-386-    pub eye_name: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-387-    #[prost(int64, tag = "2")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-388-    pub timestamp: i64,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-389-    #[prost(float, tag = "3")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-390-    pub confidence: f32,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-391-    #[prost(float, tag = "4")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-392-    pub goal_relevance: f32,
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-393-    #[prost(oneof = "eye_report::Content", tags = "10, 11, 12, 13, 14")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-394-    pub content: ::core::option::Option<eye_report::Content>,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-395-}
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-396-/// Nested message and enum types in `EyeReport`.
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-397-pub mod eye_report {
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-398-    #[derive(Clone, PartialEq, ::prost::Oneof)]
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-399-    pub enum Content {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-400-        #[prost(message, tag = "10")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-401-        Dom(super::DomReportContent),
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-402-        #[prost(message, tag = "11")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-403-        Vision(super::VisionReportContent),
+--
+target\debug\build\ans-proto-3b14a9fd0aef312a\out\ans.rs:383:pub struct EyeReport {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out\ans.rs-384-    /// dom_reader, vision, page_diff, goal_verifier, error_detector
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out\ans.rs-385-    #[prost(string, tag = "1")]
+target\debug\build\ans-proto-3b14a9fd0aef312a\out\ans.rs-386-    pub eye_name: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out\ans.rs-387-    #[prost(int64, tag = "2")]
+target\debug\build\ans-proto-3b14a9fd0aef312a\out\ans.rs-388-    pub timestamp: i64,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out\ans.rs-389-    #[prost(float, tag = "3")]
+target\debug\build\ans-proto-3b14a9fd0aef312a\out\ans.rs-390-    pub confidence: f32,
+
+[Showing results with pagination = limit: 250]

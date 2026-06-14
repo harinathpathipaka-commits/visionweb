@@ -1,0 +1,123 @@
+/**
+ * LayerInfinite API — coach-session-tracker.ts
+ * ══════════════════════════════════════════════════════════════
+ * Session-level coaching limits for the LLM Coach.
+ *
+ * Rules:
+ *   - Max 3 coaching injections per agent session
+ *   - Sessions expire after 30 minutes of inactivity
+ *   - Coaching retires automatically when a task_type has
+ *     ≥ 50 outcomes (statistical scoring is sufficient)
+ * ══════════════════════════════════════════════════════════════
+ */
+
+interface CoachSessionState {
+  agentId: string;
+  sessionStart: number;
+  coachingCount: number;
+  /** Per-task-type outcome counts known at coaching time. */
+  taskOutcomeCounts: Map<string, number>;
+}
+
+const MAX_COACHING_PER_SESSION = 3;
+const SESSION_TTL_MS = 30 * 60 * 1000;
+const RETIRE_OUTCOME_THRESHOLD = 50;
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+
+export class CoachSessionTracker {
+  private readonly sessions = new Map<string, CoachSessionState>();
+  private cleanupTimer: ReturnType<typeof setInterval> | null = null;
+
+  /**
+   * Check whether coaching is allowed for this agent + task_type.
+   * Returns false if the session cap (3) is reached or if the
+   * task_type has enough historical outcomes for statistical scoring.
+   */
+  canCoach(agentId: string, taskType: string, taskOutcomeCount = 0): boolean {
+    this.cleanExpired();
+
+    if (taskOutcomeCount >= RETIRE_OUTCOME_THRESHOLD) return false;
+
+    const state = this.getOrCreate(agentId);
+    if (state.coachingCount >= MAX_COACHING_PER_SESSION) return false;
+
+    return true;
+  }
+
+  /**
+   * Record a coaching injection. Returns true if recorded,
+   * false if the cap was already reached.
+   */
+  recordCoaching(agentId: string, taskType: string): boolean {
+    this.cleanExpired();
+
+    const state = this.getOrCreate(agentId);
+    if (state.coachingCount >= MAX_COACHING_PER_SESSION) return false;
+
+    state.coachingCount++;
+    state.taskOutcomeCounts.set(
+      taskType,
+      (state.taskOutcomeCounts.get(taskType) ?? 0) + 1,
+    );
+    return true;
+  }
+
+  /**
+   * Update the known outcome count for a task_type.
+   * Once ≥ 50, coaching retires for that task_type permanently.
+   */
+  setTaskOutcomeCount(agentId: string, taskType: string, count: number): void {
+    const state = this.getOrCreate(agentId);
+    state.taskOutcomeCounts.set(taskType, count);
+  }
+
+  /** Remaining coaching slots for this agent's current session. */
+  remainingCoachingSlots(agentId: string): number {
+    this.cleanExpired();
+    const state = this.sessions.get(agentId);
+    if (!state) return MAX_COACHING_PER_SESSION;
+    return Math.max(0, MAX_COACHING_PER_SESSION - state.coachingCount);
+  }
+
+  get activeSessionCount(): number {
+    this.cleanExpired();
+    return this.sessions.size;
+  }
+
+  // ── Private ──────────────────────────────────────────────────
+
+  private getOrCreate(agentId: string): CoachSessionState {
+    const existing = this.sessions.get(agentId);
+    if (existing) return existing;
+
+    const state: CoachSessionState = {
+      agentId,
+      sessionStart: Date.now(),
+      coachingCount: 0,
+      taskOutcomeCounts: new Map(),
+    };
+    this.sessions.set(agentId, state);
+
+    if (!this.cleanupTimer) {
+      this.cleanupTimer = setInterval(() => this.cleanExpired(), CLEANUP_INTERVAL_MS).unref();
+    }
+
+    return state;
+  }
+
+  private cleanExpired(): void {
+    const cutoff = Date.now() - SESSION_TTL_MS;
+    for (const [id, state] of this.sessions) {
+      if (state.sessionStart < cutoff) {
+        this.sessions.delete(id);
+      }
+    }
+    if (this.sessions.size === 0 && this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
+  }
+}
+
+/** Singleton instance for the process. */
+export const coachTracker = new CoachSessionTracker();

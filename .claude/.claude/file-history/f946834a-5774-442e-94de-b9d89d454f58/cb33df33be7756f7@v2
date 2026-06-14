@@ -1,0 +1,82 @@
+from __future__ import annotations
+
+import os
+import tempfile
+from unittest.mock import patch
+
+import sqlite3
+
+from src.db import _apply_pragmas, get_library_size, transaction
+
+
+class TestConnection:
+    def test_connection_works(self):
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.execute("CREATE TABLE t (id INTEGER)")
+            conn.execute("INSERT INTO t VALUES (1)")
+            conn.commit()
+            row = conn.execute("SELECT COUNT(*) as cnt FROM t").fetchone()
+            assert row[0] == 1
+            conn.close()
+        finally:
+            os.unlink(db_path)
+
+
+class TestTransaction:
+    def test_readonly_block_writes(self):
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            with transaction(db_path) as conn:
+                conn.execute("CREATE TABLE test (id INTEGER)")
+                conn.execute("INSERT INTO test VALUES (1)")
+
+            with transaction(db_path, readonly=True) as conn:
+                row = conn.execute("SELECT COUNT(*) as cnt FROM test").fetchone()
+                assert row["cnt"] == 1
+        finally:
+            os.unlink(db_path)
+
+    def test_rollback_on_error(self):
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            with transaction(db_path) as conn:
+                conn.execute("CREATE TABLE test (id INTEGER PRIMARY KEY)")
+                conn.execute("INSERT INTO test VALUES (1)")
+
+            try:
+                with transaction(db_path) as conn:
+                    conn.execute("INSERT INTO test VALUES (1)")
+            except Exception:
+                pass
+
+            with transaction(db_path, readonly=True) as conn:
+                row = conn.execute("SELECT COUNT(*) as cnt FROM test").fetchone()
+                assert row["cnt"] == 1
+        finally:
+            os.unlink(db_path)
+
+
+class TestPragmas:
+    def test_wal_mode_set(self):
+        conn = sqlite3.connect(":memory:")
+        _apply_pragmas(conn)
+        row = conn.execute("PRAGMA journal_mode").fetchone()
+        assert row[0].upper() in ("WAL", "MEMORY")
+        conn.close()
+
+
+class TestLibrarySize:
+    def test_empty_db_returns_zero(self):
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            with transaction(db_path) as conn:
+                conn.execute("CREATE TABLE IF NOT EXISTS equation_library (equation_id INTEGER)")
+            assert get_library_size(db_path) == 0
+        finally:
+            os.unlink(db_path)

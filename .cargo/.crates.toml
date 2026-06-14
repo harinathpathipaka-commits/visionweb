@@ -1,0 +1,2 @@
+[v1]
+"protobuf-codegen 3.7.2 (registry+https://github.com/rust-lang/crates.io-index)" = ["protoc-gen-rs.exe"]

@@ -1,0 +1,274 @@
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "CLAUDE_FLOW_V3_ENABLED": "true",
+    "CLAUDE_FLOW_HOOKS_ENABLED": "true"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -X POST \"https://api.supabase.com/v1/projects/fakomwsewdxazaqawjuv/database/query\" -H \"Authorization: Bearer sbp_78dd6b4111d875284770e73cf874353a1776517f\" -H \"Content-Type: application/json\" -d '{\"\"query\"\": \"\"SELECT refresh_mv_episode_patterns\\(\\);\"\"}')",
+      "Bash(curl -s -X POST \"https://api.supabase.com/v1/projects/fakomwsewdxazaqawjuv/database/query\" -H \"Authorization: Bearer sbp_78dd6b4111d875284770e73cf874353a1776517f\" -H \"Content-Type: application/json\" -d '{\"\"query\"\": \"\"SELECT action_id, action_name, action_category FROM dim_actions ORDER BY action_name;\"\"}')",
+      "Bash(grep -rn \"from ''''crypto''''\\\\|require\\(''''crypto''''\\)\" c:/Users/kusta/Outcome/layer5/api --include=\"*.ts\")",
+      "Bash(npx tsc:*)",
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(curl -s -X POST \"https://api.supabase.com/v1/projects/fakomwsewdxazaqawjuv/database/query\" -H \"Authorization: Bearer sbp_78dd6b4111d875284770e73cf874353a1776517f\" -H \"Content-Type: application/json\" -d '{\"\"query\"\": \"\"ALTER TABLE dim_institutional_knowledge ADD CONSTRAINT IF NOT EXISTS uq_institutional_knowledge_action_context UNIQUE \\(action_id, context_type\\);\"\"}')",
+      "Bash(ls -1 ./layer5/api/migrations/0*.sql)",
+      "Bash(cmd.exe /c \"cd C:\\\\Users\\\\kusta\\\\Outcome\\\\layer5\\\\api && npx tsc --noEmit 2>&1\")",
+      "Bash(cmd.exe /c \"cd /d C:\\\\Users\\\\kusta\\\\Outcome\\\\layer5\\\\api && npx tsc --noEmit\")",
+      "Bash(cmd.exe /c \"cd /d C:\\\\Users\\\\kusta\\\\Outcome\\\\layer5\\\\api && npx tsc --noEmit && echo TSC_OK || echo TSC_FAILED\")",
+      "Bash(powershell.exe -Command \"Set-Location ''C:\\\\Users\\\\kusta\\\\Outcome\\\\layer5\\\\api''; $result = npx tsc --noEmit 2>&1; if \\($LASTEXITCODE -eq 0\\) { Write-Output ''TSC_PASS: 0 errors'' } else { Write-Output \"\"TSC_FAIL: exit $LASTEXITCODE\"\"; $result | ForEach-Object { Write-Output $_} }\")",
+      "Bash(powershell.exe -Command \"Set-Location ''C:\\\\Users\\\\kusta\\\\Outcome\\\\layer5\\\\api''; npx tsc --noEmit 2>&1; Write-Output \"\"EXIT:$LASTEXITCODE\"\"\")",
+      "Bash(powershell.exe -Command \"Get-Command node,npx,tsc -ErrorAction SilentlyContinue | Select-Object Name,Source\")",
+      "Bash(powershell.exe -Command \"Get-ChildItem ''C:\\\\Program Files\\\\nodejs'' -ErrorAction SilentlyContinue | Select-Object Name; Get-ChildItem ''C:\\\\Users\\\\kusta\\\\AppData\\\\Roaming\\\\npm'' -ErrorAction SilentlyContinue | Select-Object Name\")",
+      "Bash(powershell.exe -Command \"Get-ChildItem Env: | Where-Object { $_Name -match ''PATH'' } | Select-Object -ExpandProperty Value\")",
+      "Bash(cmd.exe /c \"cd /d C:\\\\Users\\\\kusta\\\\Outcome\\\\layer5\\\\api && npx tsc --noEmit > C:\\\\Users\\\\kusta\\\\AppData\\\\Local\\\\Temp\\\\tsc_out.txt 2>&1 && echo PASS >> C:\\\\Users\\\\kusta\\\\AppData\\\\Local\\\\Temp\\\\tsc_out.txt || echo FAIL >> C:\\\\Users\\\\kusta\\\\AppData\\\\Local\\\\Temp\\\\tsc_out.txt\")",
+      "Read(//c/Users/kusta/AppData/Local/Temp/**)",
+      "Bash(curl -s -H \"Authorization: Bearer sbp_78dd6b4111d875284770e73cf874353a1776517f\" \"https://api.supabase.com/v1/projects\")",
+      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(p[''''id''''], p[''''name'''']\\) for p in data]\")",
+      "Bash(git push:*)",
+      "Bash(npm install:*)",
+      "Bash(cmd.exe /c \"where node\")",
+      "Bash(cmd.exe /c \"where node && where npm\")",
+      "Bash(cmd.exe /c \"node --version\")",
+      "Bash(cmd.exe /c \"npm --version\")",
+      "Bash(cmd.exe /c \"C:\\\\Program Files\\\\nodejs\\\\node.exe --version && C:\\\\Program Files\\\\nodejs\\\\npm.cmd --version\")",
+      "Bash(export PATH=\"/c/Program Files/nodejs:$PATH\")",
+      "Bash(npm --version)",
+      "Bash(npx vitest:*)",
+      "Bash(pip install:*)",
+      "Bash(python3 -m pip install -e \".[dev]\" -q)",
+      "Bash(where python:*)",
+      "Bash(where python3:*)",
+      "Bash(where py:*)",
+      "Bash(python3:*)",
+      "Bash(python real_agent.py)",
+      "Bash(find c:/Users/kusta/Layerinfinite/Outcome -name *.txt -o -name setup.py -o -name pyproject.toml)",
+      "Bash(.venv/Scripts/python real_agent.py)",
+      "Bash(OPENAI_API_KEY=\"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\" LAYERINFINITE_API_KEY=\"layerinfinite_06a1eabc46b8f772b551d92e557cb485\" .venv/Scripts/python real_agent.py)",
+      "Bash(python -m build)",
+      "Bash(twine upload:*)",
+      "Bash(python -m twine upload dist/layerinfinite_sdk-0.2.1*)",
+      "Bash(python -m pytest tests/ -v)",
+      "Bash(python ptest.py --help)",
+      "Bash(python ptest.py --mode none --runs 15)",
+      "Bash(python ptest.py --mode observe --runs 15)",
+      "Bash(python ptest.py --mode advisory --runs 15)",
+      "Bash(python ptest.py --mode autonomous --runs 15)",
+      "Bash(python ptest.py --mode autonomous --runs 20 --stress)",
+      "Bash(python ptest.py --compare results_none_185211.json results_autonomous_190451.json)",
+      "Bash(git -C c:/Users/kusta/Layerinfinite/Outcome log --oneline -5)",
+      "Bash(curl -s -H \"X-API-Key: layerinfinite_44a166ae98bf2fcdb424319f60d9ffa1\" \"https://api.layerinfinite.app/v1/recommendations?agent_id=test&task=deploy_rollback_triggered\")",
+      "Bash(python -m json.tool --no-ensure-ascii)",
+      "Bash(LAYERINFINITE_API_KEY=\"layerinfinite_44a166ae98bf2fcdb424319f60d9ffa1\" OPENAI_API_KEY=\"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\" python ptest.py --mode advisory --runs 15)",
+      "Bash(LAYERINFINITE_API_KEY=\"layerinfinite_44a166ae98bf2fcdb424319f60d9ffa1\" OPENAI_API_KEY=\"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\" python ptest.py --mode autonomous --runs 15)",
+      "Bash(LAYERINFINITE_API_KEY=\"layerinfinite_44a166ae98bf2fcdb424319f60d9ffa1\" OPENAI_API_KEY=\"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\" python ptest.py --mode autonomous --runs 20 --stress)",
+      "Bash(LAYERINFINITE_API_KEY=\"layerinfinite_44a166ae98bf2fcdb424319f60d9ffa1\" OPENAI_API_KEY=\"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\" python ptest.py --compare results_none_103730.json results_autonomous_105314.json)",
+      "Bash(python -c ':*)",
+      "Bash(ls c:/Users/kusta/Layerinfinite/Outcome/*.py)",
+      "Bash(ls -t c:/Users/kusta/Layerinfinite/Outcome/results_rw_auto_*.json)",
+      "Bash(python realagent.py --mode auto --runs 50 --seed 99)",
+      "Bash(npm run:*)",
+      "Bash(npm test:*)",
+      "Bash(python -m pytest tests/ -q)",
+      "Bash(OPENAI_API_KEY=\"sk-proj-LYxpfp18O5nPHTuqmYhzvzTQ9y-lQQQ0HQBgl0wDFQfwoVd2_YuZ8odQgul2VSvsKdz_HL2AbvT3BlbkFJs7-nLld2H6mIz26_4k-JwmJqFhCrmKadZGei3oEesTYLb9EAidOihIR7r_kC7ofu9MS0hJFabIA\" LI_API_KEY=\"layerinfinite_7c06c8cbd6b0ad726decc5d4fc63214a\" .venv/Scripts/python realworld_proof_agent.py)",
+      "Bash(OPENAI_API_KEY=\"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\" LI_API_KEY=\"layerinfinite_7c06c8cbd6b0ad726decc5d4fc63214a\" .venv/Scripts/python realworld_proof_agent.py)",
+      "Bash(OPENAI_API_KEY=\"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\" LI_API_KEY=\"layerinfinite_7c06c8cbd6b0ad726decc5d4fc63214a\" .venv/Scripts/python realworld_proof_agent.py)",
+      "Bash(pip show:*)",
+      "Read(//c/Users/kusta/**)",
+      "Bash(grep -n \"is_imported\\\\|is_synthetic\" \"c:/Users/kusta/Layerinfinite/Outcome/layer5/supabase/migrations/\"*.sql)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(grep -r \"ingestion_source\" /c/Users/kusta/Layerinfinite/Outcome/layer5/supabase/migrations/*.sql)",
+      "Bash(grep -r \"data_quality\" /c/Users/kusta/Layerinfinite/Outcome/layer5/supabase/migrations/*.sql)",
+      "Bash(grep -h \"ADD COLUMN\\\\|CREATE TABLE fact_outcomes\" /c/Users/kusta/Layerinfinite/Outcome/layer5/supabase/migrations/*.sql)",
+      "Bash(grep -r \"task_name\" /c/Users/kusta/Layerinfinite/Outcome/layer5/supabase/migrations/*.sql)",
+      "Bash(xargs grep:*)",
+      "Bash(echo \"DASHBOARD:$?\")",
+      "Bash(echo \"DASH:$?\")",
+      "Bash(echo \"API:$?\")",
+      "Bash(node ./node_modules/typescript/bin/tsc --noEmit)",
+      "Bash(xargs ls:*)",
+      "Bash(grep -l \"ALTER TABLE fact_outcomes\\\\|ADD COLUMN\" \"/c/Users/kusta/Layerinfinite/Outcome/layer5/supabase/migrations\"/*.sql)",
+      "Bash(grep -l \"customer_id\" \"/c/Users/kusta/Layerinfinite/Outcome/layer5/supabase/migrations\"/*.sql)",
+      "Bash(grep -A 30 \"CREATE TABLE dim_contexts\\\\|ALTER TABLE.*dim_contexts\" \"/c/Users/kusta/Layerinfinite/Outcome/layer5/supabase/migrations\"/*.sql)",
+      "Bash(grep -A 5 \"embedding_model\\\\|embedding_schema\" \"/c/Users/kusta/Layerinfinite/Outcome/layer5/supabase/migrations\"/*.sql)",
+      "Bash(grep -B 5 -A 10 \"VECTOR\\(384\\)\\\\|context_vector\" \"/c/Users/kusta/Layerinfinite/Outcome/layer5/supabase/migrations\"/*.sql)",
+      "Bash(grep -h \"ALTER TABLE fact_outcomes\\\\|ADD COLUMN\" \"/c/Users/kusta/Layerinfinite/Outcome/layer5/supabase/migrations\"/*.sql)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(ls /c/Users/kusta/Layerinfinite/Outcome/layer5/api/*.ts)",
+      "Bash(echo \"API_EXIT:$?\")",
+      "Bash(echo \"DASH_EXIT:$?\")",
+      "Bash(grep -n \"raw_context\\\\|context_features\\\\|embedding\\\\|vector\" c:/Users/kusta/Layerinfinite/Outcome/layer5/supabase/migrations/*.sql)",
+      "Bash(npx @claude-flow*)",
+      "Bash(npx claude-flow*)",
+      "Bash(node .claude/*)",
+      "mcp__claude-flow__*"
+    ]
+  },
+  "model": "deepseek-v4-pro",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd /c node %CLAUDE_PROJECT_DIR%/.claude/helpers/hook-handler.cjs pre-bash",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd /c node %CLAUDE_PROJECT_DIR%/.claude/helpers/hook-handler.cjs pre-edit",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd /c node %CLAUDE_PROJECT_DIR%/.claude/helpers/hook-handler.cjs post-edit",
+            "timeout": 10000
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd /c node %CLAUDE_PROJECT_DIR%/.claude/helpers/hook-handler.cjs post-bash",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd /c node %CLAUDE_PROJECT_DIR%/.claude/helpers/hook-handler.cjs route",
+            "timeout": 10000
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd /c node %CLAUDE_PROJECT_DIR%/.claude/helpers/hook-handler.cjs session-restore",
+            "timeout": 15000
+          },
+          {
+            "type": "command",
+            "command": "cmd /c node %CLAUDE_PROJECT_DIR%/.claude/helpers/auto-memory-hook.mjs import",
+            "timeout": 8000
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd /c node %CLAUDE_PROJECT_DIR%/.claude/helpers/hook-handler.cjs session-end",
+            "timeout": 10000
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd /c node %CLAUDE_PROJECT_DIR%/.claude/helpers/auto-memory-hook.mjs sync",
+            "timeout": 10000
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "manual",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd /c node %CLAUDE_PROJECT_DIR%/.claude/helpers/hook-handler.cjs compact-manual"
+          },
+          {
+            "type": "command",
+            "command": "cmd /c node %CLAUDE_PROJECT_DIR%/.claude/helpers/hook-handler.cjs session-end",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "matcher": "auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd /c node %CLAUDE_PROJECT_DIR%/.claude/helpers/hook-handler.cjs compact-auto"
+          },
+          {
+            "type": "command",
+            "command": "cmd /c node %CLAUDE_PROJECT_DIR%/.claude/helpers/hook-handler.cjs session-end",
+            "timeout": 6000
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd /c node %CLAUDE_PROJECT_DIR%/.claude/helpers/hook-handler.cjs status",
+            "timeout": 3000
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd /c node %CLAUDE_PROJECT_DIR%/.claude/helpers/hook-handler.cjs post-task",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd /c node %CLAUDE_PROJECT_DIR%/.claude/helpers/hook-handler.cjs notify",
+            "timeout": 3000
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "rust-analyzer-lsp@claude-plugins-official": true
+  },
+  "effortLevel": "xhigh",
+  "autoUpdatesChannel": "latest",
+  "skipDangerousModePermissionPrompt": true,
+  "theme": "dark"
+}

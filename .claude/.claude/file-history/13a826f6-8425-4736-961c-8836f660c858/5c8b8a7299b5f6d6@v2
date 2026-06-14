@@ -1,0 +1,14 @@
+"""Decision scoring engine — the 3-layer business outcome model.
+
+Scores every (action, tool, context) tuple across three temporal layers:
+1. Immediate (t=0)        — Did the action work technically?
+2. Short-term (t=min-hrs) — Did the goal advance in this session?
+3. Long-term (t=days-mon) — Did the business outcome materialize?
+
+Produces composite scores stored in LanceDB. The Decision Intelligence
+Layer queries these to pick the next best action for a given context.
+"""
+
+from .scorer import DecisionScorer
+
+__all__ = ["DecisionScorer"]

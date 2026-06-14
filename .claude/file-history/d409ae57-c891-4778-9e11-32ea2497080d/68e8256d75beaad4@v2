@@ -1,0 +1,284 @@
+from __future__ import annotations
+
+import operator
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
+
+# ── Built-in Formula Library ─────────────────────────────────────────────────
+
+BUILTIN_FORMULAS: Dict[str, Dict[str, Any]] = {
+    # SaaS / Finance
+    "arr": {
+        "expression": "mrr * 12",
+        "description": "Annual Recurring Revenue from Monthly Recurring Revenue",
+        "drivers": ["mrr"],
+    },
+    "revenue": {
+        "expression": "customers * arpu",
+        "description": "Total revenue from customer count and average revenue per user",
+        "drivers": ["customers", "arpu"],
+    },
+    "ltv": {
+        "expression": "arpu / churn_rate",
+        "description": "Customer Lifetime Value from ARPU and churn rate",
+        "drivers": ["arpu", "churn_rate"],
+    },
+    "cac_payback_months": {
+        "expression": "cac / (arpu * gross_margin)",
+        "description": "CAC payback period in months",
+        "drivers": ["cac", "arpu", "gross_margin"],
+    },
+    "net_revenue_retention": {
+        "expression": "(starting_arr + expansion - contraction - churned) / starting_arr",
+        "description": "Net Revenue Retention (NRR/NDR)",
+        "drivers": ["starting_arr", "expansion", "contraction", "churned"],
+    },
+    "gross_profit": {
+        "expression": "revenue * gross_margin",
+        "description": "Gross profit from revenue and margin",
+        "drivers": ["revenue", "gross_margin"],
+    },
+    "mrr_growth_rate": {
+        "expression": "(new_mrr + expansion_mrr - contraction_mrr - churned_mrr) / starting_mrr",
+        "description": "Net MRR growth rate",
+        "drivers": ["new_mrr", "expansion_mrr", "contraction_mrr", "churned_mrr", "starting_mrr"],
+    },
+    # General / Economics
+    "profit": {
+        "expression": "revenue - cost",
+        "description": "Profit = revenue minus cost",
+        "drivers": ["revenue", "cost"],
+    },
+    "margin_pct": {
+        "expression": "(revenue - cost) / revenue * 100",
+        "description": "Profit margin as percentage",
+        "drivers": ["revenue", "cost"],
+    },
+    "conversion_rate": {
+        "expression": "converted / total * 100",
+        "description": "Conversion rate percentage",
+        "drivers": ["converted", "total"],
+    },
+    "roi": {
+        "expression": "(gain - cost) / cost * 100",
+        "description": "Return on investment percentage",
+        "drivers": ["gain", "cost"],
+    },
+}
+
+
+# ── Formula Engine ───────────────────────────────────────────────────────────
+
+
+class FormulaRegistry:
+    """Registry of named formulas with parse, evaluate, and decompose capabilities."""
+
+    def __init__(self, custom_formulas: Optional[Dict[str, Dict[str, Any]]] = None):
+        self._formulas: Dict[str, Dict[str, Any]] = dict(BUILTIN_FORMULAS)
+        if custom_formulas:
+            self._formulas.update(custom_formulas)
+        self._parsed: Dict[str, Tuple[Callable, List[str]]] = {}
+
+    def register(self, name: str, expression: str, description: str = "", drivers: Optional[List[str]] = None):
+        """Register a new formula."""
+        if drivers is None:
+            drivers = _extract_variables(expression)
+        self._formulas[name] = {
+            "expression": expression,
+            "description": description,
+            "drivers": drivers,
+        }
+        self._parsed.pop(name, None)  # Clear cached parse
+
+    def has(self, name: str) -> bool:
+        return name.lower() in self._formulas
+
+    def get(self, name: str) -> Optional[Dict[str, Any]]:
+        return self._formulas.get(name.lower())
+
+    def list_formulas(self) -> List[Dict[str, Any]]:
+        return [{"name": k, **v} for k, v in self._formulas.items()]
+
+    def drivers_of(self, name: str) -> List[str]:
+        """Return the driver variables for a named formula."""
+        formula = self.get(name)
+        if formula:
+            return list(formula["drivers"])
+        return []
+
+    def evaluate(self, name: str, values: Dict[str, float]) -> Optional[float]:
+        """Evaluate a named formula with given variable values."""
+        formula = self.get(name)
+        if not formula:
+            return None
+        expr = formula["expression"]
+        fn, vars_needed = self._parse(expr)
+        kwargs = {}
+        for v in vars_needed:
+            if v not in values:
+                return None
+            kwargs[v] = values[v]
+        try:
+            result = fn(**kwargs)
+            return float(result)
+        except (ZeroDivisionError, OverflowError, ValueError):
+            return None
+
+    def decompose(self, name: str, values: Dict[str, float]) -> Optional[Dict[str, Any]]:
+        """Decompose a metric into its driver contributions.
+
+        Returns {total, components: {driver: {value, contribution, share}}, expression}.
+        """
+        formula = self.get(name)
+        if not formula:
+            return None
+
+        expr = formula["expression"]
+        drivers = formula["drivers"]
+        total = self.evaluate(name, values)
+        if total is None:
+            return None
+
+        # Compute marginal contribution of each driver
+        components: Dict[str, Dict[str, float]] = {}
+        for driver in drivers:
+            driver_val = values.get(driver, 0.0)
+
+            # Marginal effect: perturb driver by +1% to see impact
+            delta_pct = 0.01
+            perturbed = dict(values)
+            if abs(driver_val) > 1e-10:
+                perturbed[driver] = driver_val * (1.0 + delta_pct)
+            else:
+                perturbed[driver] = delta_pct
+
+            perturbed_total = self.evaluate(name, perturbed)
+            if perturbed_total is not None:
+                marginal_effect = (perturbed_total - total) / delta_pct
+            else:
+                marginal_effect = 0.0
+
+            components[driver] = {
+                "value": round(driver_val, 6),
+                "marginal_effect": round(marginal_effect, 6),
+                "contribution_pct": round(100.0 * marginal_effect / total, 2) if abs(total) > 1e-10 else 0.0,
+            }
+
+        return {
+            "metric": name,
+            "total": round(total, 6),
+            "expression": expr,
+            "components": components,
+        }
+
+    def explain_change(
+        self,
+        name: str,
+        before: Dict[str, float],
+        after: Dict[str, float],
+    ) -> Optional[Dict[str, Any]]:
+        """Explain why a metric changed between two periods.
+
+        Returns {before_value, after_value, delta, delta_pct, drivers: [{driver, before, after, delta, contribution_pct}]}.
+        """
+        before_val = self.evaluate(name, before)
+        after_val = self.evaluate(name, after)
+        if before_val is None or after_val is None:
+            return None
+
+        delta = after_val - before_val
+        formula = self.get(name)
+        drivers = formula["drivers"] if formula else list(before.keys())
+
+        driver_explanations: List[Dict[str, Any]] = []
+        total_abs_contrib = 0.0
+
+        # Compute contribution of each driver by changing one at a time
+        for driver in drivers:
+            before_d = before.get(driver, 0.0)
+            after_d = after.get(driver, 0.0)
+            driver_delta = after_d - before_d
+
+            # What would the total be if only this driver changed?
+            hypothetical = dict(before)
+            hypothetical[driver] = after_d
+            hypo_total = self.evaluate(name, hypothetical)
+            if hypo_total is not None:
+                contribution = hypo_total - before_val
+            else:
+                contribution = 0.0
+
+            driver_explanations.append({
+                "driver": driver,
+                "before": round(before_d, 6),
+                "after": round(after_d, 6),
+                "delta": round(driver_delta, 6),
+                "contribution": round(contribution, 6),
+                "contribution_pct": round(100.0 * contribution / delta, 1) if abs(delta) > 1e-10 else 0.0,
+            })
+            total_abs_contrib += abs(contribution)
+
+        # Normalize to 100%
+        if total_abs_contrib > 0:
+            for d in driver_explanations:
+                d["contribution_share"] = round(100.0 * abs(d["contribution"]) / total_abs_contrib, 1)
+
+        return {
+            "metric": name,
+            "before": round(before_val, 6),
+            "after": round(after_val, 6),
+            "delta": round(delta, 6),
+            "delta_pct": round(100.0 * delta / before_val, 2) if abs(before_val) > 1e-10 else None,
+            "drivers": driver_explanations,
+        }
+
+    def _parse(self, expression: str) -> Tuple[Callable, List[str]]:
+        """Parse an expression string into a callable function and variable list."""
+        if expression in self._parsed:
+            return self._parsed[expression]
+
+        vars_needed = _extract_variables(expression)
+        # Build a lambda using safe operators
+        code = compile(expression, "<formula>", "eval")
+        allowed = {
+            "__builtins__": {},
+            **{v: 0.0 for v in vars_needed},
+        }
+
+        def evaluator(**kwargs):
+            env = {**allowed, **kwargs}
+            return eval(code, env)
+
+        self._parsed[expression] = (evaluator, vars_needed)
+        return evaluator, vars_needed
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+
+def _extract_variables(expression: str) -> List[str]:
+    """Extract variable names from an arithmetic expression."""
+    import re
+    # Find all identifiers that aren't operators or numbers
+    tokens = re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*', expression)
+    # Filter out common math functions and constants
+    builtins = {'pi', 'e', 'sin', 'cos', 'tan', 'log', 'exp', 'sqrt', 'abs', 'min', 'max', 'pow'}
+    seen = set()
+    result = []
+    for t in tokens:
+        if t not in builtins and t not in seen:
+            seen.add(t)
+            result.append(t)
+    return result
+
+
+# ── Module-level singleton ──────────────────────────────────────────────────
+
+_registry: Optional[FormulaRegistry] = None
+
+
+def get_registry() -> FormulaRegistry:
+    global _registry
+    if _registry is None:
+        _registry = FormulaRegistry()
+    return _registry

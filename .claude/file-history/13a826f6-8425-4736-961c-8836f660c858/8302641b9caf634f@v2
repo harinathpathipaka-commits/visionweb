@@ -1,0 +1,13 @@
+//! Heuristic rules for distraction classification and injection detection.
+//!
+//! Rules are loaded from `~/.ans/rules/` at startup and can be
+//! hot-reloaded. Each rule is a TOML file with pattern + action.
+
+/// A single heuristic rule.
+pub struct Rule {
+    pub name: String,
+    pub pattern: String,
+    pub kind: String,
+    pub action: String,
+    pub confidence: f32,
+}

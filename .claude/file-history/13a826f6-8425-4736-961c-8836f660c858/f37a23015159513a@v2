@@ -1,0 +1,11 @@
+//! Model Context Protocol (MCP) server.
+//!
+//! Implements the MCP JSON-RPC specification so Claude, ChatGPT, and
+//! other MCP-compatible agents can discover and use the Agent Nervous
+//! System as a tool provider. Exposes tools: navigate, click, type,
+//! screenshot, get_dom, check_goal.
+//!
+//! See: https://modelcontextprotocol.io
+
+/// The MCP server — JSON-RPC over HTTP/SSE.
+pub struct McpServer;

@@ -1,0 +1,21 @@
+//! Layer 1 External API Gateway.
+//!
+//! How external AI agents connect to the Agent Nervous System.
+//! Three protocols, one gateway:
+//!
+//! - **MCP server** (Model Context Protocol): JSON-RPC tool provider
+//!   for Claude, ChatGPT, and other MCP-compatible agents.
+//! - **REST API**: Simple HTTP endpoints for non-MCP agents.
+//! - **WebSocket**: Streaming events for real-time agent feedback.
+//!
+//! All connections are authenticated (API key), rate-limited, and
+//! budget-tracked before any internal gRPC call is made.
+
+pub mod auth;
+pub mod mcp;
+pub mod rest;
+pub mod ws;
+
+pub use mcp::McpServer;
+pub use rest::ApiRouter;
+pub use ws::WebSocketServer;

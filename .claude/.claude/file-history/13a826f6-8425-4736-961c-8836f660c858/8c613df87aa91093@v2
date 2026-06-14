@@ -1,0 +1,109 @@
+use std::time::Duration;
+
+use async_trait::async_trait;
+
+use crate::distill::{DistillMode, DistilledPage};
+use crate::session::ActionOutcome;
+
+/// The abstract browser interface.
+///
+/// Every browser engine (Chromium CDP, Servo, Firefox, WebKit) implements
+/// this trait. The rest of the system never touches a concrete backend —
+/// it only calls methods on `dyn BrowserBackend`.
+///
+/// # Safety
+///
+/// Implementations must guarantee that calling [`close`](Self::close) (or
+/// dropping the backend) terminates the underlying browser process.
+/// Zombie processes are a hard bug.
+#[async_trait]
+pub trait BrowserBackend: Send + Sync {
+    /// Navigate to a URL. Returns page metadata after load completes.
+    async fn navigate(&self, url: &str, timeout: Duration) -> Result<PageState, BrowserError>;
+
+    /// Get the current page's DOM as a distilled tree.
+    async fn get_distilled_dom(&self, mode: DistillMode) -> Result<DistilledPage, BrowserError>;
+
+    /// Capture a screenshot. Returns raw PNG or JPEG bytes.
+    async fn capture_screenshot(
+        &self,
+        format: ImageFormat,
+        full_page: bool,
+    ) -> Result<Vec<u8>, BrowserError>;
+
+    /// Click an element by CSS selector.
+    async fn click(&self, selector: &str) -> Result<ActionOutcome, BrowserError>;
+
+    /// Type text into an element identified by CSS selector.
+    async fn type_text(&self, selector: &str, text: &str) -> Result<ActionOutcome, BrowserError>;
+
+    /// Select an option from a `<select>` element.
+    async fn select_option(
+        &self,
+        selector: &str,
+        value: &str,
+    ) -> Result<ActionOutcome, BrowserError>;
+
+    /// Scroll the page by pixels or to a selector.
+    async fn scroll(
+        &self,
+        pixels: Option<i32>,
+        selector: Option<&str>,
+    ) -> Result<ActionOutcome, BrowserError>;
+
+    /// Wait for the page to reach a stable loaded state.
+    async fn wait_for_load(&self, timeout: Duration) -> Result<PageState, BrowserError>;
+
+    /// Execute arbitrary JavaScript. Returns JSON-serialized result.
+    /// Only used for fallback operations; prefer typed CDP commands.
+    async fn execute_script(&self, script: &str) -> Result<String, BrowserError>;
+
+    /// Close the browser and clean up all resources.
+    async fn close(&self) -> Result<(), BrowserError>;
+}
+
+/// Cheap snapshot of what's currently visible in the viewport.
+#[derive(Debug, Clone)]
+pub struct PageState {
+    pub url: String,
+    pub title: String,
+    pub loaded: bool,
+    pub dom_node_count: u64,
+    pub visible_text: Vec<String>,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+}
+
+/// Screenshot output format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageFormat {
+    Png,
+    Jpeg { quality: u8 },
+}
+
+/// Errors that can bubble up from any browser backend.
+#[derive(Debug, thiserror::Error)]
+pub enum BrowserError {
+    #[error("navigation timeout after {0:?}")]
+    NavigationTimeout(Duration),
+
+    #[error("selector not found: {0}")]
+    SelectorNotFound(String),
+
+    #[error("element not interactable: {0}")]
+    NotInteractable(String),
+
+    #[error("CDP protocol error: {0}")]
+    CdpProtocol(String),
+
+    #[error("browser process died unexpectedly")]
+    BrowserCrashed,
+
+    #[error("browser closed")]
+    BrowserClosed,
+
+    #[error("connection lost: {0}")]
+    ConnectionLost(String),
+
+    #[error("internal error: {0}")]
+    Internal(#[from] anyhow::Error),
+}

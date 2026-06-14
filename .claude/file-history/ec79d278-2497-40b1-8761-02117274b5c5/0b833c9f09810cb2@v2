@@ -1,0 +1,92 @@
+import numpy as np
+from src.probabilistic import (
+    laplace_approximation, laplace_from_fit,
+    bayesian_model_averaging, tail_risk,
+)
+from src.models import EquationFit, FitStats, ProbabilisticResult
+
+
+def _make_equation(family="linear", a=2.0, b=1.0, r2=0.95, aic=80.0):
+    return EquationFit(
+        family=family,
+        parameters={"a": a, "b": b},
+        stats=FitStats(r2_adj=r2, holdout_mape=0.05, aic=aic, residual_random=True, n_obs=20),
+        sympy_expr=f"{a}*x + {b}",
+    )
+
+
+class TestLaplaceApproximation:
+    def test_laplace_returns_probabilistic_result(self):
+        eq = _make_equation()
+        result = laplace_approximation(eq, x_value=2.5, n_samples=500)
+        assert isinstance(result, ProbabilisticResult)
+        assert result.std > 0
+
+    def test_laplace_ci_bounds_contain_mean(self):
+        eq = _make_equation()
+        result = laplace_approximation(eq, x_value=2.5, n_samples=500)
+        assert result.ci_95[0] <= result.mean <= result.ci_95[1]
+
+    def test_laplace_exponential(self):
+        eq = EquationFit(
+            family="exponential",
+            parameters={"a": 1.0, "b": 0.1},
+            stats=FitStats(r2_adj=0.9, holdout_mape=0.05, aic=90.0, residual_random=True, n_obs=20),
+            sympy_expr="exp(0.1*x)",
+        )
+        result = laplace_approximation(eq, x_value=1.0, n_samples=300)
+        assert isinstance(result, ProbabilisticResult)
+
+
+class TestLaplaceFromFit:
+    def test_laplace_from_fit_with_covariance(self):
+        eq = _make_equation()
+        cov = np.eye(2) * 0.01
+        result = laplace_from_fit(
+            params={"a": 2.0, "b": 1.0},
+            covariance=cov,
+            equation=eq,
+            x_value=2.5,
+            n_samples=300,
+        )
+        assert isinstance(result, ProbabilisticResult)
+        assert result.std > 0
+
+
+class TestBayesianModelAveraging:
+    def test_bma_single_candidate(self):
+        eq = _make_equation()
+        result = bayesian_model_averaging([eq], x_value=5.0, n_samples=500)
+        assert isinstance(result, ProbabilisticResult)
+        assert result.std >= 0
+
+    def test_bma_multiple_candidates(self):
+        candidates = [
+            _make_equation(aic=80.0),
+            _make_equation(family="exponential", a=1.0, b=0.2, aic=120.0),
+        ]
+        result = bayesian_model_averaging(candidates, x_value=5.0, n_samples=500)
+        assert isinstance(result, ProbabilisticResult)
+
+    def test_bma_empty_candidates(self):
+        result = bayesian_model_averaging([], x_value=1.0)
+        assert result.mean == 0.0
+        assert result.std == 0.0
+
+
+class TestTailRisk:
+    def test_tail_risk_below_mean(self):
+        prob = ProbabilisticResult(mean=10.0, std=2.0, ci_95=(6.0, 14.0), tail_risk=None)
+        risk = tail_risk(prob, threshold=8.0)
+        assert 0.0 < risk < 1.0
+
+    def test_tail_risk_above_mean(self):
+        prob = ProbabilisticResult(mean=10.0, std=2.0, ci_95=(6.0, 14.0), tail_risk=None)
+        risk = tail_risk(prob, threshold=12.0)
+        assert 0.0 < risk < 1.0
+
+    def test_tail_risk_zero_std(self):
+        prob = ProbabilisticResult(mean=10.0, std=0.0, ci_95=(10.0, 10.0), tail_risk=None)
+        risk = tail_risk(prob, threshold=8.0)
+        # With zero std, should handle gracefully
+        assert 0.0 <= risk <= 1.0

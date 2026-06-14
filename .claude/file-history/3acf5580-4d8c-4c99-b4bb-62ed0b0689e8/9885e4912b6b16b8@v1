@@ -1,0 +1,114 @@
+/**
+ * llm-client.ts — NVIDIA API client for Qwen 3.5 122B.
+ * Makes real LLM calls. No mocking.
+ */
+
+const NVIDIA_API_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
+const MODEL = 'qwen/qwen3.5-122b-a10b';
+const API_KEY = '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';
+
+export interface LLMResponse {
+  content: string;
+  latencyMs: number;
+  tokensUsed: number;
+}
+
+/** Call the Qwen model with a system prompt and user prompt. */
+export async function callLLM(systemPrompt: string, userPrompt: string): Promise<LLMResponse> {
+  const start = Date.now();
+
+  const res = await fetch(NVIDIA_API_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.3,
+      max_tokens: 2048,
+      chat_template_kwargs: { enable_thinking: false },
+    }),
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`NVIDIA API error (${res.status}): ${errorText}`);
+  }
+
+  const data = await res.json() as any;
+  const latencyMs = Date.now() - start;
+
+  return {
+    content: data.choices?.[0]?.message?.content ?? '',
+    latencyMs,
+    tokensUsed: data.usage?.total_tokens ?? 0,
+  };
+}
+
+/** The 6 strategy prompts the LLM uses to solve Sudoku. */
+export const STRATEGIES: Record<string, { name: string; systemPrompt: string }> = {
+  cell_by_cell: {
+    name: 'cell_by_cell',
+    systemPrompt: `You are a Sudoku solver. Solve the puzzle ONE CELL AT A TIME.
+For each empty cell (shown as '.'), determine the only possible value by checking its row, column, and 3x3 box.
+Work through cells left-to-right, top-to-bottom.
+After solving all cells, output the COMPLETE 9x9 grid as 9 lines of 9 digits with no spaces.
+Output ONLY the 9 lines of digits at the end. No other text after the grid.`,
+  },
+
+  full_board_solve: {
+    name: 'full_board_solve',
+    systemPrompt: `You are a Sudoku solver. Look at the puzzle and output the COMPLETE solved 9x9 grid immediately.
+Output exactly 9 lines, each containing exactly 9 digits (1-9), no spaces.
+Output ONLY the grid. No explanations, no other text.`,
+  },
+
+  constraint_first: {
+    name: 'constraint_first',
+    systemPrompt: `You are a Sudoku solver using CONSTRAINT ANALYSIS.
+Step 1: For each empty cell, list ALL possible values based on row/column/box constraints.
+Step 2: Fill cells that have only ONE possible value.
+Step 3: Repeat until the board is complete.
+After solving, output the COMPLETE 9x9 grid as 9 lines of 9 digits with no spaces.
+Output ONLY the 9 lines of digits at the end.`,
+  },
+
+  block_focus: {
+    name: 'block_focus',
+    systemPrompt: `You are a Sudoku solver using BLOCK-BY-BLOCK strategy.
+Solve the puzzle by focusing on one 3x3 block at a time, starting from top-left.
+For each block, determine which numbers 1-9 are missing and where they must go.
+Complete all 9 blocks, then output the COMPLETE 9x9 grid as 9 lines of 9 digits with no spaces.
+Output ONLY the 9 lines of digits at the end.`,
+  },
+
+  elimination: {
+    name: 'elimination',
+    systemPrompt: `You are a Sudoku solver using ELIMINATION strategy.
+For each empty cell:
+1. Start with candidates {1,2,3,4,5,6,7,8,9}
+2. Remove any number already in the same row
+3. Remove any number already in the same column
+4. Remove any number already in the same 3x3 box
+5. If only one candidate remains, fill it
+Repeat until complete. Output the COMPLETE 9x9 grid as 9 lines of 9 digits.
+Output ONLY the 9 lines of digits at the end.`,
+  },
+
+  guess_and_verify: {
+    name: 'guess_and_verify',
+    systemPrompt: `You are a Sudoku solver. Use a GUESS AND VERIFY approach.
+Fill in your best guesses for empty cells based on quick pattern recognition.
+Don't overthink — fill the board quickly, then verify each row, column, and box.
+If you find conflicts, fix them.
+Output the COMPLETE 9x9 grid as 9 lines of 9 digits with no spaces.
+Output ONLY the 9 lines of digits at the end.`,
+  },
+};
+
+export const STRATEGY_NAMES = Object.keys(STRATEGIES);

@@ -1,0 +1,8 @@
+{
+  "id": "1",
+  "subject": "Analyze whether EL solves the multi-table \"Join Cliff\" problem",
+  "description": "Review the Equation Layer architecture, code, and memory files to determine if and how it addresses the multi-table join cliff — a well-known problem in analytics/BI where joining many tables causes exponential complexity, performance degradation, and semantic ambiguity.",
+  "status": "in_progress",
+  "blocks": [],
+  "blockedBy": []
+}

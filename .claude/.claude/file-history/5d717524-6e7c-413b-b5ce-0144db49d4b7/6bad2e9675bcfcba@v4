@@ -1,0 +1,243 @@
+"""Tests for LanceDB vector store."""
+
+import tempfile
+from pathlib import Path
+
+import numpy as np
+
+from ans_nerves.scoring.store import LanceDBStore, _embedding_dim
+
+_EMBEDDING_DIM = _embedding_dim()
+
+
+def _embedding(seed: str = "test") -> list[float]:
+    """Deterministic pseudo-embedding for testing."""
+    import hashlib
+    import struct
+    dim = _EMBEDDING_DIM
+    vec = np.zeros(dim, dtype=np.float32)
+    h = hashlib.sha256(seed.encode()).digest()
+    for i in range(0, 32, 4):
+        idx = struct.unpack("<I", h[i : i + 4])[0] % dim
+        vec[idx] += 1.0
+    norm = float(np.linalg.norm(vec))
+    if norm > 0:
+        vec = vec / norm
+    return vec.tolist()
+
+
+class TestLanceDBStore:
+    def setup_method(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.store = LanceDBStore(uri=self.tmpdir)
+
+    def teardown_method(self):
+        import shutil
+        try:
+            shutil.rmtree(self.tmpdir, ignore_errors=True)
+        except Exception:
+            pass
+
+    def test_store_and_count(self):
+        assert self.store.count() == 0
+        self.store.store(
+            action_type="click",
+            selector="#btn",
+            embedding=_embedding("click"),
+            outcome_score=1.0,
+        )
+        assert self.store.count() == 1
+
+    def test_store_multiple(self):
+        for i in range(5):
+            self.store.store(
+                action_type="click",
+                selector=f"#btn{i}",
+                embedding=_embedding(f"click{i}"),
+                outcome_score=0.5 + (i * 0.1),
+            )
+        assert self.store.count() == 5
+
+    def test_query_returns_results(self):
+        self.store.store(
+            action_type="click", selector="#search",
+            embedding=_embedding("click_search"), outcome_score=1.0,
+        )
+        self.store.store(
+            action_type="type", selector="#input",
+            embedding=_embedding("type_input"), outcome_score=0.8,
+        )
+        results = self.store.query(embedding=_embedding("click_search"), k=5)
+        assert len(results) >= 1
+        assert results[0]["action_type"] == "click"
+
+    def test_query_with_context_type_filter(self):
+        self.store.store(
+            action_type="click", context_type="search",
+            embedding=_embedding("search"), outcome_score=1.0,
+        )
+        self.store.store(
+            action_type="type", context_type="login",
+            embedding=_embedding("login"), outcome_score=0.8,
+        )
+        results = self.store.query(
+            embedding=_embedding("search"), k=5, context_type="search",
+        )
+        for r in results:
+            assert r["context_type"] == "search"
+
+    def test_query_min_score(self):
+        self.store.store(
+            action_type="click", embedding=_embedding("good"),
+            outcome_score=0.9, result_score=0.9,
+        )
+        self.store.store(
+            action_type="type", embedding=_embedding("bad"),
+            outcome_score=0.1, result_score=0.1,
+        )
+        results = self.store.query(
+            embedding=_embedding("good"), k=5, min_score=0.5,
+        )
+        assert all(r["composite_score"] >= 0.5 for r in results)
+
+    def test_query_empty_embedding_falls_back(self):
+        self.store.store(
+            action_type="click", selector="#btn",
+            embedding=_embedding("test"), outcome_score=1.0,
+        )
+        results = self.store.query(embedding=[0.0] * _EMBEDDING_DIM, k=5)
+        assert len(results) >= 1
+
+    def test_update_outcome(self):
+        rid = self.store.store(
+            action_type="click", embedding=_embedding("test"),
+            outcome_score=0.5, business_outcome=0.0,
+        )
+        assert self.store.update_outcome(rid, business_outcome=0.9)
+        results = self.store.query(embedding=_embedding("test"), k=1)
+        assert results[0]["business_outcome"] == 0.9
+
+    def test_update_outcome_nonexistent(self):
+        assert not self.store.update_outcome("nonexistent", business_outcome=0.5)
+
+    def test_composite_score_calculation(self):
+        rid = self.store.store(
+            action_type="click", embedding=_embedding("test"),
+            outcome_score=1.0, result_score=1.0,
+            error_penalty=0.0, business_outcome=0.0,
+        )
+        results = self.store.query(embedding=_embedding("test"), k=1)
+        # New composite formula: 0.40, 0.333, 0.133, 0.133
+        expected = 1.0 * 0.40 + 1.0 * 0.333 - 0.0 * 0.133 + 0.0 * 0.133
+        assert abs(results[0]["composite_score"] - expected) < 0.001
+
+    def test_store_with_all_fields(self):
+        rid = self.store.store(
+            session_id="s1", goal_id="g1",
+            action_type="click", selector="#btn",
+            value="submit", tool="playwright",
+            context_type="search", context_text="search button on results page",
+            embedding=_embedding("full"),
+            outcome_score=0.9, result_score=0.8,
+            error_penalty=0.1, business_outcome=0.5,
+            error_message="timeout",
+        )
+        assert len(rid) == 16
+        results = self.store.query(embedding=_embedding("full"), k=1)
+        assert results[0]["tool"] == "playwright"
+        assert results[0]["selector"] == "#btn"
+
+    def test_vector_padding(self):
+        short_vec = [0.1] * 100
+        rid = self.store.store(
+            action_type="click", embedding=short_vec,
+        )
+        assert len(rid) == 16
+        assert self.store.count() == 1
+
+    def test_vector_truncation(self):
+        long_vec = [0.1] * 500
+        rid = self.store.store(
+            action_type="click", embedding=long_vec,
+        )
+        assert len(rid) == 16
+        assert self.store.count() == 1
+
+    def test_query_none_embedding(self):
+        self.store.store(action_type="click", embedding=_embedding("test"))
+        results = self.store.query(embedding=None, k=5)  # type: ignore[arg-type]
+        assert isinstance(results, list)
+
+    def test_query_empty_list_embedding(self):
+        self.store.store(action_type="click", embedding=_embedding("test"))
+        results = self.store.query(embedding=[], k=5)
+        assert isinstance(results, list)
+
+    def test_store_query_roundtrip_with_use_count(self):
+        self.store.store(
+            action_type="click", embedding=_embedding("test"),
+            outcome_score=1.0,
+        )
+        results = self.store.query(embedding=_embedding("test"), k=1)
+        assert results[0]["use_count"] == 1
+
+    def test_fallback_query_with_context_type(self):
+        self.store.store(
+            action_type="click", context_type="search",
+            embedding=_embedding("search"), outcome_score=1.0,
+        )
+        self.store.store(
+            action_type="type", context_type="login",
+            embedding=_embedding("login"), outcome_score=0.8,
+        )
+        # Use empty embedding to trigger fallback path with context_type filter
+        results = self.store.query(
+            embedding=[0.0] * _EMBEDDING_DIM, k=5, context_type="login",
+        )
+        for r in results:
+            assert r["context_type"] == "login"
+
+    def test_fallback_query_with_min_score(self):
+        self.store.store(
+            action_type="click", embedding=_embedding("good"),
+            outcome_score=1.0, result_score=1.0,
+        )
+        self.store.store(
+            action_type="type", embedding=_embedding("bad"),
+            outcome_score=0.1, result_score=0.1,
+        )
+        # Use empty embedding to trigger fallback with min_score
+        results = self.store.query(
+            embedding=[0.0] * _EMBEDDING_DIM, k=5, min_score=0.5,
+        )
+        assert all(r["composite_score"] >= 0.5 for r in results)
+
+    def test_update_outcome_with_result_and_penalty(self):
+        rid = self.store.store(
+            action_type="click", embedding=_embedding("test"),
+            outcome_score=0.5,
+        )
+        assert self.store.update_outcome(
+            rid, result_score=0.9, error_penalty=0.3, increment_use=True,
+        )
+        results = self.store.query(embedding=_embedding("test"), k=1)
+        assert results[0]["result_score"] == 0.9
+        assert results[0]["error_penalty"] == 0.3
+
+    def test_count_handles_exception(self):
+        store = self.store
+        real_table = store._table
+        try:
+            store._table = None
+            store._db = None
+            # create a broken db that will raise on count_rows
+            import lancedb
+            bad_uri = str(Path(tempfile.mkdtemp()) / "nonexistent" / "bad")
+            store._db = lancedb.connect(bad_uri)
+            # count should not crash even if table isn't there
+            c = store.count()
+            assert c == 0
+        finally:
+            store._table = real_table
+            store._db = None
+            store._uri = self.tmpdir

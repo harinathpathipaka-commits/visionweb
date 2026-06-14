@@ -40,8 +40,8 @@ Thumbs.db
 *.jpeg
 
 # ── ANS runtime ───────────────────────────────────────
-.ans/
-.claude/
+# .ans/   — tracked (private repo)
+# .claude/ — tracked (private repo)
 .claude-flow/
 .swarm/
 .mcp.json
@@ -50,4 +50,4 @@ daemon-*.txt
 mcp-*.txt
 
 # ── Build caches ───────────────────────────────────────
-.cargo/
+# .cargo/ — tracked (private repo)

@@ -1,0 +1,190 @@
+use rusqlite::{params, Connection};
+use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
+
+/// A single observation record for batch writing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ObservationRecord {
+    pub variable: String,
+    pub value: f64,
+    pub unit: String,
+    pub timestamp: String,
+    pub entity_id: String,
+    pub quality_score: f64,
+    pub provenance_json: String,
+    pub created_at: String,
+}
+
+/// High-throughput append-only observation ledger with batched WAL writes.
+pub struct LedgerWriter {
+    conn: Mutex<Connection>,
+    batch: Mutex<Vec<ObservationRecord>>,
+    batch_size: usize,
+}
+
+impl LedgerWriter {
+    /// Open a ledger at `db_path`, creating the table if it doesn't exist.
+    pub fn open(db_path: &str, batch_size: usize) -> Result<Self, String> {
+        let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+
+        // Enable WAL mode for high-throughput concurrent writes.
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
+            .map_err(|e| e.to_string())?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS observation_ledger (
+                observation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                variable TEXT NOT NULL,
+                value REAL NOT NULL,
+                unit TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                entity_id TEXT,
+                quality_score REAL NOT NULL,
+                provenance_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_obs_variable ON observation_ledger(variable)",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_obs_timestamp ON observation_ledger(timestamp)",
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+
+        Ok(LedgerWriter {
+            conn: Mutex::new(conn),
+            batch: Mutex::new(Vec::with_capacity(batch_size)),
+            batch_size,
+        })
+    }
+
+    /// Append a single observation (buffered — flushed when batch is full).
+    pub fn append(&self, record: ObservationRecord) -> Result<(), String> {
+        let mut batch = self.batch.lock().map_err(|e| e.to_string())?;
+        batch.push(record);
+        if batch.len() >= self.batch_size {
+            self.flush_locked(&mut batch)?;
+        }
+        Ok(())
+    }
+
+    /// Append multiple observations in one call.
+    pub fn append_batch(&self, records: Vec<ObservationRecord>) -> Result<usize, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        let mut count = 0usize;
+
+        for rec in &records {
+            tx.execute(
+                "INSERT INTO observation_ledger (variable, value, unit, timestamp, entity_id, quality_score, provenance_json, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    rec.variable,
+                    rec.value,
+                    rec.unit,
+                    rec.timestamp,
+                    rec.entity_id,
+                    rec.quality_score,
+                    rec.provenance_json,
+                    rec.created_at,
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+            count += 1;
+        }
+
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(count)
+    }
+
+    /// Force flush the pending buffer to disk.
+    pub fn flush(&self) -> Result<usize, String> {
+        let mut batch = self.batch.lock().map_err(|e| e.to_string())?;
+        self.flush_locked(&mut batch)
+    }
+
+    fn flush_locked(&self, batch: &mut Vec<ObservationRecord>) -> Result<usize, String> {
+        if batch.is_empty() {
+            return Ok(0);
+        }
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        let mut count = 0usize;
+
+        for rec in batch.iter() {
+            tx.execute(
+                "INSERT INTO observation_ledger (variable, value, unit, timestamp, entity_id, quality_score, provenance_json, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    rec.variable,
+                    rec.value,
+                    rec.unit,
+                    rec.timestamp,
+                    rec.entity_id,
+                    rec.quality_score,
+                    rec.provenance_json,
+                    rec.created_at,
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+            count += 1;
+        }
+
+        tx.commit().map_err(|e| e.to_string())?;
+        batch.clear();
+        Ok(count)
+    }
+
+    /// Return the number of buffered (unflushed) records.
+    pub fn pending_count(&self) -> usize {
+        self.batch.lock().map(|b| b.len()).unwrap_or(0)
+    }
+}
+
+impl Drop for LedgerWriter {
+    fn drop(&mut self) {
+        let _ = self.flush();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_write_and_count() {
+        let tmp = ".test_ledger_rust.db";
+        let _ = std::fs::remove_file(tmp);
+
+        let writer = LedgerWriter::open(tmp, 100).unwrap();
+        let records: Vec<ObservationRecord> = (0..10)
+            .map(|i| ObservationRecord {
+                variable: "revenue".into(),
+                value: i as f64 * 10.0,
+                unit: "USD".into(),
+                timestamp: format!("2024-01-{:02}", i + 1),
+                entity_id: "acme".into(),
+                quality_score: 1.0,
+                provenance_json: "{}".into(),
+                created_at: "2024-01-01T00:00:00Z".into(),
+            })
+            .collect();
+        writer.append_batch(records).unwrap();
+        writer.flush().unwrap();
+
+        let conn = Connection::open(tmp).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM observation_ledger", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 10);
+        let _ = std::fs::remove_file(tmp);
+    }
+}

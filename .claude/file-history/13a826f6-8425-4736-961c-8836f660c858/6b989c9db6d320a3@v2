@@ -1,0 +1,13 @@
+[package]
+name = "ans-immune"
+version.workspace = true
+edition.workspace = true
+description = "Immune system — heuristic distraction classifier + prompt injection detector"
+
+[dependencies]
+ans-proto.workspace = true
+ans-core.workspace = true
+regex = "1"
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

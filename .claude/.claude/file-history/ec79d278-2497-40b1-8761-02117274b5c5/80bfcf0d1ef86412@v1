@@ -1,0 +1,10 @@
+from __future__ import annotations
+
+from typing import Tuple
+
+from .models import ProbabilisticResult
+
+
+def laplace_uncertainty(mean: float) -> ProbabilisticResult:
+    std = abs(mean) * 0.1
+    return ProbabilisticResult(mean=mean, std=std, ci_95=(mean - 2 * std, mean + 2 * std), tail_risk=None)

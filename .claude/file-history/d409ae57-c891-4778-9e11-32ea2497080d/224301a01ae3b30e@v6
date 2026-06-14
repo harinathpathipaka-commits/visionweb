@@ -1,0 +1,5 @@
+- [Phase 14 Tests Complete](project_phase14_complete.md) — 116 tests passing, all 7 layers covered, end-to-end and API verified
+- [D1-D5 Testing Complete](project_d1_d5_complete.md) — 386 tests passing, 5 production bugs fixed, domain router scoring, product docs in docs/equation_layer_product_docs.md
+- [Pre-D6 Gaps Fixed](project_pre_d6_gaps_fixed.md) — 5 API response gaps fixed (derivative, elasticity, fallback_action, correlation, drift surfaced; random_seed for reproducibility; 6 files changed)
+- [D6 Complete](project_d6_complete.md) — Real World Comparative Validation: 19 tests on Telco Customer Churn (7,043 rows), 405 total tests passing, EL verified against GPT/Claude/RAG failure modes
+- [Phase 4 Composition](project_phase4_composition.md) — composition.py, 11 SaaS formulas, /v2/decompose, /v2/explain, 477 tests

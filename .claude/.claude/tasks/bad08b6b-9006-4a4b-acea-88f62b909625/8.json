@@ -1,0 +1,8 @@
+{
+  "id": "8",
+  "subject": "Phase 1.2 — Upstream MCP Connector (rewrite rest-client.ts)",
+  "description": "Rewrite rest-client.ts into two concerns: MCP proxy (connect to upstream servers, forward tools/list and tools/call) and LI API client (scores, logging, enrichment).",
+  "status": "in_progress",
+  "blocks": [],
+  "blockedBy": []
+}

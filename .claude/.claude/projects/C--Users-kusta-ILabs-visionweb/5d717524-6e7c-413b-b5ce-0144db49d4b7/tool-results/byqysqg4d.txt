@@ -1,0 +1,585 @@
+cargo :     Blocking waiting for file lock on build directory
+At line:1 char:46
++ ... ocation C:\Users\kusta\ILabs\visionweb; cargo clippy --workspace 2>&1
++                                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (    Blocking wa...build directory:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+warning: multiple versions for dependency `indexmap`: 1.9.3, 2.14.0
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+  = note: `-W clippy::multiple-crate-versions` implied by `-W clippy::cargo`
+  = help: to override `-W clippy::cargo` add `#[allow(clippy::multiple_crate_versions)]`
+warning: multiple versions for dependency `socket2`: 0.5.10, 0.6.3
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+warning: multiple versions for dependency `tower`: 0.4.13, 0.5.3
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+warning: multiple versions for dependency `windows-sys`: 0.52.0, 0.61.2
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+warning: calling `EnabledCompressionEncodings::default()` is more clear than this expression
+    --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:1557:47
+     |
+1557 |                 accept_compression_encodings: Default::default(),
+     |                                               ^^^^^^^^^^^^^^^^^^ help: try: `EnabledCompressionEncodings::default()`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#default_trait_access
+     = note: `-W clippy::default-trait-access` implied by `-W clippy::pedantic`
+     = help: to override `-W clippy::pedantic` add `#[allow(clippy::default_trait_access)]`
+warning: calling `EnabledCompressionEncodings::default()` is more clear than this expression
+    --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:1558:45
+     |
+1558 |                 send_compression_encodings: Default::default(),
+     |                                             ^^^^^^^^^^^^^^^^^^ help: try: `EnabledCompressionEncodings::default()`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#default_trait_access
+warning: `ans-proto` (lib) generated 6 warnings
+warning: multiple versions for dependency `hashbrown`: 0.12.3, 0.15.5, 0.17.1
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+  = note: `-W clippy::multiple-crate-versions` implied by `-W clippy::cargo`
+  = help: to override `-W clippy::cargo` add `#[allow(clippy::multiple_crate_versions)]`
+warning: multiple versions for dependency `indexmap`: 1.9.3, 2.14.0
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+warning: multiple versions for dependency `thiserror`: 1.0.69, 2.0.18
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+warning: multiple versions for dependency `thiserror-impl`: 1.0.69, 2.0.18
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+warning: multiple versions for dependency `wit-bindgen`: 0.51.0, 0.57.1
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+warning: `ans-core` (lib) generated 8 warnings (3 duplicates)
+warning: redundant field names in struct initialization
+   --> crates\ans-distill\src\engine.rs:182:9
+    |
+182 |         tag: tag,
+    |         ^^^^^^^^ help: replace it with: `tag`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#redundant_field_names
+    = note: `-W clippy::redundant-field-names` implied by `-W clippy::all`
+    = help: to override `-W clippy::all` add `#[allow(clippy::redundant_field_names)]`
+warning: used underscore-prefixed binding
+   --> crates\ans-distill\src\engine.rs:196:5
+    |
+196 |     ctx._node_map.insert(node_id, idx);
+    |     ^^^^^^^^^^^^^
+    |
+note: binding is defined here
+   --> crates\ans-distill\src\engine.rs:80:5
+    |
+ 80 |     _node_map: HashMap<i32, usize>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#used_underscore_binding
+    = note: `-W clippy::used-underscore-binding` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::used_underscore_binding)]`
+warning: these match arms have identical bodies
+   --> crates\ans-distill\src\engine.rs:348:9
+    |
+348 |         "select" => InteractiveType::Select,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+349 |         "textarea" => InteractiveType::Textarea,
+350 |         "option" => InteractiveType::Select, // Treated as part of select
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: if this is unintentional make the arms return different values
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#match_same_arms
+    = note: `-W clippy::match-same-arms` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::match_same_arms)]`
+help: otherwise merge the patterns into a single arm
+    |
+348 ~         "select" | "option" => InteractiveType::Select,
+349 |         "textarea" => InteractiveType::Textarea,
+350 ~         // Treated as part of select
+    |
+warning: use of `format!` to build up a string from an iterator
+   --> crates\ans-distill\src\semantic.rs:126:33
+    |
+126 |           let raw_attrs: String = el
+    |  _________________________________^
+127 | |             .attributes
+128 | |             .iter()
+129 | |             .map(|(k, v)| format!("{k}={v} "))
+130 | |             .collect();
+    | |______________________^
+    |
+help: call `fold` instead
+   --> crates\ans-distill\src\semantic.rs:129:14
+    |
+129 |             .map(|(k, v)| format!("{k}={v} "))
+    |              ^^^
+help: ... and use the `write!` macro here
+   --> crates\ans-distill\src\semantic.rs:129:27
+    |
+129 |             .map(|(k, v)| format!("{k}={v} "))
+    |                           ^^^^^^^^^^^^^^^^^^^
+    = note: this can be written more efficiently by appending to a `String` directly
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#format_collect
+    = note: `-W clippy::format-collect` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::format_collect)]`
+warning: assigning the result of `Clone::clone()` may be inefficient
+   --> crates\ans-distill\src\semantic.rs:156:13
+    |
+156 |             current_text = el.text.clone();
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use `clone_from()`: `current_text.clone_from(&el.text)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#assigning_clones
+    = note: `-W clippy::assigning-clones` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::assigning_clones)]`
+warning: these match arms have identical bodies
+   --> crates\ans-distill\src\semantic.rs:180:9
+    |
+180 |         BlockType::Sidebar => 0.3,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+185 |         BlockType::Unknown => 0.3,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: if this is unintentional make the arms return different values
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#match_same_arms
+help: otherwise merge the patterns into a single arm
+    |
+180 ~         BlockType::Sidebar | BlockType::Unknown => 0.3,
+181 |         BlockType::Footer => 0.2,
+...
+184 |         BlockType::Popup => 0.1,
+185 ~         }
+    |
+warning: these match arms have identical bodies
+   --> crates\ans-distill\src\semantic.rs:182:9
+    |
+182 |         BlockType::Ad => 0.0,
+    |         ^^^^^^^^^^^^^^^^^^^^
+183 |         BlockType::CookieBanner => 0.0,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: if this is unintentional make the arms return different values
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#match_same_arms
+help: otherwise merge the patterns into a single arm
+    |
+182 ~         BlockType::Ad | BlockType::CookieBanner => 0.0,
+183 ~         BlockType::Popup => 0.1,
+    |
+warning: first doc comment paragraph is too long
+ --> crates\ans-distill\src\serialization.rs:1:1
+  |
+1 | / //! Serialize/deserialize distilled DOM between core domain types and
+2 | | //! protobuf-generated types. Used by the gRPC server to convert between
+3 | | //! the internal [`DistilledPage`] and the wire-format [`DistilledDom`].
+  | |_^
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#too_long_first_doc_paragraph
+  = note: `-W clippy::too-long-first-doc-paragraph` implied by `-W clippy::nursery`
+  = help: to override `-W clippy::nursery` add `#[allow(clippy::too_long_first_doc_paragraph)]`
+warning: these match arms have identical bodies
+   --> crates\ans-distill\src\serialization.rs:189:9
+    |
+189 |         "all_fields" => DistillMode::AllFields,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+190 |         _ => DistillMode::AllFields,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ the wildcard arm
+    |
+    = help: if this is unintentional make the arms return different values
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#match_same_arms
+help: otherwise remove the non-wildcard arm
+    |
+189 -         "all_fields" => DistillMode::AllFields,
+    |
+warning: these match arms have identical bodies
+   --> crates\ans-distill\src\serialization.rs:208:9
+    |
+208 |         "button" => InteractiveType::Button,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+215 |         _ => InteractiveType::Button,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the wildcard arm
+    |
+    = help: if this is unintentional make the arms return different values
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#match_same_arms
+help: otherwise remove the non-wildcard arm
+    |
+208 -         "button" => InteractiveType::Button,
+    |
+warning: these match arms have identical bodies
+   --> crates\ans-distill\src\serialization.rs:290:9
+    |
+290 |         "ignore" => ImmuneAction::Ignore,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+291 |         "navigate_back" => ImmuneAction::NavigateBack,
+292 |         _ => ImmuneAction::Ignore,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^ the wildcard arm
+    |
+    = help: if this is unintentional make the arms return different values
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#match_same_arms
+help: otherwise remove the non-wildcard arm
+    |
+290 -         "ignore" => ImmuneAction::Ignore,
+    |
+warning: `ans-distill` (lib) generated 19 warnings (8 duplicates) (run `cargo clippy --fix --lib -p ans-distill -- ` to apply 1 suggestion)
+warning: multiple versions for dependency `bitflags`: 1.3.2, 2.11.1
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+  = note: `-W clippy::multiple-crate-versions` implied by `-W clippy::cargo`
+  = help: to override `-W clippy::cargo` add `#[allow(clippy::multiple_crate_versions)]`
+warning: multiple versions for dependency `getrandom`: 0.2.17, 0.3.4, 0.4.2
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+warning: multiple versions for dependency `hashbrown`: 0.12.3, 0.15.5, 0.17.1
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+warning: multiple versions for dependency `r-efi`: 5.3.0, 6.0.0
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+warning: redundant closure
+  --> crates\ans-storage\src\decisions.rs:27:63
+   |
+27 |         let mut records = self.records.write().unwrap_or_else(|e| e.into_inner());
+   |                                                               ^^^^^^^^^^^^^^^^^^ help: replace the closure with the method itself: 
+`std::sync::PoisonError::into_inner`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#redundant_closure_for_method_calls
+   = note: `-W clippy::redundant-closure-for-method-calls` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::redundant_closure_for_method_calls)]`
+warning: redundant closure
+  --> crates\ans-storage\src\decisions.rs:34:44
+   |
+34 |         self.records.read().unwrap_or_else(|e| e.into_inner()).len()
+   |                                            ^^^^^^^^^^^^^^^^^^ help: replace the closure with the method itself: `std::sync::PoisonError::into_inner`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#redundant_closure_for_method_calls
+warning: redundant closure
+  --> crates\ans-storage\src\decisions.rs:50:58
+   |
+50 |         let records = self.records.read().unwrap_or_else(|e| e.into_inner());
+   |                                                          ^^^^^^^^^^^^^^^^^^ help: replace the closure with the method itself: 
+`std::sync::PoisonError::into_inner`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#redundant_closure_for_method_calls
+warning: these match arms have identical bodies
+  --> crates\ans-storage\src\serialization.rs:66:13
+   |
+66 |             "click" => ActionType::Click,
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+74 |             _ => ActionType::Click,
+   |             ^^^^^^^^^^^^^^^^^^^^^^ the wildcard arm
+   |
+   = help: if this is unintentional make the arms return different values
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#match_same_arms
+   = note: `-W clippy::match-same-arms` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::match_same_arms)]`
+help: otherwise remove the non-wildcard arm
+   |
+66 -             "click" => ActionType::Click,
+   |
+warning: `format!(..)` appended to existing `String`
+   --> crates\ans-signal\src\router.rs:241:17
+    |
+241 |                 s.push_str(&format!(", {} overlays", overlays.len()));
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: you may need to import the `std::fmt::Write` trait
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#format_push_string
+    = note: `-W clippy::format-push-string` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::format_push_string)]`
+help: consider using `write!` to avoid the extra allocation
+    |
+241 -                 s.push_str(&format!(", {} overlays", overlays.len()));
+241 +                 let _ = write!(s, ", {} overlays", overlays.len());
+    |
+warning: `format!(..)` appended to existing `String`
+   --> crates\ans-signal\src\router.rs:244:17
+    |
+244 |                 s.push_str(&format!(", {} anomalies", anomalies.len()));
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: you may need to import the `std::fmt::Write` trait
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#format_push_string
+help: consider using `write!` to avoid the extra allocation
+    |
+244 -                 s.push_str(&format!(", {} anomalies", anomalies.len()));
+244 +                 let _ = write!(s, ", {} anomalies", anomalies.len());
+    |
+warning: avoid using `collect()` when not needed
+   --> crates\ans-signal\src\router.rs:301:10
+    |
+301 |         .collect();
+    |          ^^^^^^^
+302 |
+303 |     if !errors.is_empty() {
+    |         ----------------- the iterator could be used here instead
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_collect
+    = note: `-W clippy::needless-collect` implied by `-W clippy::nursery`
+    = help: to override `-W clippy::nursery` add `#[allow(clippy::needless_collect)]`
+help: check if the original Iterator has anything instead of collecting it and seeing if it's empty
+    |
+298 ~     
+299 |
+300 ~     if !reports
+301 +         .iter()
+302 ~         .filter(|r| matches!(r.content, EyeReportContent::ErrorReport { .. })).next().is_none() {
+    |
+warning: this argument is passed by value, but not consumed in the function body
+  --> crates\ans-goal\src\manager.rs:38:18
+   |
+38 |         context: HashMap<String, String>,
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_pass_by_value
+   = note: `-W clippy::needless-pass-by-value` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::needless_pass_by_value)]`
+help: consider taking a reference instead
+   |
+38 |         context: &HashMap<String, String>,
+   |                  +
+warning: `if _ { .. } else { .. }` is an expression
+   --> crates\ans-goal\src\manager.rs:152:5
+    |
+152 | /     let mut prev_id: Option<Uuid> = None;
+153 | |
+154 | |     // 1. Navigation phase
+155 | |     if has_navigation {
+...   |
+165 | |         prev_id = Some(id);
+166 | |     }
+    | |_____^ help: it is more idiomatic to write: `let <mut> prev_id = if has_navigation { ..; Some(id) } else { None };`
+    |
+    = note: you might not need `mut` at all
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#useless_let_if_seq
+    = note: `-W clippy::useless-let-if-seq` implied by `-W clippy::nursery`
+    = help: to override `-W clippy::nursery` add `#[allow(clippy::useless_let_if_seq)]`
+warning: this argument (1 byte) is passed by reference, but would be more efficient if passed by value (limit: 8 byte)
+  --> crates\ans-budget\src\serialization.rs:50:35
+   |
+50 | const fn budget_mode_to_str(mode: &BudgetMode) -> &'static str {
+   |                                   ^^^^^^^^^^^ help: consider passing by value instead: `BudgetMode`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#trivially_copy_pass_by_ref
+   = note: `-W clippy::trivially-copy-pass-by-ref` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::trivially_copy_pass_by_ref)]`
+warning: `ans-storage` (lib) generated 15 warnings (7 duplicates) (run `cargo clippy --fix --lib -p ans-storage -- ` to apply 3 suggestions)
+warning: `ans-signal` (lib) generated 11 warnings (8 duplicates)
+warning: `ans-goal` (lib) generated 10 warnings (8 duplicates)
+warning: `ans-budget` (lib) generated 9 warnings (8 duplicates)
+warning: `ans-diff` (lib) generated 8 warnings (8 duplicates)
+warning: multiple versions for dependency `getrandom`: 0.2.17, 0.3.4, 0.4.2
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+  = note: `-W clippy::multiple-crate-versions` implied by `-W clippy::cargo`
+  = help: to override `-W clippy::cargo` add `#[allow(clippy::multiple_crate_versions)]`
+warning: multiple versions for dependency `rand`: 0.8.6, 0.9.4
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+warning: multiple versions for dependency `rand_chacha`: 0.3.1, 0.9.0
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+warning: multiple versions for dependency `rand_core`: 0.6.4, 0.9.5
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+warning: these match arms have identical bodies
+  --> crates\ans-cdp\src\client.rs:89:21
+   |
+89 |                     Ok(Message::Close(_) | Message::Ping(_) | Message::Pong(_)) => {}
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+94 |                     _ => {}
+   |                     ^^^^^^^ the wildcard arm
+   |
+   = help: if this is unintentional make the arms return different values
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#match_same_arms
+   = note: `-W clippy::match-same-arms` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::match_same_arms)]`
+help: otherwise remove the non-wildcard arm
+   |
+89 -                     Ok(Message::Close(_) | Message::Ping(_) | Message::Pong(_)) => {}
+   |
+warning: use Option::map_or_else instead of an if let/else
+   --> crates\ans-cdp\src\client.rs:457:22
+    |
+457 |           let script = if let Some(sel) = selector {
+    |  ______________________^
+458 | |             format!(
+459 | |                 "document.querySelector('{}')?.scrollIntoView({{ behavior: 'instant', block: 'center' }});",
+460 | |                 escape_js_string(sel)
+...   |
+465 | |             "window.scrollBy(0, 300);".to_string()
+466 | |         };
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#option_if_let_else
+    = note: `-W clippy::option-if-let-else` implied by `-W clippy::nursery`
+    = help: to override `-W clippy::nursery` add `#[allow(clippy::option_if_let_else)]`
+help: try
+    |
+457 ~         let script = selector.map_or_else(|| if let Some(px) = pixels {
+458 +             format!("window.scrollBy(0, {px});")
+459 +         } else {
+460 +             "window.scrollBy(0, 300);".to_string()
+461 +         }, |sel| format!(
+462 +                 "document.querySelector('{}')?.scrollIntoView({{ behavior: 'instant', block: 'center' }});",
+463 +                 escape_js_string(sel)
+464 ~             ));
+    |
+warning: these match arms have identical bodies
+   --> crates\ans-immune\src\classifier.rs:106:9
+    |
+106 |         "ignore" => ImmuneAction::Ignore,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+107 |         "navigate_back" => ImmuneAction::NavigateBack,
+108 |         _ => ImmuneAction::Ignore,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^ the wildcard arm
+    |
+    = help: if this is unintentional make the arms return different values
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#match_same_arms
+    = note: `-W clippy::match-same-arms` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::match_same_arms)]`
+help: otherwise remove the non-wildcard arm
+    |
+106 -         "ignore" => ImmuneAction::Ignore,
+    |
+warning: use Option::map_or_else instead of an if let/else
+   --> crates\ans-gateway\src\auth.rs:128:15
+    |
+128 |       let key = if let Some(value) = headers.get("x-api-key") {
+    |  _______________^
+129 | |         value.to_str().ok().map(String::from)
+130 | |     } else if let Some(value) = headers.get("authorization") {
+131 | |         value.to_str().ok().and_then(|auth| auth.strip_prefix("Bearer ").map(String::from))
+...   |
+136 | |         None
+137 | |     };
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#option_if_let_else
+    = note: `-W clippy::option-if-let-else` implied by `-W clippy::nursery`
+    = help: to override `-W clippy::nursery` add `#[allow(clippy::option_if_let_else)]`
+help: try
+    |
+128 ~     let key = headers.get("x-api-key").map_or_else(|| if let Some(value) = headers.get("authorization") {
+129 +         value.to_str().ok().and_then(|auth| auth.strip_prefix("Bearer ").map(String::from))
+130 +     } else if let Some(q) = query {
+131 +         q.split('&')
+132 +             .find_map(|pair| pair.strip_prefix("api_key=").map(String::from))
+133 +     } else {
+134 +         None
+135 ~     }, |value| value.to_str().ok().map(String::from));
+    |
+warning: this could be rewritten as `let...else`
+   --> crates\ans-gateway\src\mcp.rs:192:9
+    |
+192 | /         let tool_name = match params.and_then(|p| p.get("name")).and_then(|n| n.as_str()) {
+193 | |             Some(name) => name,
+194 | |             None => return json_rpc_error(id, -32602, "Missing params.name"),
+195 | |         };
+    | |__________^ help: consider writing: `let Some(tool_name) = params.and_then(|p| p.get("name")).and_then(|n| n.as_str()) else { return 
+json_rpc_error(id, -32602, "Missing params.name") };`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#manual_let_else
+    = note: `-W clippy::manual-let-else` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::manual_let_else)]`
+warning: function call inside of `unwrap_or`
+   --> crates\ans-gateway\src\mcp.rs:200:14
+    |
+200 |             .unwrap_or(json!({}));
+    |              ^^^^^^^^^^^^^^^^^^^^ help: try: `unwrap_or_else(|| json!({}))`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#or_fun_call
+    = note: `-W clippy::or-fun-call` implied by `-W clippy::nursery`
+    = help: to override `-W clippy::nursery` add `#[allow(clippy::or_fun_call)]`
+warning: this argument is passed by value, but not consumed in the function body
+   --> crates\ans-gateway\src\mcp.rs:475:47
+    |
+475 | fn json_rpc_result(id: Option<Value>, result: Value) -> Value {
+    |                                               ^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_pass_by_value
+    = note: `-W clippy::needless-pass-by-value` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::needless_pass_by_value)]`
+help: consider taking a reference instead
+    |
+475 | fn json_rpc_result(id: Option<Value>, result: &Value) -> Value {
+    |                                               +
+warning: unused `async` for function with no await statements
+  --> crates\ans-gateway\src\rest.rs:23:5
+   |
+23 | /     pub async fn health(&self) -> Json<Value> {
+24 | |         Json(json!({
+25 | |             "status": "ok",
+26 | |             "version": env!("CARGO_PKG_VERSION"),
+27 | |             "gateway": "ans-gateway"
+28 | |         }))
+29 | |     }
+   | |_____^
+   |
+   = help: consider removing the `async` from this function
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unused_async
+   = note: `-W clippy::unused-async` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::unused_async)]`
+warning: unused `async` for function with no await statements
+  --> crates\ans-gateway\src\ws.rs:43:5
+   |
+43 | /     pub async fn handle_upgrade(&self, ws: WebSocketUpgrade) -> impl IntoResponse {
+44 | |         let event_rx = self.event_tx.subscribe();
+45 | |         ws.on_upgrade(move |socket| handle_socket(socket, event_rx))
+46 | |     }
+   | |_____^
+   |
+   = help: consider removing the `async` from this function
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unused_async
+warning: `ans-cdp` (lib) generated 15 warnings (9 duplicates)
+warning: `ans-immune` (lib) generated 9 warnings (8 duplicates)
+warning: `ans-gateway` (lib) generated 14 warnings (8 duplicates)
+warning: this argument (1 byte) is passed by reference, but would be more efficient if passed by value (limit: 8 byte)
+   --> crates\ans-ipc\src\server.rs:830:30
+    |
+830 | fn goal_status_event(status: &ans_core::goal::GoalStatus) -> String {
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider passing by value instead: `ans_core::goal::GoalStatus`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#trivially_copy_pass_by_ref
+    = note: `-W clippy::trivially-copy-pass-by-ref` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::trivially_copy_pass_by_ref)]`
+warning: it is more idiomatic to use `Option<&T>` instead of `&Option<T>`
+   --> crates\ans-ipc\src\server.rs:920:1
+    |
+920 | / fn format_eye_content(content: &Option<ans_proto::ans::eye_report::Content>) -> String {
+921 | |     use ans_proto::ans::eye_report::Content;
+922 | |     match content {
+923 | |         Some(Content::Dom(dom)) => {
+...   |
+956 | | }
+    | |_^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#ref_option
+    = note: `-W clippy::ref-option` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::ref_option)]`
+help: change this to
+    |
+920 - fn format_eye_content(content: &Option<ans_proto::ans::eye_report::Content>) -> String {
+920 + fn format_eye_content(content: Option<&ans_proto::ans::eye_report::Content>) -> String {
+    |
+warning: temporary with significant `Drop` in `if let` scrutinee will live until the end of the `if let` expression
+  --> crates\ans-ipc\src\session.rs:88:31
+   |
+88 |         if let Some(handle) = self.sessions.write().await.remove(&session_id) {
+   |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+89 |             handle.backend.close().await?;
+90 |         }
+   |          - temporary lives until here
+   |
+   = note: this might lead to deadlocks or other unexpected behavior
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#significant_drop_in_scrutinee
+   = note: `-W clippy::significant-drop-in-scrutinee` implied by `-W clippy::nursery`
+   = help: to override `-W clippy::nursery` add `#[allow(clippy::significant_drop_in_scrutinee)]`
+help: try moving the temporary above the match
+   |
+88 ~         let value = self.sessions.write().await.remove(&session_id);
+89 ~         if let Some(handle) = value {
+   |
+warning: `ans-ipc` (lib) generated 17 warnings (14 duplicates)
+warning: `ans-daemon` (bin "ans-daemon") generated 14 warnings (14 duplicates)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 09s

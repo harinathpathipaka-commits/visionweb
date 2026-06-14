@@ -1,0 +1,5 @@
+# Memory Index
+
+- [Implementation style](feedback_implementation_style.md) — Read-first, plan explicitly, surgical edits only. Validated after 4-fix session with zero regressions.
+- [SDK fixes status](project_sdk_fixes_done.md) — All 4 fixes (exploration floor, data resilience, trust UX, auto graduation) done and verified. Zero-config deferred.
+- [Master issue inventory](project_issues_master.md) — 30 issues cataloged from full 5-agent exploration (2026-05-20): 4 critical, 7 high, 11 medium, 3 low, 5 documentation discrepancies. Ready for prioritized fixing.

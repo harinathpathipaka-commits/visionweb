@@ -1,0 +1,79 @@
+---
+name: session-state-jun-2026
+description: "ANS project state as of 2026-06-11 — Docker image built and running, all fixes applied"
+metadata: 
+  node_type: memory
+  type: project
+  originSessionId: a40d33bf-19ab-407b-b281-8395d3c17198
+---
+
+## ANS Current State — June 11, 2026
+
+### Docker Build — DONE
+
+**Image:** `ans:latest` (1.82GB)
+**Status:** Container running, healthy, all endpoints responding
+
+### Fixes Applied This Session
+
+**Docker/infra fixes:**
+1. `.dockerignore` created — excludes target/, .venv/, .git/, screenshots, secrets. Build context: 12KB instead of multi-GB.
+2. `~/.ans/` directories — Dockerfile creates `/home/ans/.ans/` and `/home/ans/.ans/rules/` with correct ownership
+3. `api_keys.json` — created at `docker/config/api_keys.json`, copied to `/home/ans/.ans/api_keys.json` in container (default admin key)
+4. `ans.toml` — copied to `/app/ans.toml` in container
+
+**Rust compile fixes (Rust 1.86 in Docker vs 1.95 local):**
+5. `crates/ans-core/src/budget.rs` — `is_multiple_of()` → `% N == 0` (not const-stable in 1.86)
+6. `crates/ans-distill/src/engine.rs` — removed `const` from `at_capacity()` (Vec::len not const-stable in 1.86)
+7. `crates/ans-core/src/decision.rs` — removed `const` from `new_immediate()` (String::new not const-stable in 1.86)
+8. Dockerfile base image: `rust:1.85` → `rust:1.86-slim-bookworm` (ICU crates require >=1.86)
+
+**Gateway networking fix:**
+9. Added `--gateway-bind` CLI flag to `ans-daemon` (default `127.0.0.1`, set to `0.0.0.0` in Docker)
+10. Dockerfile CMD + docker-compose.yml updated with `--gateway-bind 0.0.0.0`
+
+### Running Commands
+
+```powershell
+# Build
+docker build -t ans .
+
+# Run (standalone)
+docker run -d --name ans -p 50051:50051 -p 50052:50052 --env-file nerves/.env ans
+
+# Run (compose)
+docker-compose up -d
+
+# Stop
+docker stop ans && docker rm ans
+
+# Verify
+curl http://localhost:50052/api/v1/health
+# → {"gateway":"ans-gateway","status":"ok","version":"0.1.0"}
+
+curl http://localhost:50052/api/v1/metrics
+# → Prometheus metrics
+
+# Dashboard
+# http://localhost:50052/
+```
+
+### Endpoints
+
+| Port | Service | Bind | Access |
+|------|---------|------|--------|
+| 50051 | gRPC (internal) | 127.0.0.1 | Container only |
+| 50052 | Gateway (REST/MCP/WS) | 0.0.0.0 | External |
+
+### What Was NOT Done (No Benchmarks)
+- **Benchmarks are THEORETICAL only** — zero empirical measurements against browser-use or any tool
+- [[benchmark-comparison-jun-2026]] corrected to reflect this on 2026-06-11
+
+### Key Links
+- Health: http://localhost:50052/api/v1/health
+- Metrics: http://localhost:50052/api/v1/metrics
+- Dashboard: http://localhost:50052/
+- MCP: http://localhost:50052/mcp (POST)
+- WebSocket: ws://localhost:50052/ws
+
+[[phase1-complete-jun-2026]] [[cost-optimization-jun-2026]] [[benchmark-comparison-jun-2026]] [[ans-gateway-not-browser]]

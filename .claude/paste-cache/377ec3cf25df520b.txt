@@ -1,0 +1,40 @@
+Dimension 1 — Correctness under adversarial conditions
+Not clean questions with known answers. Real world data is dirty, contradictory, underspecified, and ambiguous. Your tests must include:
+Contradictory observations — feed the fitter two datasets where the same variable relationship points in opposite directions in different time windows. Does the system correctly detect the contradiction and flag it, or does it silently average them into a meaningless equation?
+Underspecified queries — queries where variable extraction is ambiguous. "Things are slowing down" has no extractable variable. Does the system correctly return an insufficient data signal, or does it force a bad variable mapping and produce a confidently wrong answer?
+Out-of-domain queries — queries about variables the library has never seen. Does the fallback router fire correctly, or does the system attempt to fit an equation from zero observations?
+Adversarial inputs — deliberately malformed data, extreme outliers, impossible variable values. Does the system break silently or surface the error structurally?
+
+Dimension 2 — Statistical validity of the equation library
+This is infrastructure testing, not answer testing. You are testing whether the library itself is trustworthy.
+Calibration under real data distributions — not synthetic questions. Take your actual fitted equations and run a walk-forward validation. Use the first 70% of observations to fit. Predict the next 30%. Measure actual prediction error against stated confidence intervals. If the system says 80% credible interval and the true value falls outside that interval 40% of the time — your Bayesian updating is broken, not your answers.
+Equation stability testing — add observations incrementally and watch the equation parameters. Do they converge smoothly as n increases, or do they oscillate? Oscillation means the prior is wrong or the likelihood function is misspecified.
+Residual pattern testing at scale — across every equation in the library, run automated residual analysis. Any equation where residuals show systematic pattern means the equation form is wrong. This must run as a continuous background process, not a one-time check.
+AIC/BIC racing — for every fitted equation, automatically fit competing equation forms and compare information criteria. If a simpler equation fits nearly as well, the library should auto-replace. Test that this replacement logic fires correctly and does not introduce instability.
+
+Dimension 3 — System reliability under production load
+This is where most research-grade systems die when shipped.
+Concurrent query handling — 100 simultaneous queries hitting the equation library. Do reads block writes? Does the Bayesian update process create lock contention? Does the correlation matrix update correctly under concurrent observation ingestion?
+Latency distribution, not average latency — infrastructure is tested on p50, p95, p99, and p999 latency. A system that answers in 50ms on average but 8 seconds at p99 is undeployable. Your equation library lookup must be sub-100ms at p99. Your fitting pipeline on cache miss must have a defined timeout and graceful degradation path.
+Memory behaviour under load — does the system's memory footprint grow unboundedly as the equation library scales? What happens at 10,000 equations? At 100,000? Profile heap allocation during Bayesian updates. Profile SymPy AST storage costs as equation complexity grows.
+Failure mode testing — kill the database mid-query. Inject network latency between the variable extractor LLM call and the fitter. Feed the Bayesian updater a malformed observation. Every failure path must surface a structured error, never a silent wrong answer.
+
+Dimension 4 — Data integrity and audit trail
+Infrastructure products in regulated domains are tested on their audit properties, not just their answers.
+Provenance chain integrity — every equation in the library traces to specific observations. Test that deleting an observation correctly marks all equations fitted from it as requiring revalidation. Test that adding a fraudulent observation does not silently corrupt the equation without trace.
+Temporal consistency — an equation fitted on data from Q1 2025 must not be applied to a query about Q4 2026 without a validity warning. Test that the validity window check fires on every query, not just on initial fit.
+Conflict detection reliability — deliberately insert two equations for the same variable set that produce contradictory outputs at the same input values. Test that the conflict detector catches this before either equation is used for a query. Measure the false negative rate — how often does a genuine conflict go undetected?
+Rollback integrity — when a Bayesian update shifts an equation parameter significantly, can the system roll back to the previous posterior? This is essential for production debugging. Test that the epistemic ledger records every update with full reversibility.
+
+Dimension 5 — Integration contract testing
+You are building infrastructure that plugs into other systems. The integration layer must be tested as rigorously as the core.
+Schema contract testing — every input schema and output schema is a contract. Test that the structured output object is identical in shape regardless of which equation fired, which domain was queried, or which fallback path was taken. Downstream consumers break if the output shape varies.
+Idempotency — the same query with the same data must produce the same output every time, assuming no new observations have been added. Test this exhaustively. Any stochasticity in the pipeline that is not deliberately introduced by the probabilistic integrator is a bug.
+Backwards compatibility — when you update an equation in the library, queries that were answered correctly before must not silently regress. Build a regression suite of canonical queries with known outputs and run it on every library update.
+Agent framework integration testing — test the SDK as a tool inside LangChain, CrewAI, and a raw API call. Test that the tool definition is correctly parsed, that the input schema is correctly validated, and that error responses from the equation layer are handled gracefully by the agent framework rather than causing silent failures.
+
+Dimension 6 — Benchmark against the real baseline
+Not GPT-4 on toy questions. The real baseline is what your target customers are currently running in production.
+Get a real production dataset from a design partner. Ask them for 90 days of queries their current AI system answered, the correct answers they verified manually, and the wrong answers they caught. Run your equation layer on those same queries. Compare directly.
+Measure on the metrics they care about — not accuracy rate on a test set. Measure on the business metrics they track: wrong answer rate, manual review time, escalation rate, time to correct a wrong output. Your system must move these numbers, not just score well on a benchmark you designed.
+Measure total cost of operation — not just token cost. Include equation fitting time, Bayesian update latency, infrastructure cost per query, and engineering time required to maintain the system. Infrastructure is evaluated on total cost of ownership, not just performance.

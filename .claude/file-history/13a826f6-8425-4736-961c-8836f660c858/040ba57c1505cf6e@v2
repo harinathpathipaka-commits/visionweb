@@ -1,0 +1,17 @@
+//! Goal lifecycle manager.
+//!
+//! Creates goals, decomposes them into sub-goals (via Python coordinator
+//! over gRPC), tracks progress, triggers re-planning when verification fails.
+
+use ans_core::goal::GoalState;
+
+/// Manages the lifecycle of all active goals.
+pub struct GoalManager;
+
+impl GoalManager {
+    /// Create a new goal. Delegates decomposition to the Python
+    /// goal decomposer via gRPC.
+    pub async fn create_goal(&self, _description: &str) -> GoalState {
+        todo!("Phase 4: Layer 1 Gateway + Coordination")
+    }
+}

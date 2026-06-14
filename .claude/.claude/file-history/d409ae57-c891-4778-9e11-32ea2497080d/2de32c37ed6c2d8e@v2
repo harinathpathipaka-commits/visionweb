@@ -1,0 +1,131 @@
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
+
+from .categorical import auto_encode, detect_all_categorical
+from .multivar import correlation_matrix, fit_multivariate
+
+
+def rank_variables(
+    columns: Dict[str, List[float]],
+    target: str,
+    target_values: List[float],
+    top_k: int = 10,
+) -> List[Dict[str, Any]]:
+    """Rank independent variables by their association with the target.
+
+    Uses multivariate OLS when possible; falls back to univariate correlation.
+    Returns list of {variable, importance, direction, p_value, pearson_r}.
+    """
+    predictors = {k: v for k, v in columns.items() if k != target}
+    if not predictors:
+        return []
+
+    n = len(target_values)
+
+    # Try multivariate fit first
+    try:
+        encoded = auto_encode(predictors)
+        result = fit_multivariate(encoded, target_values)
+        importance = result.get("variable_importance", {})
+        p_values = result.get("p_values", {})
+        coefficients = result.get("coefficients", {})
+
+        ranked = []
+        for name in predictors:
+            # Map encoded names back to original — take max importance among one-hot splits
+            imp = 0.0
+            p_val = 1.0
+            coeff = 0.0
+            for enc_key, enc_imp in importance.items():
+                if enc_key == name or enc_key.startswith(f"{name}_"):
+                    imp = max(imp, enc_imp)
+                    p_val = min(p_val, p_values.get(enc_key, 1.0))
+                    coeff = coefficients.get(enc_key, 0.0)
+
+            if imp == 0.0:
+                # Fall back to univariate
+                pearson = _pearson_r(columns.get(name, []), target_values)
+                imp = abs(pearson)
+                p_val = _pearson_p(pearson, n)
+                coeff = pearson
+
+            ranked.append({
+                "variable": name,
+                "importance": round(imp, 6),
+                "direction": "positive" if coeff > 0 else "negative",
+                "p_value": round(p_val, 6),
+                "pearson_r": round(_pearson_r(columns.get(name, []), target_values), 6),
+            })
+
+        ranked.sort(key=lambda x: x["importance"], reverse=True)
+        return ranked[:top_k]
+
+    except Exception:
+        pass
+
+    # Fallback: univariate Pearson correlation ranking
+    ranked = []
+    for name, vals in predictors.items():
+        if len(vals) < 3:
+            continue
+        pearson = _pearson_r(vals, target_values)
+        ranked.append({
+            "variable": name,
+            "importance": round(abs(pearson), 6),
+            "direction": "positive" if pearson > 0 else "negative",
+            "p_value": round(_pearson_p(pearson, n), 6) if n > 2 else 1.0,
+            "pearson_r": round(pearson, 6),
+        })
+    ranked.sort(key=lambda x: x["importance"], reverse=True)
+    return ranked[:top_k]
+
+
+def discover_relationships(
+    columns: Dict[str, List[float]],
+    min_correlation: float = 0.1,
+) -> List[Dict[str, Any]]:
+    """Discover all pairwise relationships above a threshold.
+
+    Returns [{x, y, pearson_r, direction, significance}].
+    """
+    corr = correlation_matrix(columns)
+    results = []
+    names = list(columns.keys())
+    for i in range(len(names)):
+        for j in range(i + 1, len(names)):
+            r = corr[names[i]][names[j]]
+            if abs(r) >= min_correlation:
+                n = min(len(columns[names[i]]), len(columns[names[j]]))
+                results.append({
+                    "x": names[i],
+                    "y": names[j],
+                    "pearson_r": round(r, 6),
+                    "direction": "positive" if r > 0 else "negative",
+                    "significance": "high" if abs(r) > 0.5 else "medium" if abs(r) > 0.3 else "low",
+                    "n_obs": n,
+                })
+    results.sort(key=lambda x: abs(x["pearson_r"]), reverse=True)
+    return results
+
+
+def _pearson_r(x_vals: List[float], y_vals: List[float]) -> float:
+    """Compute Pearson r safely."""
+    x = np.array(x_vals, dtype=np.float64)
+    y = np.array(y_vals, dtype=np.float64)
+    mask = np.isfinite(x) & np.isfinite(y)
+    if mask.sum() < 3:
+        return 0.0
+    r = float(np.corrcoef(x[mask], y[mask])[0, 1])
+    return 0.0 if np.isnan(r) else r
+
+
+def _pearson_p(r: float, n: int) -> float:
+    """Approximate p-value for Pearson r using t-distribution."""
+    from scipy import stats as sp_stats
+    if n <= 2 or abs(r) >= 1.0:
+        return 0.0 if abs(r) >= 1.0 else 1.0
+    t_stat = r * np.sqrt((n - 2) / (1 - r * r))
+    return float(2.0 * sp_stats.t.sf(abs(t_stat), n - 2))

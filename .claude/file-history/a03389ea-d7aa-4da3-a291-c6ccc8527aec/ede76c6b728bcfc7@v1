@@ -1,0 +1,97 @@
+"""Vision Eye — screenshot-based visual understanding via GPT-4o-mini.
+
+Receives screenshots as base64-encoded PNG, calls GPT-4o-mini for visual
+analysis. Skipped when budget in CRITICAL/EMERGENCY mode.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from ans_nerves.eyes.base import BaseEye, EyeReport
+from ans_nerves.llm.client import get_llm_client
+from ans_nerves.logging import get_logger
+from ans_nerves.llm.prompts import (
+    VISION_JSON_SCHEMA,
+    VISION_SYSTEM,
+    build_vision_user_prompt,
+)
+
+logger = get_logger(__name__)
+
+_VISION_DEFAULTS: dict[str, Any] = {
+    "page_type": "unknown",
+    "visible_elements": [],
+    "overlays": [],
+    "blocked_regions": [],
+    "anomalies": [],
+}
+
+
+class VisionEye(BaseEye):
+    """Analyses screenshots using GPT-4o-mini vision capabilities."""
+
+    name = "vision"
+
+    async def observe(self, session_id: str, page_data: dict[str, Any]) -> EyeReport:
+        screenshot_b64 = page_data.get("screenshot_base64")
+        if not screenshot_b64:
+            return EyeReport(
+                eye_name=self.name,
+                confidence=0.0,
+                content={**_VISION_DEFAULTS, "error": "No screenshot in page_data"},
+            )
+
+        distilled = page_data.get("distilled_dom")
+        if isinstance(distilled, dict):
+            distilled = json.dumps(distilled)
+        elif distilled is None:
+            distilled = "{}"
+
+        goal_context = page_data.get("goal_context", "")
+        page_url = page_data.get("url", "")
+
+        user_prompt = build_vision_user_prompt(
+            distilled_dom_json=distilled,
+            goal_context=goal_context,
+            page_url=page_url,
+        )
+
+        try:
+            response = await get_llm_client().complete_vision(
+                system_prompt=VISION_SYSTEM,
+                user_prompt=user_prompt,
+                screenshot_base64=screenshot_b64,
+                json_schema=VISION_JSON_SCHEMA,
+            )
+        except Exception:
+            logger.warning("vision: LLM call failed", exc_info=True)
+            return EyeReport(
+                eye_name=self.name,
+                confidence=0.0,
+                content={**_VISION_DEFAULTS, "error": "LLM call failed"},
+            )
+
+        if response.parsed is None:
+            logger.warning("vision: LLM returned unparseable response")
+            return EyeReport(
+                eye_name=self.name,
+                confidence=0.3,
+                content={**_VISION_DEFAULTS, "raw_response": response.content[:500]},
+            )
+
+        return EyeReport(
+            eye_name=self.name,
+            confidence=self._compute_confidence(response.parsed),
+            content=response.parsed,
+        )
+
+    @staticmethod
+    def _compute_confidence(parsed: dict[str, Any]) -> float:
+        """Lower confidence if no elements found or page type is unknown."""
+        if parsed.get("page_type") == "unknown" and not parsed.get("visible_elements"):
+            return 0.5
+        if not parsed.get("visible_elements"):
+            return 0.7
+        return 0.9

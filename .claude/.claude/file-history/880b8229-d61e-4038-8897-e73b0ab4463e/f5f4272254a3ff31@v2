@@ -1,0 +1,113 @@
+/**
+ * Tool enrichment unit tests — per-mode description formatting, edge cases.
+ */
+import { describe, it, expect } from 'vitest';
+import { enrichToolList } from '../src/tool-enrichment.js';
+import type { EnrichmentContext, ScoredAction } from '../src/types.js';
+import type { RawUpstreamTool } from '../src/rest-client.js';
+
+function makeTool(overrides?: Partial<RawUpstreamTool>): RawUpstreamTool {
+  return {
+    name: 'git_commit',
+    description: 'Create a git commit with a message.',
+    inputSchema: { type: 'object', properties: {} },
+    upstreamName: 'github',
+    ...overrides,
+  };
+}
+
+function makeScore(overrides?: Partial<ScoredAction>): ScoredAction {
+  return {
+    actionName: 'git_commit',
+    compositeScore: 0.84,
+    successRate: 84,
+    sampleSize: 42,
+    trendLabel: 'stable',
+    confidence: 0.85,
+    tier: 'medium',
+    ...overrides,
+  };
+}
+
+function makeContext(overrides?: Partial<EnrichmentContext>): EnrichmentContext {
+  return {
+    taskType: 'build',
+    customerId: 'test-cust',
+    agentId: 'test-agent',
+    mode: 'recommend',
+    scores: [],
+    policyDecision: null,
+    ...overrides,
+  };
+}
+
+describe('enrichToolList', () => {
+  it('returns tools unmodified in bootstrap mode', () => {
+    const tools = [makeTool()];
+    const ctx = makeContext({ mode: 'bootstrap' });
+    const result = enrichToolList(tools, ctx);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].description).toBe('Create a git commit with a message.');
+    expect(result[0].inputSchema).toEqual({ type: 'object', properties: {} });
+  });
+
+  it('never modifies inputSchema in any mode', () => {
+    const schema = { type: 'object', properties: { message: { type: 'string' } } };
+    const tools = [makeTool({ inputSchema: schema })];
+    const score = makeScore();
+
+    for (const mode of ['recommend', 'assist', 'auto'] as const) {
+      const ctx = makeContext({ mode, scores: [score] });
+      const result = enrichToolList(tools, ctx);
+      expect(result[0].inputSchema).toBe(schema);
+    }
+  });
+
+  it('adds ranking annotations', () => {
+    const tools = [
+      makeTool({ name: 'tool_a' }),
+      makeTool({ name: 'tool_b' }),
+    ];
+    const scores = [
+      makeScore({ actionName: 'tool_a', compositeScore: 0.9 }),
+      makeScore({ actionName: 'tool_b', compositeScore: 0.5 }),
+    ];
+    const ctx = makeContext({ scores });
+
+    const result = enrichToolList(tools, ctx);
+    expect(result[0].annotations?.ranking).toBe(1);
+    expect(result[1].annotations?.ranking).toBe(2);
+  });
+
+  it('handles cold start (no scores)', () => {
+    const tools = [makeTool()];
+    const ctx = makeContext({ mode: 'recommend', scores: [] });
+    const result = enrichToolList(tools, ctx);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].description).toBe('Create a git commit with a message.');
+    expect(result[0].annotations?.ranking).toBeUndefined();
+  });
+
+  it('handles zero sample size gracefully', () => {
+    const tools = [makeTool()];
+    const score = makeScore({ sampleSize: 0, successRate: 0 });
+    const ctx = makeContext({ scores: [score] });
+
+    const result = enrichToolList(tools, ctx);
+    expect(result).toHaveLength(1);
+    expect(result[0].description).toBe('Create a git commit with a message.');
+  });
+
+  it('handles tools with no matching score', () => {
+    const tools = [makeTool({ name: 'unknown_tool' })];
+    const score = makeScore({ actionName: 'other_tool' });
+    const ctx = makeContext({ scores: [score] });
+
+    const result = enrichToolList(tools, ctx);
+    expect(result).toHaveLength(1);
+    expect(result[0].annotations?.ranking).toBeUndefined();
+    expect(result[0].annotations?.category).toBeUndefined();
+  });
+});

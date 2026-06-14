@@ -1,0 +1,21 @@
+//! Diff-specific types: edit operations, cost functions, tree nodes.
+//!
+//! The Zhang-Shasha algorithm operates on labeled ordered trees.
+//! Each DOM element becomes a node with a label derived from its
+//! tag + role + text prefix. Edit costs are tuned for DOM semantics.
+
+/// A single edit operation in the tree edit distance algorithm.
+pub enum EditOp {
+    Insert {
+        index: usize,
+        label: String,
+    },
+    Delete {
+        index: usize,
+    },
+    Relabel {
+        index: usize,
+        old: String,
+        new: String,
+    },
+}

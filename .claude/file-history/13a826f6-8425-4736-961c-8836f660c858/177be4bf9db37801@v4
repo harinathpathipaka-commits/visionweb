@@ -1,0 +1,290 @@
+//! Cross-eye contradiction resolution engine.
+//!
+//! When two eyes disagree (e.g. Vision sees a button but DOM Reader
+//! says it's not interactable), this engine applies the resolution
+//! hierarchy to produce a consistent view.
+//!
+//! Resolution hierarchy (highest authority wins):
+//! 1. DOM Reader (ground truth for element state)
+//! 2. Page Diff (ground truth for what changed)
+//! 3. Goal Verifier (ground truth for goal progress)
+//! 4. Vision Model (best guess, overridable)
+//! 5. Error Detector (only consulted on failure)
+
+use ans_core::signal::{EyeName, EyeReport, EyeReportContent};
+
+/// Resolves cross-eye contradictions and returns resolution notes.
+pub struct ContradictionResolver;
+
+impl ContradictionResolver {
+    /// Resolution authority: higher number = more authoritative.
+    fn authority(eye: EyeName) -> u8 {
+        match eye {
+            EyeName::DomReader => 5,
+            EyeName::PageDiff => 4,
+            EyeName::GoalVerifier => 3,
+            EyeName::Vision => 2,
+            EyeName::ErrorDetector => 1,
+        }
+    }
+
+    /// Resolve all contradictions in a batch of eye reports.
+    /// Returns human-readable contradiction resolution notes.
+    pub fn resolve_all(&self, reports: &[EyeReport]) -> Vec<String> {
+        if reports.len() < 2 {
+            return Vec::new();
+        }
+
+        let mut contradictions = Vec::new();
+
+        // Check every pair of reports from different eyes
+        for (i, a) in reports.iter().enumerate() {
+            for b in reports.iter().skip(i + 1) {
+                if a.eye_name == b.eye_name {
+                    continue;
+                }
+
+                let conflict = self.detect_conflict(a, b);
+                if let Some(description) = conflict {
+                    contradictions.push(description);
+                }
+            }
+        }
+
+        contradictions
+    }
+
+    /// Detect whether two reports from different eyes conflict.
+    fn detect_conflict(&self, a: &EyeReport, b: &EyeReport) -> Option<String> {
+        let auth_a = Self::authority(a.eye_name);
+        let auth_b = Self::authority(b.eye_name);
+
+        // Only flag when both are high-confidence and their
+        // content suggests disagreement.
+        if a.confidence < 0.5 || b.confidence < 0.5 {
+            return None;
+        }
+
+        let conflict_kind = match (&a.content, &b.content) {
+            // DOM says element status vs Vision anomalies
+            (
+                EyeReportContent::DomReport { .. },
+                EyeReportContent::VisionReport { anomalies, .. },
+            ) => {
+                if !anomalies.is_empty() {
+                    Some((a, b, auth_a, auth_b, "element visibility vs visual anomaly"))
+                } else {
+                    None
+                }
+            }
+            // Vision vs DOM (reversed order)
+            (
+                EyeReportContent::VisionReport { anomalies, .. },
+                EyeReportContent::DomReport { .. },
+            ) => {
+                if !anomalies.is_empty() {
+                    Some((b, a, auth_b, auth_a, "visual anomaly vs element state"))
+                } else {
+                    None
+                }
+            }
+            // Diff says no change but Verifier says progress
+            (
+                EyeReportContent::DiffReport { summary, .. },
+                EyeReportContent::Verification {
+                    sub_goal_advanced, ..
+                },
+            ) => {
+                let is_static = summary.contains("no_change") || summary.contains("cosmetic");
+                if is_static && *sub_goal_advanced {
+                    Some((
+                        a,
+                        b,
+                        auth_a,
+                        auth_b,
+                        "no visual change vs goal progress claimed",
+                    ))
+                } else {
+                    None
+                }
+            }
+            // Verifier vs Diff (reversed)
+            (
+                EyeReportContent::Verification {
+                    sub_goal_advanced, ..
+                },
+                EyeReportContent::DiffReport { summary, .. },
+            ) => {
+                let is_static = summary.contains("no_change") || summary.contains("cosmetic");
+                if is_static && *sub_goal_advanced {
+                    Some((
+                        b,
+                        a,
+                        auth_b,
+                        auth_a,
+                        "goal progress claimed vs no visual change",
+                    ))
+                } else {
+                    None
+                }
+            }
+            // Error detector vs any — Error only consulted on failure
+            (EyeReportContent::ErrorReport { .. }, _) => {
+                // Error is lowest authority; other eye's view may override
+                if auth_b > auth_a {
+                    Some((b, a, auth_b, auth_a, "non-error eye overrides error report"))
+                } else {
+                    None
+                }
+            }
+            (_, EyeReportContent::ErrorReport { .. }) => {
+                if auth_a > auth_b {
+                    Some((a, b, auth_a, auth_b, "non-error eye overrides error report"))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+
+        conflict_kind.map(|(winner, loser, w_auth, l_auth, reason)| {
+            format!(
+                "{} overrides {} [{}]: authority {} > {}",
+                winner.eye_name.as_str(),
+                loser.eye_name.as_str(),
+                reason,
+                w_auth,
+                l_auth,
+            )
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+
+    fn make_report(eye: EyeName, confidence: f32, content: EyeReportContent) -> EyeReport {
+        EyeReport {
+            eye_name: eye,
+            timestamp: Utc::now(),
+            confidence,
+            goal_relevance: 0.5,
+            content,
+        }
+    }
+
+    #[test]
+    fn test_empty_batch() {
+        let resolver = ContradictionResolver;
+        let result = resolver.resolve_all(&[]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_single_report_no_contradiction() {
+        let resolver = ContradictionResolver;
+        let reports = [make_report(
+            EyeName::DomReader,
+            0.9,
+            EyeReportContent::DomReport {
+                elements: vec![],
+                interactive: vec![],
+                mode: ans_core::distill::DistillMode::AllFields,
+            },
+        )];
+        assert!(resolver.resolve_all(&reports).is_empty());
+    }
+
+    #[test]
+    fn test_dom_overrides_vision_on_anomaly() {
+        let resolver = ContradictionResolver;
+        let reports = [
+            make_report(
+                EyeName::DomReader,
+                0.9,
+                EyeReportContent::DomReport {
+                    elements: vec![],
+                    interactive: vec![],
+                    mode: ans_core::distill::DistillMode::AllFields,
+                },
+            ),
+            make_report(
+                EyeName::Vision,
+                0.8,
+                EyeReportContent::VisionReport {
+                    visible_elements: vec![],
+                    overlays: vec![],
+                    blocked_regions: vec![],
+                    page_type: "form".into(),
+                    anomalies: vec!["unexpected overlay".into()],
+                    raw_response: String::new(),
+                },
+            ),
+        ];
+        let contradictions = resolver.resolve_all(&reports);
+        assert_eq!(contradictions.len(), 1);
+        assert!(contradictions[0].contains("dom_reader overrides vision"));
+    }
+
+    #[test]
+    fn test_no_contradiction_when_low_confidence() {
+        let resolver = ContradictionResolver;
+        let reports = [
+            make_report(
+                EyeName::DomReader,
+                0.3, // low confidence
+                EyeReportContent::DomReport {
+                    elements: vec![],
+                    interactive: vec![],
+                    mode: ans_core::distill::DistillMode::AllFields,
+                },
+            ),
+            make_report(
+                EyeName::Vision,
+                0.8,
+                EyeReportContent::VisionReport {
+                    visible_elements: vec![],
+                    overlays: vec![],
+                    blocked_regions: vec![],
+                    page_type: "form".into(),
+                    anomalies: vec!["overlay".into()],
+                    raw_response: String::new(),
+                },
+            ),
+        ];
+        assert!(resolver.resolve_all(&reports).is_empty());
+    }
+
+    #[test]
+    fn test_diff_overrides_verifier_on_static_page() {
+        let resolver = ContradictionResolver;
+        let reports = [
+            make_report(
+                EyeName::PageDiff,
+                0.9,
+                EyeReportContent::DiffReport {
+                    added: vec![],
+                    removed: vec![],
+                    modified: vec![],
+                    visual_diff_pct: 0.0,
+                    summary: "no_change".into(),
+                },
+            ),
+            make_report(
+                EyeName::GoalVerifier,
+                0.7,
+                EyeReportContent::Verification {
+                    sub_goal_advanced: true,
+                    confidence: 0.7,
+                    reasoning: String::new(),
+                    criteria_status: "met".into(),
+                },
+            ),
+        ];
+        let contradictions = resolver.resolve_all(&reports);
+        assert_eq!(contradictions.len(), 1);
+        assert!(contradictions[0].contains("page_diff overrides goal_verifier"));
+    }
+}

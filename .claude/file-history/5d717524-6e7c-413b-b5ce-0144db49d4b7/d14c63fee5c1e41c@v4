@@ -1,0 +1,158 @@
+"""ans-nerves CLI — entry point for `python -m ans_nerves`."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+
+
+def _cmd_config(args: argparse.Namespace) -> None:
+    """Print current configuration as JSON."""
+    from ans_nerves.config import get_config
+
+    cfg = get_config()
+    data = {
+        "grpc_host": cfg.grpc_host,
+        "grpc_port": cfg.grpc_port,
+        "data_dir": str(cfg.data_dir),
+        "llm": {
+            "model": cfg.llm.model,
+            "max_tokens": cfg.llm.max_tokens,
+            "temperature": cfg.llm.temperature,
+            "max_retries": cfg.llm.max_retries,
+        },
+        "scoring": {
+            "immediate_weight": cfg.scoring.immediate_weight,
+            "goal_weight": cfg.scoring.goal_weight,
+            "efficiency_weight": cfg.scoring.efficiency_weight,
+            "consistency_weight": cfg.scoring.consistency_weight,
+            "business_weight": cfg.scoring.business_weight,
+            "error_weight": cfg.scoring.error_weight,
+        },
+    }
+    print(json.dumps(data, indent=2, default=str))
+
+
+def _cmd_health(args: argparse.Namespace) -> None:
+    """Check health of the gRPC daemon."""
+    import asyncio
+
+    from ans_nerves.grpc_client import get_grpc_client
+
+    async def _check() -> None:
+        client = get_grpc_client()
+        try:
+            result = await asyncio.wait_for(client.health(), timeout=5.0)
+            print(f"gRPC daemon at {client.target}: healthy")
+        except Exception as exc:
+            print(f"gRPC daemon at {client.target}: unreachable ({exc})")
+            sys.exit(1)
+        finally:
+            await client.close()
+
+    asyncio.run(_check())
+
+
+def _cmd_serve(args: argparse.Namespace) -> None:
+    """Start the health-check HTTP server."""
+    from ans_nerves.health import run_health_server
+
+    run_health_server(args.host, args.port)
+
+
+def _cmd_run(args: argparse.Namespace) -> None:
+    """Run the full agent loop for a goal."""
+    import asyncio
+
+    from ans_nerves.planner.loop import AgentLoop
+
+    async def _run() -> None:
+        import uuid
+        session_id = uuid.uuid4().hex[:8]
+        loop = AgentLoop(session_id=session_id, max_steps=args.max_steps)
+        result = await loop.run(
+            goal=args.goal,
+            context={"budget_cents": args.budget} if args.budget > 0 else None,
+        )
+        print(f"\n{'='*60}")
+        print(f"Session: {session_id}")
+        print(f"Success: {result.success}")
+        print(f"Steps: {result.total_steps}")
+        print(f"Sub-goals: {result.sub_goals_completed}/{result.total_sub_goals}")
+        print(f"Errors: {result.total_errors}")
+        print(f"Summary: {result.summary}")
+        if result.alerts:
+            print(f"Alerts: {result.alerts}")
+
+    asyncio.run(_run())
+
+
+def _cmd_decompose(args: argparse.Namespace) -> None:
+    """Decompose a goal into sub-goals."""
+    import asyncio
+
+    from ans_nerves.llm.client import get_llm_client
+    from ans_nerves.llm.prompts import DECOMPOSER_SYSTEM, DECOMPOSER_JSON_SCHEMA
+
+    async def _run() -> None:
+        client = get_llm_client()
+        response = await client.complete_structured(
+            system_prompt=DECOMPOSER_SYSTEM,
+            user_prompt=f"Goal: {args.goal}",
+            json_schema=DECOMPOSER_JSON_SCHEMA,
+        )
+        if response.parsed:
+            print(json.dumps(response.parsed, indent=2))
+            print(f"\ntokens: {response.usage.total_tokens}  "
+                  f"cost: {response.usage.cost_cents:.2f} cents  "
+                  f"latency: {response.latency_ms:.0f}ms")
+        else:
+            print("Error: LLM returned unparseable output")
+            sys.exit(1)
+
+    asyncio.run(_run())
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="ans-nerves",
+        description="Agent Nervous System - Python intelligence layer",
+    )
+    sub = parser.add_subparsers(dest="command", help="subcommands")
+
+    sub.add_parser("config", help="Print current configuration")
+
+    sub.add_parser("health", help="Check gRPC daemon health")
+
+    serve_p = sub.add_parser("serve", help="Start health-check HTTP server")
+    serve_p.add_argument("--host", default="0.0.0.0")
+    serve_p.add_argument("--port", type=int, default=8080)
+
+    decomp_p = sub.add_parser("decompose", help="Decompose a goal into sub-goals")
+    decomp_p.add_argument("goal", help="Goal description to decompose")
+
+    run_p = sub.add_parser("run", help="Run the full agent loop for a goal")
+    run_p.add_argument("goal", help="Goal to execute")
+    run_p.add_argument("--max-steps", type=int, default=50, help="Max steps (default: 50)")
+    run_p.add_argument("--budget", type=int, default=0, help="Budget in cents")
+
+    args = parser.parse_args()
+
+    if args.command == "config":
+        _cmd_config(args)
+    elif args.command == "health":
+        _cmd_health(args)
+    elif args.command == "serve":
+        _cmd_serve(args)
+    elif args.command == "decompose":
+        _cmd_decompose(args)
+    elif args.command == "run":
+        _cmd_run(args)
+    else:
+        parser.print_help()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,2 @@
+- [Agent Web Architecture](agent-web-architecture.md) — The complete 4-layer architecture: purpose-built agent browser, Nervous System, and Decision Intelligence
+- [Decision Intelligence Layer](decision-intelligence-layer.md) — Inbuilt feedback loop (NOT middleware) that recommends/executes next best action based on prior action outcomes, errors, and context

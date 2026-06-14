@@ -1,0 +1,138 @@
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
+
+from .models import SolveResult
+
+
+FORMATTER_SYSTEM = """You are a clear, concise business analyst. Given structured computational results, produce natural language prose.
+- Speak only: present the answer, confidence, and caveats
+- Never propose equations, formulas, or mathematical forms
+- Never speculate about methodology
+- If the system flagged issues, mention them honestly
+- Keep it under 4 sentences unless there are critical warnings"""
+
+
+def format_output(
+    solve_result: SolveResult,
+    audience: str = "analyst",
+    llm_client: Optional[Any] = None,
+) -> str:
+    if llm_client is not None and hasattr(llm_client, "messages"):
+        return _format_with_llm(solve_result, audience, llm_client)
+    return _format_template(solve_result)
+
+
+def _format_with_llm(solve_result: SolveResult, audience: str, llm_client: Any) -> str:
+    context = _build_context(solve_result)
+    prompt = f"""Audience: {audience}
+
+Structured results:
+{context}
+
+Produce natural language prose explaining what the answer means."""
+
+    try:
+        response = llm_client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=512,
+            system=FORMATTER_SYSTEM,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        content = response.content[0].text if isinstance(response.content, list) else response.content
+        return content.strip()
+    except Exception:
+        return _format_template(solve_result)
+
+
+def _build_context(solve_result: SolveResult) -> str:
+    lines = [
+        f"Answer: {solve_result.compute.answer:.2f}",
+        f"Confidence interval (95%): [{solve_result.probabilistic.ci_95[0]:.2f}, {solve_result.probabilistic.ci_95[1]:.2f}]",
+        f"Mean: {solve_result.probabilistic.mean:.2f}, Std: {solve_result.probabilistic.std:.2f}",
+        f"Equation family: {solve_result.equation.family}",
+        f"Gate passed: {solve_result.gate.passed}",
+    ]
+    if solve_result.gate.reason:
+        lines.append(f"Gate reason: {solve_result.gate.reason}")
+    for name, deriv_val in solve_result.compute.derivatives.items():
+        lines.append(f"{name}: {deriv_val:.4f}")
+    for name, curv_val in solve_result.compute.curvature.items():
+        lines.append(f"{name}: {curv_val:.4f}")
+    return "\n".join(lines)
+
+
+def _format_template(solve_result: SolveResult) -> str:
+    eq = solve_result.equation
+    comp = solve_result.compute
+    prob = solve_result.probabilistic
+    gate = solve_result.gate
+
+    if not gate.passed:
+        reason = gate.reason or "validation failure"
+        return (
+            f"The system could not derive a reliable answer. Reason: {reason}. "
+            f"The available data (n={eq.stats.n_obs}, R²_adj={eq.stats.r2_adj:.2f}, "
+            f"holdout MAPE={eq.stats.holdout_mape:.1f}%) was insufficient to pass "
+            f"the confidence threshold. More observations or a wider variable range may help."
+        )
+
+    deriv_text = ""
+    if comp.derivatives:
+        for name, val in comp.derivatives.items():
+            deriv_text += f" The rate of change ({name}) is {val:.2f}."
+
+    return (
+        f"The projected change is {comp.answer:.2f} "
+        f"(95% CI: {prob.ci_95[0]:.2f} to {prob.ci_95[1]:.2f}). "
+        f"This is derived from a {eq.family} relationship "
+        f"(R²_adj={eq.stats.r2_adj:.2f}, n={eq.stats.n_obs}).{deriv_text}"
+    )
+
+
+def format_fallback(
+    gate_reason: str,
+    equation_stats: Optional[Dict[str, Any]] = None,
+) -> str:
+    messages: Dict[str, str] = {
+        "insufficient_observations": (
+            "There is not enough data to derive a reliable quantitative relationship. "
+            "At least 15 observations are required. Consider collecting additional data "
+            "across a wider range of values."
+        ),
+        "low_r2_adj": (
+            "The fitted equations do not adequately explain the observed variation "
+            "(adjusted R² below the 0.6 threshold). The relationship between these "
+            "variables may be weak or influenced by unmeasured factors."
+        ),
+        "high_holdout_mape": (
+            "The equations fail to predict held-out data accurately "
+            "(MAPE exceeds the 20% threshold). This suggests the relationship may "
+            "not be stable or the data contains significant noise."
+        ),
+        "residuals_not_random": (
+            "The residuals show non-random patterns, indicating the equation form "
+            "does not capture the true underlying structure. A different family of "
+            "relationships may be needed."
+        ),
+        "drift_detected": (
+            "The relationship between these variables has changed over time "
+            "(structural drift detected). The historical pattern no longer holds. "
+            "Review recent data for regime changes."
+        ),
+        "conflict_exists": (
+            "A conflicting equation already exists for these variables. "
+            "The new fit has been flagged for review. A domain expert should "
+            "resolve the contradiction."
+        ),
+        "correlation_too_weak": (
+            "No detectable relationship exists between the specified variables "
+            "(correlation below minimum threshold). The variables may be independent "
+            "or the relationship is too noisy to detect with the available data."
+        ),
+    }
+
+    base = messages.get(gate_reason, f"The system could not derive a reliable answer (reason: {gate_reason}).")
+    if equation_stats:
+        base += f" (n={equation_stats.get('n_obs', '?')}, R²_adj={equation_stats.get('r2_adj', '?'):.2f})"
+    return base

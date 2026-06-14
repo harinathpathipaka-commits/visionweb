@@ -1,0 +1,91 @@
+{
+  "domain": "finance.ecommerce",
+  "variables": {
+    "revenue": {
+      "unit": "USD",
+      "aliases": ["sales", "gmv", "gross merchandise volume", "total sales", "income"],
+      "typical_range": [0, 1000000000],
+      "temporal_granularity": "daily"
+    },
+    "aov": {
+      "unit": "USD",
+      "aliases": ["average order value", "average basket size", "order value", "basket value"],
+      "typical_range": [0, 10000],
+      "temporal_granularity": "daily"
+    },
+    "conversion": {
+      "unit": "percentage",
+      "aliases": ["conversion rate", "visit conversion", "purchase rate", "checkout rate"],
+      "typical_range": [0, 100],
+      "temporal_granularity": "daily"
+    },
+    "traffic": {
+      "unit": "count",
+      "aliases": ["visitors", "sessions", "page views", "unique visitors", "site visits"],
+      "typical_range": [0, 100000000],
+      "temporal_granularity": "daily"
+    },
+    "orders": {
+      "unit": "count",
+      "aliases": ["transactions", "purchases", "checkouts", "completed orders"],
+      "typical_range": [0, 10000000],
+      "temporal_granularity": "daily"
+    },
+    "margin": {
+      "unit": "percentage",
+      "aliases": ["gross margin", "profit margin", "product margin", "unit margin"],
+      "typical_range": [-100, 100],
+      "temporal_granularity": "daily"
+    },
+    "cac": {
+      "unit": "USD",
+      "aliases": ["customer acquisition cost", "acquisition cost", "marketing cost per customer"],
+      "typical_range": [0, 1000],
+      "temporal_granularity": "monthly"
+    },
+    "ltv": {
+      "unit": "USD",
+      "aliases": ["lifetime value", "customer lifetime value", "clv"],
+      "typical_range": [0, 100000],
+      "temporal_granularity": "monthly"
+    },
+    "returns": {
+      "unit": "percentage",
+      "aliases": ["return rate", "refund rate", "product returns"],
+      "typical_range": [0, 100],
+      "temporal_granularity": "daily"
+    },
+    "cart_abandonment": {
+      "unit": "percentage",
+      "aliases": ["abandonment rate", "cart drop-off", "checkout abandonment"],
+      "typical_range": [0, 100],
+      "temporal_granularity": "daily"
+    },
+    "inventory_turnover": {
+      "unit": "ratio",
+      "aliases": ["turnover rate", "stock turnover", "inventory velocity"],
+      "typical_range": [0, 100],
+      "temporal_granularity": "monthly"
+    },
+    "shipping_cost": {
+      "unit": "USD",
+      "aliases": ["delivery cost", "fulfillment cost", "logistics cost"],
+      "typical_range": [0, 100],
+      "temporal_granularity": "daily"
+    }
+  },
+  "constraints": {
+    "elasticity_signs": {
+      "price": "negative",
+      "shipping_cost": "negative",
+      "returns": "negative"
+    }
+  },
+  "common_relationships": [
+    {"independent": "traffic", "dependent": "orders", "expected_form": "linear"},
+    {"independent": "traffic", "dependent": "revenue", "expected_form": "linear"},
+    {"independent": "orders", "dependent": "revenue", "expected_form": "linear"},
+    {"independent": "aov", "dependent": "revenue", "expected_form": "linear"},
+    {"independent": "conversion", "dependent": "orders", "expected_form": "linear"}
+  ]
+}

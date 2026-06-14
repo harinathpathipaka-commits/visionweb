@@ -1,0 +1,96 @@
+use ingestion::ingestion_service_server::{IngestionService, IngestionServiceServer};
+use ingestion::{BuildObservationsRequest, BuildObservationsResponse, ProfileCsvRequest, ProfileCsvResponse};
+use std::collections::HashSet;
+use tonic::{transport::Server, Request, Response, Status};
+
+pub mod ingestion {
+    tonic::include_proto!("ingestion");
+}
+
+#[derive(Default)]
+pub struct IngestionGrpc {}
+
+#[tonic::async_trait]
+impl IngestionService for IngestionGrpc {
+    async fn profile_csv(
+        &self,
+        request: Request<ProfileCsvRequest>,
+    ) -> Result<Response<ProfileCsvResponse>, Status> {
+        let data = request.into_inner().file_bytes;
+        let mut rdr = csv::Reader::from_reader(data.as_slice());
+        let headers = rdr.headers().map_err(|_| Status::invalid_argument("bad headers"))?.clone();
+        let mut samples: Vec<Vec<String>> = vec![Vec::new(); headers.len()];
+        for result in rdr.records().take(50) {
+            let record = result.map_err(|_| Status::invalid_argument("bad record"))?;
+            for (i, value) in record.iter().enumerate() {
+                samples[i].push(value.to_string());
+            }
+        }
+        let mut profiles = Vec::new();
+        for (i, header) in headers.iter().enumerate() {
+            let values = &samples[i];
+            let nulls = values.iter().filter(|v| v.trim().is_empty()).count() as f64;
+            let uniques: HashSet<&String> = values.iter().collect();
+            let inferred_type = if values.iter().all(|v| v.trim().is_empty() || v.parse::<f64>().is_ok()) {
+                "number"
+            } else {
+                "string"
+            };
+            profiles.push(ingestion::ColumnProfile {
+                column_name: header.to_string(),
+                inferred_type: inferred_type.to_string(),
+                null_pct: if values.is_empty() { 0.0 } else { nulls / values.len() as f64 },
+                unique_pct: if values.is_empty() { 0.0 } else { uniques.len() as f64 / values.len() as f64 },
+                sample_values: values.iter().take(5).cloned().collect(),
+            });
+        }
+        Ok(Response::new(ProfileCsvResponse { profiles }))
+    }
+
+    async fn build_observations(
+        &self,
+        request: Request<BuildObservationsRequest>,
+    ) -> Result<Response<BuildObservationsResponse>, Status> {
+        let input = request.into_inner();
+        let data = input.file_bytes;
+        let mappings = input.mappings;
+        let mut rdr = csv::Reader::from_reader(data.as_slice());
+        let mut observations = Vec::new();
+        let mut issues = Vec::new();
+        for (row_index, result) in rdr.records().enumerate() {
+            let record = result.map_err(|_| Status::invalid_argument("bad record"))?;
+            for mapping in &mappings {
+                let value = record.get(rdr.headers().unwrap().iter().position(|h| h == mapping.column_name).unwrap_or(0)).unwrap_or("");
+                if mapping.time_column {
+                    continue;
+                }
+                match value.parse::<f64>() {
+                    Ok(parsed) => observations.push(ingestion::ObservationDraft {
+                        variable: mapping.variable.clone(),
+                        value: parsed,
+                        unit: mapping.unit.clone(),
+                        timestamp: "".to_string(),
+                        row_index: (row_index + 1) as u32,
+                    }),
+                    Err(_) => issues.push(ingestion::QualityIssue {
+                        row_index: (row_index + 1) as u32,
+                        column_name: mapping.column_name.clone(),
+                        code: "invalid_number".to_string(),
+                    }),
+                }
+            }
+        }
+        Ok(Response::new(BuildObservationsResponse { observations, issues }))
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let addr = "0.0.0.0:50051".parse()?;
+    let svc = IngestionGrpc::default();
+    Server::builder()
+        .add_service(IngestionServiceServer::new(svc))
+        .serve(addr)
+        .await?;
+    Ok(())
+}

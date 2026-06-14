@@ -1,0 +1,105 @@
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional
+
+from . import BaseConnector, ConnectorCredentials, FetchResult, TableSchema
+
+
+class PostgresConnector(BaseConnector):
+    """PostgreSQL connector using psycopg2 for read-only introspection and incrementatal fetch."""
+
+    def __init__(self, credentials: ConnectorCredentials, ssl_mode: str = "require"):
+        super().__init__(credentials)
+        self.ssl_mode = ssl_mode
+        self._conn = None
+
+    def connect(self) -> None:
+        try:
+            import psycopg2
+            import psycopg2.extras
+            self._conn = psycopg2.connect(
+                host=self.credentials.host,
+                port=self.credentials.port,
+                dbname=self.credentials.database,
+                user=self.credentials.username,
+                password=self.credentials.password,
+                sslmode=self.ssl_mode,
+            )
+            self._conn.set_session(readonly=True, autocommit=True)
+            self._connected = True
+        except ImportError:
+            raise RuntimeError("psycopg2 is required for PostgreSQL connections")
+        except Exception as exc:
+            raise ConnectionError(f"PostgreSQL connection failed: {exc}") from exc
+
+    def disconnect(self) -> None:
+        if self._conn and not self._conn.closed:
+            self._conn.close()
+        self._connected = False
+
+    def introspect(self) -> List[TableSchema]:
+        self._ensure_connected()
+        cur = self._conn.cursor()
+        cur.execute(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+            ORDER BY table_name
+            """
+        )
+        schemas: List[TableSchema] = []
+        for (table_name,) in cur.fetchall():
+            cur.execute(
+                """
+                SELECT column_name, data_type, is_nullable, column_default
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = %s
+                ORDER BY ordinal_position
+                """,
+                (table_name,),
+            )
+            columns = [
+                {"name": r[0], "type": r[1], "nullable": r[2] == "YES", "default": r[3]}
+                for r in cur.fetchall()
+            ]
+            cur.execute("SELECT reltuples::bigint FROM pg_class WHERE relname = %s", (table_name,))
+            row_est = cur.fetchone()
+            schemas.append(TableSchema(name=table_name, columns=columns, row_count_estimate=row_est[0] if row_est else 0))
+        cur.close()
+        return schemas
+
+    def fetch(
+        self,
+        table: str,
+        columns: List[str],
+        since: Optional[str] = None,
+        cursor: Optional[str] = None,
+        limit: int = 10000,
+    ) -> FetchResult:
+        self._ensure_connected()
+        col_list = ", ".join(f'"{c}"' for c in columns)
+        query = f"SELECT {col_list} FROM \"{table}\""
+        params: List[Any] = []
+
+        if cursor:
+            query += ' WHERE ctid > %s'
+            params.append(cursor)
+        elif since:
+            query += ' WHERE updated_at >= %s'
+            params.append(since)
+
+        query += f" ORDER BY ctid LIMIT {limit}"
+
+        cur = self._conn.cursor()
+        import psycopg2.extras
+        cur = self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(query, params)
+        rows = [dict(r) for r in cur.fetchall()]
+        next_cursor = str(rows[-1].get("ctid", "")) if len(rows) == limit else None
+        cur.close()
+        return FetchResult(table=table, columns=columns, rows=rows, cursor=next_cursor)
+
+    def _ensure_connected(self) -> None:
+        if not self._connected or self._conn is None or self._conn.closed:
+            self.connect()

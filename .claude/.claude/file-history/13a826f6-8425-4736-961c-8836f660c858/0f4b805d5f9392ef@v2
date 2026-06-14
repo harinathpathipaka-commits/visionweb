@@ -1,0 +1,26 @@
+---
+name: decision-intelligence-layer
+description: "The Decision Intelligence Layer is an inbuilt feedback loop, not middleware — it executes/recommends the next best action based on prior actions and outcomes"
+metadata: 
+  node_type: memory
+  type: project
+  originSessionId: 13a826f6-8425-4736-961c-8836f660c858
+---
+
+## Rule
+
+The Decision Intelligence Layer is a **feedback loop** built directly into the agent's core execution cycle — not middleware, not an external interceptor.
+
+**Why:** Middleware adds latency, creates separation between decision and execution, and can't shape the agent's own reasoning. An inbuilt loop means the agent itself learns from every action outcome (results, errors, tool choices) and uses that accumulated context to recommend or execute the next best action/tool.
+
+**How to apply:** When designing the execution loop, bake the feedback mechanism into the agent's own decision path. The agent sees its history of actions → outcomes → adjusts its next move. This is a first-class feature of the agent architecture, not a plugin.
+
+## What it does
+
+- Tracks previous actions and their outcomes (success, error type, result quality)
+- Uses that history to recommend/execute the next best action or tool per context/task
+- Prevents: wrong actions, wrong tool selection, unnecessary token usage, repeating failed patterns
+
+## Status
+
+This is the defining architectural constraint for the execution engine. Everything else serves this loop.

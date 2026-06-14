@@ -1,0 +1,142 @@
+//! Layer 1 External API Gateway.
+//!
+//! How external AI agents connect to the Agent Nervous System.
+//! Three protocols, one gateway:
+//!
+//! - **MCP server** (Model Context Protocol): JSON-RPC tool provider
+//!   for Claude, ChatGPT, and other MCP-compatible agents.
+//! - **REST API**: Simple HTTP endpoints for non-MCP agents.
+//! - **WebSocket**: Streaming events for real-time agent feedback.
+//!
+//! All connections are authenticated (API key), rate-limited, and
+//! budget-tracked before any internal gRPC call is made.
+
+pub mod auth;
+pub mod client;
+pub mod mcp;
+pub mod rest;
+pub mod ws;
+
+use std::sync::Arc;
+
+use axum::routing::{get, post};
+use axum::Router;
+
+use auth::SharedKeyRegistry;
+use client::InternalClient;
+use mcp::McpServer;
+use rest::ApiRouter;
+use ws::WebSocketServer;
+
+/// Shared gateway state, created once at startup.
+pub struct Gateway {
+    key_registry: SharedKeyRegistry,
+    internal: InternalClient,
+    mcp: McpServer,
+    rest: ApiRouter,
+    ws: WebSocketServer,
+}
+
+impl Gateway {
+    /// Initialize the gateway: load API keys, connect to the daemon.
+    pub async fn init() -> Result<Self, Box<dyn std::error::Error>> {
+        let key_registry = Arc::new(auth::KeyRegistry::load(None)?);
+        let internal = InternalClient::connect().await?;
+        let mcp = McpServer::new(internal.clone());
+        let rest = ApiRouter::new(internal.clone());
+        let ws = WebSocketServer::new(internal.clone());
+
+        Ok(Self {
+            key_registry,
+            internal,
+            mcp,
+            rest,
+            ws,
+        })
+    }
+
+    /// Build the axum router with all routes mounted.
+    pub fn router(&self) -> Router {
+        let mcp = self.mcp.clone();
+        let rest = self.rest.clone();
+        let ws = self.ws.clone();
+
+        // MCP endpoint — POST /mcp
+        let mcp_route = post(move |body: axum::extract::Json<serde_json::Value>| async move {
+            let response = mcp.handle_request(body.0).await;
+            axum::Json(response)
+        });
+
+        // REST endpoints
+        let rest_routes = Router::new()
+            .route("/health", get({
+                let rest = rest.clone();
+                move || {
+                    let rest = rest.clone();
+                    async move { rest.health().await }
+                }
+            }))
+            .route("/sessions", post({
+                let rest = rest.clone();
+                move |axum::extract::Json(body): axum::extract::Json<serde_json::Value>| {
+                    let rest = rest.clone();
+                    async move { rest.create_session(body).await }
+                }
+            }))
+            .route("/sessions/:id/navigate", post({
+                let rest = rest.clone();
+                move |axum::extract::Path(id): axum::extract::Path<String>,
+                      axum::extract::Json(body): axum::extract::Json<serde_json::Value>| {
+                    let rest = rest.clone();
+                    async move { rest.navigate(&id, body).await }
+                }
+            }))
+            .route("/sessions/:id/execute", post({
+                let rest = rest.clone();
+                move |axum::extract::Path(id): axum::extract::Path<String>,
+                      axum::extract::Json(body): axum::extract::Json<serde_json::Value>| {
+                    let rest = rest.clone();
+                    async move { rest.execute_action(&id, body).await }
+                }
+            }))
+            .route("/sessions/:id/screenshot", post({
+                let rest = rest.clone();
+                move |axum::extract::Path(id): axum::extract::Path<String>,
+                      axum::extract::Json(body): axum::extract::Json<serde_json::Value>| {
+                    let rest = rest.clone();
+                    async move { rest.screenshot(&id, body).await }
+                }
+            }))
+            .route("/sessions/:id/dom", get({
+                let rest = rest.clone();
+                move |axum::extract::Path(id): axum::extract::Path<String>| {
+                    let rest = rest.clone();
+                    async move { rest.get_dom(&id).await }
+                }
+            }))
+            .route("/goals/:id", get({
+                let rest = rest.clone();
+                move |axum::extract::Path(id): axum::extract::Path<String>| {
+                    let rest = rest.clone();
+                    async move { rest.get_goal(&id).await }
+                }
+            }))
+            .route("/goals", post({
+                move |axum::extract::Json(body): axum::extract::Json<serde_json::Value>| {
+                    let rest = rest.clone();
+                    async move { rest.create_goal(body).await }
+                }
+            }));
+
+        // WebSocket endpoint
+        let ws_route = get(move |ws_upgrade: axum::extract::ws::WebSocketUpgrade| {
+            let ws = ws.clone();
+            async move { ws.handle_upgrade(ws_upgrade).await }
+        });
+
+        Router::new()
+            .route("/mcp", mcp_route)
+            .route("/ws", ws_route)
+            .nest("/api/v1", rest_routes)
+    }
+}

@@ -1,0 +1,27 @@
+/**
+ * MCP Server — smoke test
+ * Validates GatewayProxy creation, decision ID generation, and enrichment
+ * context resolution without requiring a running upstream or LI API.
+ */
+import { describe, it, expect } from 'vitest';
+import { generateDecisionId } from '../src/gateway-proxy.js';
+
+describe('GatewayProxy', () => {
+  describe('generateDecisionId', () => {
+    it('returns a string with the dec_ prefix', () => {
+      const id = generateDecisionId('test-agent');
+      expect(id).toMatch(/^dec_[0-9A-Za-z]{12}_[0-9A-Za-z]{4}_[0-9A-Za-z]{4}$/);
+    });
+
+    it('produces different IDs for different agents', () => {
+      const a = generateDecisionId('agent-a');
+      const b = generateDecisionId('agent-b');
+      expect(a).not.toBe(b);
+    });
+
+    it('produces different IDs on successive calls', () => {
+      const ids = Array.from({ length: 10 }, () => generateDecisionId('agent'));
+      expect(new Set(ids).size).toBe(ids.length);
+    });
+  });
+});

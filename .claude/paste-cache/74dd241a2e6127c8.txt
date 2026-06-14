@@ -1,0 +1,15 @@
+PS C:\Users\kusta\ILabs\visionweb> Invoke-RestMethod -Uri "http://127.0.0.1:50052/mcp" -Method POST -ContentType "application/json" -Body
+Invoke-RestMethod : Missing an argument for parameter 'Body'. Specify a parameter of type 'System.Object' and try again.
+At line:1 char:98
++ ... 7.0.0.1:50052/mcp" -Method POST -ContentType "application/json" -Body
++                                                                     ~~~~~
+    + CategoryInfo          : InvalidArgument: (:) [Invoke-RestMethod], ParameterBindingException
+    + FullyQualifiedErrorId : MissingArgument,Microsoft.PowerShell.Commands.InvokeRestMethodCommand
+
+PS C:\Users\kusta\ILabs\visionweb> '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_goal","arguments":{"description":"Navigate to google.com and verify it loads"}}}'| Select-Object -ExpandProperty result | Select-Object -ExpandProperty content | ForEach-Object { $_.text }
+Select-Object : Property "result" cannot be found.
+At line:1 char:156
++ ... nd verify it loads"}}}'| Select-Object -ExpandProperty result | Selec ...
++                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidArgument: ({"jsonrpc":"2.0...fy it loads"}}}:PSObject) [Select-Object], PSArgumentException
+    + FullyQualifiedErrorId : ExpandPropertyNotFound,Microsoft.PowerShell.Commands.SelectObjectCommand

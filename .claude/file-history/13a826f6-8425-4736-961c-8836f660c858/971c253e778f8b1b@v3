@@ -1,0 +1,16 @@
+[package]
+name = "ans-goal"
+version.workspace = true
+edition.workspace = true
+description = "Goal state manager — shared goal tracking across parallel sessions"
+
+[dependencies]
+ans-proto.workspace = true
+ans-core.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+chrono.workspace = true

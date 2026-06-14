@@ -1,0 +1,268 @@
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional, Tuple
+
+from .domain_router import route_domain
+from .epistemic_parser import parse_query
+from .ledger_query import query_time_series, query_pair, list_variables_in_ledger, query_observations
+from .storage import init_storage
+
+
+def resolve_variables(
+    db_path: str,
+    question: str,
+) -> Dict[str, Any]:
+    """Parse a natural language question and resolve variables against the ledger.
+
+    Returns {x_var, y_var, domain, x_values, y_values, timestamps, method, prose}.
+    """
+    # 1. Domain routing
+    domain = route_domain(question)
+
+    # 2. Parse for variables
+    extraction = parse_query(question, domain)
+    var_names = [v.name for v in extraction.variables] if extraction.variables else []
+
+    # 3. Check what's available in the ledger
+    ledger_vars = list_variables_in_ledger(db_path)
+    ledger_names = {lv["variable"] for lv in ledger_vars}
+
+    # 4. Match extracted variables to ledger variables
+    x_var, y_var = _match_variables(var_names, extraction.assumptions, ledger_names, question)
+
+    # 5. Retrieve data
+    x_vals: List[float] = []
+    y_vals: List[float] = []
+    timestamps: List[str] = []
+
+    if x_var and y_var and x_var in ledger_names and y_var in ledger_names:
+        # Both variables in ledger — use aligned pair
+        x_vals, y_vals, timestamps = query_pair(db_path, x_var, y_var)
+
+    if not x_vals or len(x_vals) < 3:
+        # Fall back: try individual retrievals
+        if y_var and y_var in ledger_names:
+            y_vals, timestamps = query_time_series(db_path, y_var)
+            if y_vals and len(y_vals) >= 3:
+                x_vals = list(range(len(y_vals)))
+                x_var = "time_index"
+
+    method = "ledger_pair" if timestamps and x_var != "time_index" else "ledger_time_series" if y_vals else "no_data"
+
+    return {
+        "x_var": x_var or "x",
+        "y_var": y_var or "y",
+        "domain": domain,
+        "x_values": x_vals,
+        "y_values": y_vals,
+        "timestamps": timestamps,
+        "method": method,
+        "n_obs": len(x_vals),
+        "ledger_variables": ledger_names,
+        "extracted_variables": var_names,
+        "assumptions": extraction.assumptions,
+    }
+
+
+def _match_variables(
+    var_names: List[str],
+    assumptions: List[str],
+    ledger_names: set,
+    question: str,
+) -> Tuple[Optional[str], Optional[str]]:
+    """Match extracted variable names to ledger variables using fuzzy matching."""
+    lower_q = question.lower()
+
+    # Direct matches
+    x_var = None
+    y_var = None
+
+    # For each extracted variable, try to find in ledger
+    matched = []
+    for name in var_names:
+        if name in ledger_names:
+            matched.append(name)
+
+    # Try common SaaS variable patterns
+    saas_pairs = [
+        ("tenure", "churn"),
+        ("monthly_charges", "churn"),
+        ("customers", "mrr"),
+        ("customers", "revenue"),
+        ("cac", "customers"),
+        ("arpu", "ltv"),
+        ("mrr", "arr"),
+        ("churn", "ltv"),
+    ]
+
+    for x_cand, y_cand in saas_pairs:
+        if x_cand in ledger_names and y_cand in ledger_names:
+            x_in_q = x_cand.lower() in lower_q or x_cand.replace("_", " ") in lower_q
+            y_in_q = y_cand.lower() in lower_q or y_cand.replace("_", " ") in lower_q
+            if y_in_q:
+                y_var = y_cand
+                x_var = x_cand
+                break
+            elif x_in_q and y_cand in ledger_names:
+                x_var = x_cand
+                y_var = y_cand
+                break
+
+    # Fall back to matched
+    if not y_var and len(matched) >= 2:
+        x_var = matched[0]
+        y_var = matched[1]
+    elif matched:
+        # Single match — look for any other variable in ledger to pair with
+        y_var = matched[0]
+        for name in ledger_names:
+            if name != y_var:
+                x_var = name
+                break
+
+    # Question-driven: "why did X increase" → X is y_var
+    for phrase in ["why did", "what drives", "what happened to", "explain"]:
+        if phrase in lower_q:
+            for lv in ledger_names:
+                if lv.lower() in lower_q:
+                    y_var = lv
+                    break
+            break
+
+    return x_var, y_var
+
+
+def run_smart_query(
+    db_path: str,
+    question: str,
+    evaluate_at: Optional[float] = None,
+    top_n: int = 5,
+) -> Dict[str, Any]:
+    """Run the full NL→variable→fit→explain pipeline.
+
+    This is the capstone endpoint — takes a natural language question
+    and returns a complete answer with data, fit, and explanation.
+    """
+    init_storage(db_path)
+
+    # Step 1: Resolve variables and retrieve data
+    resolution = resolve_variables(db_path, question)
+
+    x_vals = resolution["x_values"]
+    y_vals = resolution["y_values"]
+    x_var = resolution["x_var"]
+    y_var = resolution["y_var"]
+
+    result: Dict[str, Any] = {
+        "question": question,
+        "evaluated_at": evaluate_at,
+        "domain": resolution["domain"],
+        "x_variable": x_var,
+        "y_variable": y_var,
+        "n_observations": len(x_vals),
+        "method": resolution["method"],
+        "ledger_variables_available": list(resolution["ledger_variables"]),
+        "assumptions": resolution["assumptions"],
+    }
+
+    if len(x_vals) < 3:
+        result["answer"] = (
+            f"Insufficient data in the ledger to answer this question. "
+            f"Found {len(x_vals)} observations for '{y_var}'. "
+            f"Upload data via POST /v1/ingest first."
+        )
+        result["fit"] = None
+        return result
+
+    # Step 2: Fit the relationship
+    from .pipeline import solve
+    from .config import CONFIG
+
+    try:
+        fit_result = solve(
+            query=question,
+            x_values=x_vals,
+            y_values=y_vals,
+            db_path=db_path,
+            llm_client=None,
+            evaluate_at=evaluate_at,
+        )
+    except Exception as e:
+        result["answer"] = f"Fitting failed: {e}"
+        result["fit"] = None
+        return result
+
+    # Step 3: Extract fit info
+    result["fit"] = {
+        "family": fit_result.equation.family,
+        "sympy_expr": fit_result.equation.sympy_expr,
+        "parameters": fit_result.equation.parameters,
+        "r2_adj": round(fit_result.equation.stats.r2_adj, 4),
+        "gate_passed": fit_result.gate.passed,
+        "pearson_r": round(fit_result.pearson_r, 4) if fit_result.pearson_r is not None else None,
+        "answer": round(fit_result.compute.answer, 4),
+        "ci_95": [round(fit_result.probabilistic.ci_95[0], 4), round(fit_result.probabilistic.ci_95[1], 4)],
+        "derivative": fit_result.compute.derivatives.get("dY/dX"),
+        "elasticity": fit_result.elasticity.get("elasticity_approx") if fit_result.elasticity else None,
+    }
+
+    # Step 4: Generate natural language answer
+    prose_parts = []
+    r2 = fit_result.equation.stats.r2_adj
+    family = fit_result.equation.family
+    pearson = fit_result.pearson_r
+    gate = fit_result.gate
+
+    if gate.passed and r2 > 0.3:
+        prose_parts.append(
+            f"'{y_var}' has a {family} relationship with '{x_var}' "
+            f"(R²={r2:.3f}, r={pearson:.3f})."
+        )
+        if fit_result.compute.derivatives.get("dY/dX") is not None:
+            deriv = fit_result.compute.derivatives["dY/dX"]
+            direction = "increases" if deriv > 0 else "decreases"
+            prose_parts.append(
+                f"For each unit increase in '{x_var}', '{y_var}' {direction} "
+                f"by approximately {abs(deriv):.4f}."
+            )
+        if evaluate_at is not None:
+            prose_parts.append(
+                f"At '{x_var}' = {evaluate_at}, predicted '{y_var}' = "
+                f"{fit_result.compute.answer:.4f} "
+                f"(95% CI: {result['fit']['ci_95'][0]:.4f} to {result['fit']['ci_95'][1]:.4f})."
+            )
+        if fit_result.elasticity:
+            ela = fit_result.elasticity.get("elasticity_approx")
+            if ela is not None:
+                prose_parts.append(f"Elasticity: {ela:.4f}.")
+    elif gate.passed:
+        prose_parts.append(
+            f"'{y_var}' shows a weak {family} relationship with '{x_var}' "
+            f"(R²={r2:.3f}). The signal is detectable but noisy."
+        )
+    else:
+        fallback = fit_result.fallback_action or {}
+        reason = fallback.get("description", fit_result.gate.reason or "validation failed")
+        prose_parts.append(f"No reliable relationship found: {reason}")
+
+    result["answer"] = " ".join(prose_parts)
+
+    # Step 5: If multi-variable data exists in ledger, add discovery
+    try:
+        ledger_vars = list_variables_in_ledger(db_path)
+        if len(ledger_vars) >= 3:
+            from .discovery import rank_variables
+            # Build multi-column dict from ledger
+            columns: Dict[str, List[float]] = {}
+            for lv in ledger_vars[:10]:  # Top 10 by obs count
+                obs = query_observations(db_path, lv["variable"], limit=1000)
+                vals = [float(o["value"]) for o in obs if o["value"] is not None]
+                if len(vals) >= 3:
+                    columns[lv["variable"]] = vals
+            if y_var in columns and len(columns) >= 2:
+                ranked = rank_variables(columns, y_var, columns[y_var], top_k=top_n)
+                result["related_drivers"] = ranked
+    except Exception:
+        pass
+
+    return result

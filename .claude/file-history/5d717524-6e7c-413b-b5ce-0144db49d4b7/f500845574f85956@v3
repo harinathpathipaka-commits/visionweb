@@ -1,0 +1,68 @@
+"""Tests for embedding generator (OpenAI text-embedding-3-small)."""
+
+from ans_nerves.scoring.embeddings import EmbeddingGenerator
+
+
+class TestEmbeddingGenerator:
+    def setup_method(self):
+        self.gen = EmbeddingGenerator()
+
+    def test_dimension(self):
+        assert self.gen.dimension == 1536
+
+    def test_empty_text_returns_zeros(self):
+        result = self.gen.embed("")
+        assert len(result) == 1536
+        assert all(v == 0.0 for v in result)
+
+    def test_whitespace_text_returns_zeros(self):
+        result = self.gen.embed("   ")
+        assert len(result) == 1536
+        assert all(v == 0.0 for v in result)
+
+    def test_fallback_embed_is_deterministic(self):
+        a = self.gen._fallback_embed("hello world")
+        b = self.gen._fallback_embed("hello world")
+        assert a == b
+
+    def test_fallback_embed_is_l2_normalized(self):
+        import math
+        vec = self.gen._fallback_embed("lorem ipsum dolor sit amet")
+        norm = math.sqrt(sum(v * v for v in vec))
+        assert abs(norm - 1.0) < 0.001
+
+    def test_fallback_embed_similar_texts(self):
+        """Similar texts should have overlapping non-zero dimensions."""
+        import numpy as np
+        a = np.array(self.gen._fallback_embed("click search button"))
+        b = np.array(self.gen._fallback_embed("click search btn"))
+        overlap = int(np.sum((a > 0) & (b > 0)))
+        assert overlap > 0
+
+    def test_embed_batch_empty(self):
+        assert self.gen.embed_batch([]) == []
+
+    def test_embed_batch_size(self):
+        dim = self.gen.dimension
+        texts = ["action:click", "action:type", "action:scroll"]
+        result = self.gen.embed_batch(texts)
+        assert len(result) == 3
+        assert all(len(v) == dim for v in result)
+
+    def test_build_context_text(self):
+        text = self.gen.build_context_text(
+            action_type="click",
+            selector="#btn",
+            tool="playwright",
+            goal_description="Search flights",
+            page_type="search_form",
+        )
+        assert "action:click" in text
+        assert "selector:#btn" in text
+        assert "tool:playwright" in text
+        assert "goal:Search flights" in text
+        assert "page:search_form" in text
+
+    def test_build_context_text_empty(self):
+        text = self.gen.build_context_text()
+        assert text == "action: tool: selector: goal: page:"

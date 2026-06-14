@@ -1,0 +1,29 @@
+//! Prompt injection detector.
+//!
+//! Scans page content for instruction-override attacks via:
+//! - Hidden content (display:none, visibility:hidden, opacity:0)
+//! - ARIA labels with instruction-like patterns
+//! - CSS pseudo-elements (::before, ::after with 'content')
+//! - Zero-width characters (U+200B, U+200C, U+FEFF)
+//! - Homoglyph attacks (Cyrillic 'а' vs Latin 'a')
+//! - Meta tags with instruction content
+//!
+//! Produces a score 0.0 (safe) to 1.0 (definite injection).
+//! <5ms scan time budget for typical pages.
+
+use ans_core::immune::InjectionScanResult;
+
+/// The prompt injection detector.
+pub struct InjectionDetector;
+
+impl InjectionDetector {
+    /// Scan page content for injection attempts.
+    /// Called after distraction classification, before DOM distillation.
+    pub fn scan(&self, _url: &str, _raw_html: &str) -> InjectionScanResult {
+        InjectionScanResult {
+            score: 0.0,
+            flagged_content: Vec::new(),
+            action: ans_core::immune::InjectionAction::Allow,
+        }
+    }
+}

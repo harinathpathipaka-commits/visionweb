@@ -1,0 +1,14 @@
+{
+  "pid": 28036,
+  "version": "2.1.146",
+  "jsonPath": "C:\\Users\\kusta\\.claude\\daemon.json",
+  "logPath": "C:\\Users\\kusta\\.claude\\daemon.log",
+  "startedAt": 1779335279222,
+  "origin": "transient",
+  "spawnedBy": {
+    "label": "claude",
+    "cwd": "C:\\Users\\kusta\\Layerinfinite\\Outcome\\packages\\mcp-server",
+    "pid": 12748
+  },
+  "procStart": "639149518784170480"
+}

@@ -1,0 +1,40 @@
+"""Tests for decision scoring engine."""
+
+from ans_nerves.scoring.scorer import DecisionScorer, ImmediateOutcome
+
+
+def test_immediate_success():
+    outcome = ImmediateOutcome(action_succeeded=True, results_produced="clicked button")
+    assert outcome.score() == 1.0
+
+
+def test_immediate_timeout():
+    outcome = ImmediateOutcome(action_succeeded=False, error_message="timeout after 30s")
+    assert outcome.score() == 0.2
+
+
+def test_immediate_failure():
+    outcome = ImmediateOutcome(action_succeeded=False, error_message="element not found")
+    assert outcome.score() == 0.0
+
+
+def test_scorer_success_with_goal_advancement():
+    scorer = DecisionScorer()
+    score = scorer.score(
+        action_succeeded=True,
+        results_summary="filled search form",
+        error_message=None,
+        goal_advanced=True,
+    )
+    assert score > 0.8
+
+
+def test_scorer_failure_no_advancement():
+    scorer = DecisionScorer()
+    score = scorer.score(
+        action_succeeded=False,
+        results_summary="",
+        error_message="selector not found",
+        goal_advanced=False,
+    )
+    assert score < 0.1

@@ -1,0 +1,361 @@
+# Equation Layer — The Observation Fabric (Connector Architecture)
+
+> **Core Insight**: RAG connectors move *text chunks*. The Equation Layer connector moves *structured observations*. This is a fundamentally different ingestion problem — and a bigger product opportunity.
+
+---
+
+## 1. Why "Like RAG" Is the Wrong Starting Point
+
+| Aspect | RAG Connector | Equation Layer Connector |
+|---|---|---|
+| **Raw input** | Documents, PDFs, web pages | CSVs, SQL tables, APIs, tool exports |
+| **Unit of ingestion** | Text chunk (~500 tokens) | Observation: `{variable, value, timestamp, entity, unit, context}` |
+| **Transformation** | Chunk + embed | Schema map + type infer + normalize + validate |
+| **Storage** | Vector DB (semantic search) | Observation ledger + Equation library (structured) |
+| **Update trigger** | Manual re-index | Live sync, incremental, or event-driven |
+| **User work** | Drop files, done | Drop files → confirm variable mapping → validate → done |
+
+RAG connectors are passive pipes. The Equation Layer connector is an **active observation system** — it doesn't just store data, it continuously transforms raw business data into structured epistemic inputs that feed the equation pipeline.
+
+---
+
+## 2. The Observation Fabric — 5-Layer Connector Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  SOURCE LAYER                                               │
+│  CSV  │  SQL DB  │  SaaS API  │  Spreadsheet  │  Streaming  │
+└────────────────────┬────────────────────────────────────────┘
+                     │ raw records
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  ADAPTER LAYER                                              │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐           │
+│  │ CSV     │ │ SQL     │ │ REST    │ │ Webhook │           │
+│  │ Adapter │ │ Adapter │ │ Adapter │ │ Adapter │           │
+│  └─────────┘ └─────────┘ └─────────┘ └─────────┘           │
+│  → Unified record stream: {columns, types, sample_rows}     │
+└────────────────────┬────────────────────────────────────────┘
+                     │ unified records
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  SCHEMA INTERPRETER                                         │
+│  LLM-powered or rule-based mapping from source schema to    │
+│  Equation Layer variable ontology.                          │
+│  → "revenue_q2" → Variable: Revenue, Unit: USD,             │
+│     Entity: Company, Period: quarterly                      │
+│  → "cust_acq_cost" → Variable: CAC, Unit: USD,              │
+│     Entity: CustomerSegment, Period: monthly                │
+│  User confirms or overrides. One-time per source.           │
+└────────────────────┬────────────────────────────────────────┘
+                     │ mapped variables
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  OBSERVATION FACTORY                                        │
+│  Transforms each source record into 1-N observations:       │
+│  {                                                          │
+│    variable_id: "revenue",                                  │
+│    value: 2845000.00,                                       │
+│    unit: "USD",                                             │
+│    timestamp: "2024-03-31T00:00:00Z",                       │
+│    entity: {"company": "AcmeCorp", "region": "US"},         │
+│    provenance: {source: "stripe_api", record_id: "..."},    │
+│    quality_score: 1.0                                       │
+│  }                                                          │
+│  → Handles: type coercion, unit normalization, currency     │
+│    conversion, outlier flagging, missing value policies     │
+└────────────────────┬────────────────────────────────────────┘
+                     │ observations
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  SYNC ENGINE + QUALITY GATE                                 │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
+│  │ Batch Sync  │  │ Incremental │  │ Event-Driven│         │
+│  │ (full load) │  │ (delta)     │  │ (webhooks)  │         │
+│  └─────────────┘  └─────────────┘  └─────────────┘         │
+│  → Deduplication by (variable, entity, timestamp)           │
+│  → Data quality checks: range, variance, schema drift       │
+│  → Auto-trigger: new observations → equation update queue   │
+└────────────────────┬────────────────────────────────────────┘
+                     │ validated observations
+                     ▼
+              ┌──────────────┐
+              │  EQUATION    │
+              │  LAYER CORE  │
+              │  (Layers 1-6)│
+              └──────────────┘
+```
+
+---
+
+## 3. Connection Types — The User Experience
+
+### 3.1 File Upload (CSV, Excel, Parquet)
+
+**Flow**:
+1. User drags file.
+2. Adapter auto-detects delimiter, encoding, header row.
+3. Schema Interpreter suggests variable mappings:
+   ```
+   Column "rev_2024_q1" → Revenue (USD, quarterly)
+   Column "cac_avg" → CAC (USD, monthly average)
+   Column "churn_pct" → ChurnRate (percentage, monthly)
+   ```
+4. User confirms or edits mappings in a UI.
+5. Observation Factory generates observations.
+6. Quality Gate flags: "Revenue has 3 negative values — confirm refunds or data error?"
+7. Data enters equation pipeline.
+
+**Advanced**: Support for multi-sheet Excel, Parquet with nested types, JSONL with schema inference.
+
+### 3.2 Database Connector (Postgres, MySQL, BigQuery, Snowflake, Redshift)
+
+**Flow**:
+1. User provides read-only connection string (or uses OAuth for cloud warehouses).
+2. Adapter introspects schema: `SHOW TABLES`, `DESCRIBE`.
+3. Schema Interpreter suggests relevant tables and columns.
+4. User selects tables/columns to sync.
+5. Sync Engine performs initial full load, then incremental via `updated_at` timestamp or CDC (Change Data Capture).
+6. Observations stream continuously into the ledger.
+
+**Security**: Read-only credentials enforced. Query whitelisting. No raw data leaves user's VPC for self-hosted deployments.
+
+### 3.3 SaaS Tool Connectors (Stripe, Salesforce, HubSpot, QuickBooks, etc.)
+
+**Pre-built adapters** for common business tools:
+- **Stripe**: `charges`, `subscriptions`, `invoices` → Revenue, MRR, Churn
+- **Salesforce**: `opportunities`, `accounts` → Pipeline, ACV, WinRate
+- **HubSpot**: `contacts`, `deals` → Leads, ConversionRate, CAC
+- **QuickBooks/Xero**: `profit_loss`, `balance_sheet` → Revenue, COGS, Opex
+- **Google Analytics**: `traffic`, `conversions` → Visitors, ConversionRate, BounceRate
+- **Mixpanel/Amplitude**: `events`, `funnels` → DAU, Retention, FeatureAdoption
+
+**Flow**:
+1. OAuth authentication.
+2. Adapter fetches standard endpoints.
+3. Schema Interpreter maps API response fields to variables.
+4. Incremental sync via API pagination + cursor.
+5. Observations generated with tool-native provenance.
+
+### 3.4 API / Webhook (Custom Pushes)
+
+For users who want to push data programmatically:
+
+```bash
+POST /v1/observations
+{
+  "source": "internal_etl",
+  "observations": [
+    {
+      "variable": "revenue",
+      "value": 2845000,
+      "unit": "USD",
+      "timestamp": "2024-03-31T00:00:00Z",
+      "entity": {"company": "AcmeCorp"}
+    }
+  ]
+}
+```
+
+**Validation**: Schema validation, rate limiting, idempotency keys.
+
+### 3.5 Streaming (Kafka, Kinesis, Pub/Sub)
+
+For real-time use cases:
+- Consumer reads from topic.
+- Observation Factory transforms events in flight.
+- Quality Gate operates on micro-batches.
+- Equations update near-real-time (seconds latency).
+
+---
+
+## 4. The Schema Interpreter — The Secret Weapon
+
+This is where the product becomes intelligent. RAG doesn't need to understand what a column means. The Equation Layer absolutely does.
+
+### Auto-Mapping Pipeline
+
+```
+Input: ["rev_q1_2024", "cust_acq_cost", "mrr_total", "churn_rate_pct"]
+       ↓
+LLM Schema Interpreter (with few-shot examples)
+       ↓
+Output:
+  rev_q1_2024 → Variable: Revenue, Unit: USD, Period: Q1-2024, Type: continuous
+  cust_acq_cost → Variable: CAC, Unit: USD, Period: monthly, Type: continuous
+  mrr_total → Variable: MRR, Unit: USD, Period: monthly, Type: continuous
+  churn_rate_pct → Variable: ChurnRate, Unit: percentage, Period: monthly, Type: continuous
+```
+
+### Confidence Scoring
+- High confidence: exact match to known variable synonyms (`revenue`, `sales`, `turnover`)
+- Medium confidence: pattern match (`rev_*`, `*_q[1-4]_*`, `cac_*`)
+- Low confidence: ambiguous (`value`, `metric_1`, `col_d`)
+
+**User experience**: High-confidence mappings are auto-approved. Medium/low confidence are presented for one-click confirmation.
+
+### Domain-Aware Ontology
+The system maintains a variable ontology:
+```
+finance:
+  revenue: {synonyms: ["sales", "turnover", "top_line"], unit: "currency", type: "continuous"}
+  cac: {synonyms: ["customer_acquisition_cost", "acquisition_cost"], unit: "currency", type: "continuous"}
+  ltv: {synonyms: ["lifetime_value", "clv"], unit: "currency", type: "continuous"}
+  churn_rate: {synonyms: ["churn", "attrition"], unit: "percentage", type: "continuous"}
+```
+
+This ontology is **learned and extended** over time. When a user maps a new column manually, the system remembers the synonym.
+
+---
+
+## 5. The Observation Factory — Data Transformation
+
+Raw records are rarely clean. The factory handles:
+
+### 5.1 Type Coercion
+- Strings that look like numbers: `"$1,234.56"` → `1234.56`
+- Percentages: `"12.5%"` → `0.125`
+- Dates: multiple formats normalized to ISO 8601
+
+### 5.2 Unit Normalization
+- Currency: detect currency code, convert to base currency if exchange rates provided
+- Scale: `"2.3M"` → `2300000`, `"1.2K"` → `1200`
+- Time: `"monthly"`, `"quarterly"`, `"annual"` tagged explicitly
+
+### 5.3 Entity Resolution
+- `"Acme Corp"`, `"AcmeCorp"`, `"ACME CORPORATION"` → canonical entity ID
+- Uses fuzzy matching + user confirmation
+
+### 5.4 Outlier Detection
+- Z-score or IQR method flags extreme values
+- User policy: reject, cap, or flag
+
+### 5.5 Missing Value Policy
+- Forward fill for time series
+- Interpolation options
+- Explicit `null` observation with `quality_score: 0.0`
+
+---
+
+## 6. Sync Engine — Keeping Equations Alive
+
+The connector is not a one-time import. It is a **living data fabric**.
+
+### Sync Modes
+
+| Mode | Use Case | Latency |
+|---|---|---|
+| **Batch** | Monthly financial reports, quarterly filings | Hours |
+| **Incremental** | Daily database sync, weekly SaaS pulls | Minutes |
+| **Event-driven** | Stripe webhooks, transaction streams | Seconds |
+| **On-demand** | User uploads a new CSV | Instant |
+
+### Auto-Update Trigger
+When new observations arrive for variables in an existing equation:
+1. Queue equation for refit.
+2. Run Layer 3 (Fitter) with old + new data.
+3. Check if parameters drifted significantly.
+4. If drift > threshold: flag equation for review, notify user.
+5. If fit improves: update equation silently, log in Epistemic Ledger.
+
+### The "Equation Health" Dashboard
+Users see:
+- Which equations are active
+- Data freshness per equation ("Last updated 2 hours ago")
+- Observation count trend
+- Drift alerts
+- Data quality issues
+
+---
+
+## 7. Data Quality Gate — Trust Through Validation
+
+Before observations enter the equation pipeline, they pass:
+
+```
+1. Schema validation: correct types, required fields present
+2. Range checks: Revenue should not be negative (unless configured)
+3. Variance checks: sudden drop to zero = likely missing data, not true zero
+4. Cross-field validation: CAC > LTV flagged as suspicious
+5. Temporal checks: future dates rejected, gaps flagged
+6. Duplication: (variable, entity, timestamp) must be unique
+```
+
+**Failed observations** go to a quarantine queue. User reviews and approves/rejects.
+
+---
+
+## 8. Security & Privacy Architecture
+
+| Concern | Solution |
+|---|---|
+| **Database credentials** | Read-only enforced. OAuth where possible. No credential storage in plaintext — use vault (HashiCorp, AWS Secrets Manager). |
+| **Data residency** | Self-hosted option: Equation Layer runs in user's VPC. Data never leaves. Cloud option: encrypted at rest and in transit. |
+| **PII handling** | Entity resolution can hash identifiers. Observations store values, not personal data. |
+| **Audit** | Every sync logged in Epistemic Ledger: who connected what, when, what changed. |
+| **Access control** | Role-based: Admin (connect sources), Analyst (query equations), Viewer (see outputs). |
+
+---
+
+## 9. What Makes This Excellent (Not Just Functional)
+
+### 9.1 Proactive, Not Passive
+RAG waits for a query, then retrieves. The Observation Fabric **continuously improves equations** as data arrives. The system gets smarter without user intervention.
+
+### 9.2 Domain-Aware from Day 1
+The Schema Interpreter doesn't just parse — it *understands* business context. It knows that `mrr` and `arr` are related, that `cac` and `ltv` should be compared, that `churn` is a rate not a count.
+
+### 9.3 Self-Healing Data Pipeline
+When a source schema changes (column renamed, type changed), the system detects drift and alerts the user — rather than silently breaking equations.
+
+### 9.4 The "Drop and Derive" Experience
+User story:
+1. Connect Stripe (OAuth, 30 seconds).
+2. System auto-discovers: Revenue, MRR, Churn, CAC.
+3. User asks: "If I reduce churn by 10%, how does LTV change?"
+4. System already has the data. It derives the answer in seconds.
+
+No manual CSV exports. No SQL writing. No data engineering.
+
+---
+
+## 10. Implementation Phases
+
+### Phase 1: File Upload + CSV (Week 1-2)
+- Drag-and-drop CSV/Excel
+- Schema Interpreter with 50 common business variables
+- Observation Factory with basic normalization
+- SQLite persistence
+
+### Phase 2: Database Connectors (Week 3-4)
+- Postgres, MySQL adapters
+- Schema introspection
+- Incremental sync
+- Connection manager UI
+
+### Phase 3: SaaS Connectors (Week 5-6)
+- Stripe, Salesforce, HubSpot
+- OAuth flows
+- Pre-built variable mappings
+- Webhook support
+
+### Phase 4: Streaming + Advanced (Week 7-8)
+- Kafka/Kinesis consumer
+- Real-time equation updates
+- Data quality dashboard
+- Schema drift detection
+
+---
+
+## 11. Summary
+
+The Observation Fabric is not a RAG clone. It is a **structured data intelligence layer** that:
+- Connects to any source (files, databases, APIs, tools, streams)
+- Interprets schema semantics automatically
+- Transforms raw data into validated observations
+- Keeps equations alive with continuous sync
+- Guarantees quality before data enters the reasoning pipeline
+
+**The product promise**: *Drop your data. Ask quantitative questions. Get derived answers.*
+
+The connector makes the Equation Layer accessible to non-technical users. Without it, the system is a powerful engine with no fuel. With it, the system becomes a self-improving quantitative brain for any business.

@@ -1,0 +1,170 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
+from .models import EquationFit, ExtractionResult, GateResult
+
+
+@dataclass(frozen=True)
+class FallbackAction:
+    category: str
+    title: str
+    description: str
+    suggested_next_steps: List[str]
+    payload: Dict[str, Any]
+
+
+def route_failure(
+    gate_result: GateResult,
+    equation: Optional[EquationFit] = None,
+    extraction: Optional[ExtractionResult] = None,
+    drift_detected: bool = False,
+    conflict_exists: bool = False,
+    correlation_weak: bool = False,
+) -> FallbackAction:
+    reason = gate_result.reason or "unknown"
+
+    if drift_detected:
+        return _structural_change_alert(equation)
+    if conflict_exists:
+        return _conflict_resolution_workflow(equation)
+    if correlation_weak:
+        return _no_detectable_relationship(extraction)
+    if reason == "insufficient_observations":
+        return _data_collection_plan(equation, extraction)
+    if reason in ("low_r2_adj", "high_holdout_mape"):
+        return _human_review_queue(equation, reason)
+    if reason == "residuals_not_random":
+        return _structural_break_flag(equation)
+    return _degraded_mode(reason, equation)
+
+
+def _data_collection_plan(
+    equation: Optional[EquationFit], extraction: Optional[ExtractionResult]
+) -> FallbackAction:
+    n_current = equation.stats.n_obs if equation else 0
+    shortfall = max(15 - n_current, 0)
+    variables = [v.name for v in extraction.variables] if extraction else []
+    missing_str = ", ".join(variables) if variables else "the relevant variables"
+
+    return FallbackAction(
+        category="insufficient_data",
+        title="Data Collection Plan",
+        description=f"Need {shortfall} more observations to fit {missing_str}.",
+        suggested_next_steps=[
+            f"Collect {shortfall} additional data points for {missing_str}",
+            "Ensure data covers a representative range of values",
+            "For time-series data, ensure observations span multiple periods",
+        ],
+        payload={
+            "current_observations": n_current,
+            "required_observations": 15,
+            "shortfall": shortfall,
+            "variables_needed": variables,
+        },
+    )
+
+
+def _human_review_queue(equation: Optional[EquationFit], reason: str) -> FallbackAction:
+    stats_summary = {}
+    if equation:
+        stats_summary = {
+            "family": equation.family,
+            "r2_adj": equation.stats.r2_adj,
+            "holdout_mape": equation.stats.holdout_mape,
+            "aic": equation.stats.aic,
+            "n_obs": equation.stats.n_obs,
+        }
+
+    return FallbackAction(
+        category="human_review",
+        title="Human Review Required",
+        description=f"No equation passed validation ({reason}). The best candidate has been queued for expert review.",
+        suggested_next_steps=[
+            "Review the fitted parameters and residual plots",
+            "Consider whether a domain-specific functional form applies",
+            "Check for outliers or data quality issues",
+        ],
+        payload={"failure_reason": reason, "best_candidate_stats": stats_summary},
+    )
+
+
+def _structural_change_alert(equation: Optional[EquationFit]) -> FallbackAction:
+    return FallbackAction(
+        category="structural_change",
+        title="Structural Change Detected",
+        description="The relationship between variables has changed over time. Historical patterns no longer hold.",
+        suggested_next_steps=[
+            "Isolate the time period where the change occurred",
+            "Identify potential regime changes (market shifts, policy changes, etc.)",
+            "Consider fitting separate equations for pre-change and post-change periods",
+        ],
+        payload={
+            "drift_detected": True,
+            "current_equation": equation.family if equation else None,
+        },
+    )
+
+
+def _conflict_resolution_workflow(equation: Optional[EquationFit]) -> FallbackAction:
+    return FallbackAction(
+        category="conflict",
+        title="Equation Conflict Detected",
+        description="The new equation contradicts an existing equation for the same variable pair.",
+        suggested_next_steps=[
+            "Compare the competing equations side by side",
+            "Review the observation windows used for each fit",
+            "A domain expert should determine which relationship is correct",
+        ],
+        payload={
+            "conflict_exists": True,
+            "new_equation": equation.family if equation else None,
+        },
+    )
+
+
+def _no_detectable_relationship(extraction: Optional[ExtractionResult]) -> FallbackAction:
+    var_names = [v.name for v in extraction.variables] if extraction else ["X", "Y"]
+    return FallbackAction(
+        category="no_relationship",
+        title="No Detectable Relationship",
+        description=f"The correlation between {var_names[0]} and {var_names[-1]} is too weak to support a fitted equation.",
+        suggested_next_steps=[
+            "Verify the variables are causally related",
+            "Check for confounding variables that may mask the relationship",
+            "Collect data across a wider range to expose nonlinear patterns",
+        ],
+        payload={"variables_checked": var_names},
+    )
+
+
+def _structural_break_flag(equation: Optional[EquationFit]) -> FallbackAction:
+    return FallbackAction(
+        category="structural_break",
+        title="Non-Random Residuals",
+        description="The residuals show systematic patterns, indicating the equation form does not capture the true structure.",
+        suggested_next_steps=[
+            "Examine residual plots for patterns (seasonality, heteroskedasticity)",
+            "Consider whether a variable transformation is needed",
+            "Check for missing variables that explain the residual pattern",
+        ],
+        payload={
+            "equation_family": equation.family if equation else None,
+            "residual_random": False,
+        },
+    )
+
+
+def _degraded_mode(reason: str, equation: Optional[EquationFit]) -> FallbackAction:
+    return FallbackAction(
+        category="degraded",
+        title="System Degraded",
+        description=f"The system encountered an issue: {reason}. Results may not be reliable.",
+        suggested_next_steps=[
+            "Review the raw data for quality issues",
+            "Retry with different input parameters",
+            "Check system logs for errors",
+        ],
+        payload={"reason": reason},
+    )

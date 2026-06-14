@@ -1,0 +1,334 @@
+"""Agent Planner — dual-mode action planning.
+
+Cold start (no memory): LLM reasons purely from context — goal, page state,
+action history, and what went wrong. "What happened, why, and what next."
+
+Warm start (has memory): Query LanceDB for top-k scored actions from similar
+contexts, then use LLM to validate/override the recommendation against
+current page reality.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from typing import Any
+
+from ans_nerves.llm.client import get_llm_client
+from ans_nerves.llm.prompts import (
+    PLANNER_JSON_SCHEMA,
+    PLANNER_SYSTEM,
+    build_planner_user_prompt,
+)
+from ans_nerves.logging import get_logger
+from ans_nerves.scoring.embeddings import get_embedding_generator
+from ans_nerves.scoring.intelligence import DecisionIntelligence, ScoredAction
+
+logger = get_logger(__name__)
+
+# Minimum records before switching to warm-start mode
+_WARM_START_MIN_RECORDS = 3
+# Minimum composite score for a memory recommendation to be used
+_MIN_RECOMMENDATION_SCORE = 0.3
+
+
+@dataclass
+class PlannedAction:
+    """A single planned browser action with reasoning."""
+
+    action_type: str = ""
+    selector: str = ""
+    value: str = ""
+    tool: str = ""
+    reasoning: str = ""
+    confidence: float = 0.5
+    expected_outcome: str = ""
+    source: str = "llm_cold"  # "llm_cold", "memory_validated", "memory_override", "fallback"
+
+
+class AgentPlanner:
+    """Decides the next browser action using dual-mode reasoning.
+
+    Cold start: No scored outcomes in LanceDB → LLM reasons from context.
+    Warm start: 3+ scored outcomes → query memory, LLM validates recommendation.
+    """
+
+    def __init__(
+        self,
+        intelligence: DecisionIntelligence | None = None,
+    ) -> None:
+        self._intelligence = intelligence or DecisionIntelligence()
+
+    @property
+    def total_records(self) -> int:
+        return self._intelligence.total_records
+
+    # ── Public API ─────────────────────────────────────────────
+
+    async def plan_next_action(
+        self,
+        goal_context: str,
+        *,
+        sub_goal: str = "",
+        sub_goal_criteria: list[str] | None = None,
+        unified_perception: str = "",
+        available_elements: list[dict] | None = None,
+        action_history: list[str] | None = None,
+        last_error: str = "",
+        page_type: str = "",
+        action_type_hint: str = "",
+    ) -> PlannedAction:
+        """Plan the single next browser action.
+
+        Automatically chooses cold-start or warm-start mode based on
+        whether enough scored outcomes exist in LanceDB.
+        """
+        # Determine mode
+        record_count = self._intelligence.total_records
+        use_memory = record_count >= _WARM_START_MIN_RECORDS
+
+        if use_memory:
+            logger.debug("plan_next_action: warm start (%d records)", record_count)
+            return await self._warm_start_plan(
+                goal_context=goal_context,
+                sub_goal=sub_goal,
+                sub_goal_criteria=sub_goal_criteria,
+                unified_perception=unified_perception,
+                available_elements=available_elements,
+                action_history=action_history,
+                last_error=last_error,
+                page_type=page_type,
+                action_type_hint=action_type_hint,
+            )
+        else:
+            logger.debug("plan_next_action: cold start (%d records)", record_count)
+            return await self._cold_start_plan(
+                goal_context=goal_context,
+                sub_goal=sub_goal,
+                sub_goal_criteria=sub_goal_criteria,
+                unified_perception=unified_perception,
+                available_elements=available_elements,
+                action_history=action_history,
+                last_error=last_error,
+            )
+
+    # ── Cold start: LLM reasons from context ──────────────────
+
+    async def _cold_start_plan(
+        self,
+        goal_context: str,
+        sub_goal: str = "",
+        sub_goal_criteria: list[str] | None = None,
+        unified_perception: str = "",
+        available_elements: list[dict] | None = None,
+        action_history: list[str] | None = None,
+        last_error: str = "",
+    ) -> PlannedAction:
+        """Reason purely from context — no memory available yet.
+
+        The LLM receives: goal, sub-goal, page state, available elements,
+        action history, and last error. It reasons step-by-step about what
+        happened, why, and what should happen next.
+        """
+        user_prompt = build_planner_user_prompt(
+            goal_context=goal_context,
+            sub_goal=sub_goal,
+            sub_goal_criteria=sub_goal_criteria,
+            unified_perception=unified_perception,
+            available_elements=available_elements,
+            action_history=action_history,
+            memory_recommendations=None,  # cold start — no memory
+            last_error=last_error,
+        )
+
+        try:
+            response = await get_llm_client().complete_structured(
+                system_prompt=PLANNER_SYSTEM,
+                user_prompt=user_prompt,
+                json_schema=PLANNER_JSON_SCHEMA,
+            )
+        except Exception:
+            logger.warning("planner: LLM cold-start plan failed")
+            return PlannedAction(
+                action_type="wait",
+                tool="wait",
+                reasoning="LLM call failed during cold-start planning. Waiting for retry.",
+                confidence=0.1,
+                source="fallback",
+            )
+
+        if response.parsed is None:
+            logger.warning("planner: LLM returned unparseable cold-start plan")
+            return PlannedAction(
+                action_type="wait",
+                tool="wait",
+                reasoning=f"LLM returned unparseable response: {response.content[:200]}",
+                confidence=0.1,
+                source="fallback",
+            )
+
+        return PlannedAction(
+            action_type=response.parsed.get("action_type", "wait"),
+            selector=response.parsed.get("selector", ""),
+            value=response.parsed.get("value", ""),
+            tool=response.parsed.get("tool", "wait"),
+            reasoning=response.parsed.get("reasoning", ""),
+            confidence=response.parsed.get("confidence", 0.5),
+            expected_outcome=response.parsed.get("expected_outcome", ""),
+            source="llm_cold",
+        )
+
+    # ── Warm start: memory recommendations + LLM validation ───
+
+    async def _warm_start_plan(
+        self,
+        goal_context: str,
+        sub_goal: str = "",
+        sub_goal_criteria: list[str] | None = None,
+        unified_perception: str = "",
+        available_elements: list[dict] | None = None,
+        action_history: list[str] | None = None,
+        last_error: str = "",
+        page_type: str = "",
+        action_type_hint: str = "",
+    ) -> PlannedAction:
+        """Query memory for best past actions, then validate with LLM.
+
+        1. Build context text from current state
+        2. Embed and query LanceDB for top-k similar successful actions
+        3. Format recommendations for the LLM
+        4. LLM validates: do recommendations make sense for CURRENT page?
+        5. LLM outputs final action (may override recommendations)
+        """
+        embedder = get_embedding_generator()
+        context_text = embedder.build_context_text(
+            action_type=action_type_hint,
+            selector="",
+            tool="",
+            goal_description=goal_context,
+            page_type=page_type,
+        )
+
+        # Query memory
+        scored_actions = await self._intelligence.query_best_actions(
+            action_type=action_type_hint,
+            goal_description=goal_context,
+            page_type=page_type,
+            k=5,
+            min_score=_MIN_RECOMMENDATION_SCORE,
+        )
+
+        # Format recommendations for LLM
+        memory_recommendations = _format_recommendations(scored_actions)
+
+        user_prompt = build_planner_user_prompt(
+            goal_context=goal_context,
+            sub_goal=sub_goal,
+            sub_goal_criteria=sub_goal_criteria,
+            unified_perception=unified_perception,
+            available_elements=available_elements,
+            action_history=action_history,
+            memory_recommendations=memory_recommendations if memory_recommendations else None,
+            last_error=last_error,
+        )
+
+        try:
+            response = await get_llm_client().complete_structured(
+                system_prompt=PLANNER_SYSTEM,
+                user_prompt=user_prompt,
+                json_schema=PLANNER_JSON_SCHEMA,
+            )
+        except Exception:
+            logger.warning("planner: LLM warm-start plan failed, using top recommendation")
+            return _best_recommendation(scored_actions) or PlannedAction(
+                action_type="wait",
+                tool="wait",
+                reasoning="LLM warm-start call failed. Falling back to wait.",
+                confidence=0.1,
+                source="fallback",
+            )
+
+        if response.parsed is None:
+            logger.warning("planner: LLM returned unparseable warm-start plan, using top recommendation")
+            return _best_recommendation(scored_actions) or PlannedAction(
+                action_type="wait",
+                tool="wait",
+                reasoning="LLM warm-start returned unparseable. Falling back to wait.",
+                confidence=0.1,
+                source="fallback",
+            )
+
+        # Determine source: did LLM follow a recommendation or override?
+        source = _classify_plan_source(response.parsed, scored_actions)
+
+        return PlannedAction(
+            action_type=response.parsed.get("action_type", "wait"),
+            selector=response.parsed.get("selector", ""),
+            value=response.parsed.get("value", ""),
+            tool=response.parsed.get("tool", "wait"),
+            reasoning=response.parsed.get("reasoning", ""),
+            confidence=response.parsed.get("confidence", 0.5),
+            expected_outcome=response.parsed.get("expected_outcome", ""),
+            source=source,
+        )
+
+
+# ── Helpers ───────────────────────────────────────────────────
+
+
+def _format_recommendations(scored_actions: list[ScoredAction]) -> list[dict]:
+    """Format ScoredActions into a compact list for the LLM prompt."""
+    if not scored_actions:
+        return []
+
+    recs = []
+    for i, sa in enumerate(scored_actions[:5]):
+        recs.append({
+            "rank": i + 1,
+            "action_type": sa.action_type,
+            "selector": sa.selector,
+            "tool": sa.tool,
+            "composite_score": round(sa.composite_score, 3),
+            "outcome_score": round(sa.outcome_score, 3),
+            "error_penalty": round(sa.error_penalty, 3),
+            "use_count": sa.use_count,
+            "similarity": round(1.0 - sa.distance, 3) if sa.distance else 0.0,
+        })
+    return recs
+
+
+def _best_recommendation(scored_actions: list[ScoredAction]) -> PlannedAction | None:
+    """Return the top recommendation as a PlannedAction, skipping fallback."""
+    if not scored_actions:
+        return None
+    best = scored_actions[0]
+    if best.composite_score < _MIN_RECOMMENDATION_SCORE:
+        return None
+    return PlannedAction(
+        action_type=best.action_type,
+        selector=best.selector,
+        tool=best.tool,
+        reasoning=(
+            f"Top memory recommendation (score={best.composite_score:.2f}, "
+            f"used {best.use_count}x). LLM validation skipped."
+        ),
+        confidence=best.composite_score,
+        source="memory_validated",
+    )
+
+
+def _classify_plan_source(
+    parsed: dict,
+    scored_actions: list[ScoredAction],
+) -> str:
+    """Determine whether the LLM followed a recommendation or overrode it."""
+    action_type = parsed.get("action_type", "")
+    selector = parsed.get("selector", "")
+
+    for sa in scored_actions:
+        if sa.action_type == action_type and sa.selector == selector:
+            return "memory_validated"
+
+    if scored_actions:
+        return "memory_override"  # LLM chose something different
+    return "llm_cold"

@@ -1,0 +1,3168 @@
+warning: used `expect()` on a `Result` value
+ --> crates\ans-proto\build.rs:4:33
+  |
+4 | ...", protoc_bin_vendored::protoc_bin_path().expect("protoc not found — install protobuf compiler or enable protoc-bin-vendored"));
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: if this value is an `Err`, it will panic
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#expect_used
+  = note: requested on the command line with `-W clippy::expect-used`
+
+warning: `ans-proto` (build script) generated 1 warning
+warning: multiple versions for dependency `indexmap`: 1.9.3, 2.14.0
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+  = note: `-W clippy::multiple-crate-versions` implied by `-W clippy::cargo`
+  = help: to override `-W clippy::cargo` add `#[allow(clippy::multiple_crate_versions)]`
+
+warning: multiple versions for dependency `socket2`: 0.5.10, 0.6.3
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+
+warning: multiple versions for dependency `tower`: 0.4.13, 0.5.3
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+
+warning: multiple versions for dependency `windows-sys`: 0.52.0, 0.61.2
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+
+warning: you are deriving `PartialEq` and can implement `Eq`
+ --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:2:23
+  |
+2 | #[derive(Clone, Copy, PartialEq, ::prost::Message)]
+  |                       ^^^^^^^^^ help: consider deriving `Eq` as well: `PartialEq, Eq`
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#derive_partial_eq_without_eq
+  = note: `-W clippy::derive-partial-eq-without-eq` implied by `-W clippy::nursery`
+  = help: to override `-W clippy::nursery` add `#[allow(clippy::derive_partial_eq_without_eq)]`
+
+warning: you are deriving `PartialEq` and can implement `Eq`
+ --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:4:17
+  |
+4 | #[derive(Clone, PartialEq, ::prost::Message)]
+  |                 ^^^^^^^^^ help: consider deriving `Eq` as well: `PartialEq, Eq`
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#derive_partial_eq_without_eq
+
+warning: you are deriving `PartialEq` and can implement `Eq`
+ --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:9:17
+  |
+9 | #[derive(Clone, PartialEq, ::prost::Message)]
+  |                 ^^^^^^^^^ help: consider deriving `Eq` as well: `PartialEq, Eq`
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#derive_partial_eq_without_eq
+
+warning: you are deriving `PartialEq` and can implement `Eq`
+  --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:21:17
+   |
+21 | #[derive(Clone, PartialEq, ::prost::Message)]
+   |                 ^^^^^^^^^ help: consider deriving `Eq` as well: `PartialEq, Eq`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#derive_partial_eq_without_eq
+
+warning: you are deriving `PartialEq` and can implement `Eq`
+  --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:44:17
+   |
+44 | #[derive(Clone, PartialEq, ::prost::Message)]
+   |                 ^^^^^^^^^ help: consider deriving `Eq` as well: `PartialEq, Eq`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#derive_partial_eq_without_eq
+
+warning: you are deriving `PartialEq` and can implement `Eq`
+  --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:53:17
+   |
+53 | #[derive(Clone, PartialEq, ::prost::Message)]
+   |                 ^^^^^^^^^ help: consider deriving `Eq` as well: `PartialEq, Eq`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#derive_partial_eq_without_eq
+
+warning: you are deriving `PartialEq` and can implement `Eq`
+  --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:68:23
+   |
+68 | #[derive(Clone, Copy, PartialEq, ::prost::Message)]
+   |                       ^^^^^^^^^ help: consider deriving `Eq` as well: `PartialEq, Eq`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#derive_partial_eq_without_eq
+
+warning: you are deriving `PartialEq` and can implement `Eq`
+  --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:86:17
+   |
+86 | #[derive(Clone, PartialEq, ::prost::Message)]
+   |                 ^^^^^^^^^ help: consider deriving `Eq` as well: `PartialEq, Eq`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#derive_partial_eq_without_eq
+
+warning: you are deriving `PartialEq` and can implement `Eq`
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:122:17
+    |
+122 | #[derive(Clone, PartialEq, ::prost::Message)]
+    |                 ^^^^^^^^^ help: consider deriving `Eq` as well: `PartialEq, Eq`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#derive_partial_eq_without_eq
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:137:9
+    |
+137 |     /// text_only, input_fields, all_fields
+    |         ^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+    = note: `-W clippy::doc-markdown` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::doc_markdown)]`
+help: try
+    |
+137 -     /// text_only, input_fields, all_fields
+137 +     /// `text_only`, input_fields, all_fields
+    |
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:137:20
+    |
+137 |     /// text_only, input_fields, all_fields
+    |                    ^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+137 -     /// text_only, input_fields, all_fields
+137 +     /// text_only, `input_fields`, all_fields
+    |
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:137:34
+    |
+137 |     /// text_only, input_fields, all_fields
+    |                                  ^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+137 -     /// text_only, input_fields, all_fields
+137 +     /// text_only, input_fields, `all_fields`
+    |
+
+warning: you are deriving `PartialEq` and can implement `Eq`
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:133:17
+    |
+133 | #[derive(Clone, PartialEq, ::prost::Message)]
+    |                 ^^^^^^^^^ help: consider deriving `Eq` as well: `PartialEq, Eq`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#derive_partial_eq_without_eq
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:202:21
+    |
+202 |     /// navigation, main_content, form, sidebar, footer, ad, cookie_banner
+    |                     ^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+202 -     /// navigation, main_content, form, sidebar, footer, ad, cookie_banner
+202 +     /// navigation, `main_content`, form, sidebar, footer, ad, cookie_banner
+    |
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:202:62
+    |
+202 |     /// navigation, main_content, form, sidebar, footer, ad, cookie_banner
+    |                                                              ^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+202 -     /// navigation, main_content, form, sidebar, footer, ad, cookie_banner
+202 +     /// navigation, main_content, form, sidebar, footer, ad, `cookie_banner`
+    |
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:214:20
+    |
+214 |     /// ad, popup, cookie_banner, newsletter_modal, redirect, autoplay_video, survey, notification
+    |                    ^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+214 -     /// ad, popup, cookie_banner, newsletter_modal, redirect, autoplay_video, survey, notification
+214 +     /// ad, popup, `cookie_banner`, newsletter_modal, redirect, autoplay_video, survey, notification
+    |
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:214:35
+    |
+214 |     /// ad, popup, cookie_banner, newsletter_modal, redirect, autoplay_video, survey, notification
+    |                                   ^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+214 -     /// ad, popup, cookie_banner, newsletter_modal, redirect, autoplay_video, survey, notification
+214 +     /// ad, popup, cookie_banner, `newsletter_modal`, redirect, autoplay_video, survey, notification
+    |
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:214:63
+    |
+214 |     /// ad, popup, cookie_banner, newsletter_modal, redirect, autoplay_video, survey, notification
+    |                                                               ^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+214 -     /// ad, popup, cookie_banner, newsletter_modal, redirect, autoplay_video, survey, notification
+214 +     /// ad, popup, cookie_banner, newsletter_modal, redirect, `autoplay_video`, survey, notification
+    |
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:221:43
+    |
+221 |     /// dismiss, block, suppress, ignore, navigate_back
+    |                                           ^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+221 -     /// dismiss, block, suppress, ignore, navigate_back
+221 +     /// dismiss, block, suppress, ignore, `navigate_back`
+    |
+
+warning: you are deriving `PartialEq` and can implement `Eq`
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:225:17
+    |
+225 | #[derive(Clone, PartialEq, ::prost::Message)]
+    |                 ^^^^^^^^^ help: consider deriving `Eq` as well: `PartialEq, Eq`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#derive_partial_eq_without_eq
+
+warning: you are deriving `PartialEq` and can implement `Eq`
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:241:17
+    |
+241 | #[derive(Clone, PartialEq, ::prost::Message)]
+    |                 ^^^^^^^^^ help: consider deriving `Eq` as well: `PartialEq, Eq`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#derive_partial_eq_without_eq
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:284:9
+    |
+284 |     /// no_change, cosmetic_change, content_update, form_update, navigation, distraction_appeared, error_state
+    |         ^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+284 -     /// no_change, cosmetic_change, content_update, form_update, navigation, distraction_appeared, error_state
+284 +     /// `no_change`, cosmetic_change, content_update, form_update, navigation, distraction_appeared, error_state
+    |
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:284:20
+    |
+284 |     /// no_change, cosmetic_change, content_update, form_update, navigation, distraction_appeared, error_state
+    |                    ^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+284 -     /// no_change, cosmetic_change, content_update, form_update, navigation, distraction_appeared, error_state
+284 +     /// no_change, `cosmetic_change`, content_update, form_update, navigation, distraction_appeared, error_state
+    |
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:284:37
+    |
+284 |     /// no_change, cosmetic_change, content_update, form_update, navigation, distraction_appeared, error_state
+    |                                     ^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+284 -     /// no_change, cosmetic_change, content_update, form_update, navigation, distraction_appeared, error_state
+284 +     /// no_change, cosmetic_change, `content_update`, form_update, navigation, distraction_appeared, error_state
+    |
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:284:53
+    |
+284 |     /// no_change, cosmetic_change, content_update, form_update, navigation, distraction_appeared, error_state
+    |                                                     ^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+284 -     /// no_change, cosmetic_change, content_update, form_update, navigation, distraction_appeared, error_state
+284 +     /// no_change, cosmetic_change, content_update, `form_update`, navigation, distraction_appeared, error_state
+    |
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:284:78
+    |
+284 |     /// no_change, cosmetic_change, content_update, form_update, navigation, distraction_appeared, error_state
+    |                                                                              ^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+284 -     /// no_change, cosmetic_change, content_update, form_update, navigation, distraction_appeared, error_state
+284 +     /// no_change, cosmetic_change, content_update, form_update, navigation, `distraction_appeared`, error_state
+    |
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:284:100
+    |
+284 |     /// no_change, cosmetic_change, content_update, form_update, navigation, distraction_appeared, error_state
+    |                                                                                                    ^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+284 -     /// no_change, cosmetic_change, content_update, form_update, navigation, distraction_appeared, error_state
+284 +     /// no_change, cosmetic_change, content_update, form_update, navigation, distraction_appeared, `error_state`
+    |
+
+warning: you are deriving `PartialEq` and can implement `Eq`
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:288:17
+    |
+288 | #[derive(Clone, PartialEq, ::prost::Message)]
+    |                 ^^^^^^^^^ help: consider deriving `Eq` as well: `PartialEq, Eq`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#derive_partial_eq_without_eq
+
+warning: you are deriving `PartialEq` and can implement `Eq`
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:299:17
+    |
+299 | #[derive(Clone, PartialEq, ::prost::Message)]
+    |                 ^^^^^^^^^ help: consider deriving `Eq` as well: `PartialEq, Eq`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#derive_partial_eq_without_eq
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:334:43
+    |
+334 |     /// dismiss, block, suppress, ignore, navigate_back
+    |                                           ^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+334 -     /// dismiss, block, suppress, ignore, navigate_back
+334 +     /// dismiss, block, suppress, ignore, `navigate_back`
+    |
+
+warning: you are deriving `PartialEq` and can implement `Eq`
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:338:17
+    |
+338 | #[derive(Clone, PartialEq, ::prost::Message)]
+    |                 ^^^^^^^^^ help: consider deriving `Eq` as well: `PartialEq, Eq`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#derive_partial_eq_without_eq
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:384:9
+    |
+384 |     /// dom_reader, vision, page_diff, goal_verifier, error_detector
+    |         ^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+384 -     /// dom_reader, vision, page_diff, goal_verifier, error_detector
+384 +     /// `dom_reader`, vision, page_diff, goal_verifier, error_detector
+    |
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:384:29
+    |
+384 |     /// dom_reader, vision, page_diff, goal_verifier, error_detector
+    |                             ^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+384 -     /// dom_reader, vision, page_diff, goal_verifier, error_detector
+384 +     /// dom_reader, vision, `page_diff`, goal_verifier, error_detector
+    |
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:384:40
+    |
+384 |     /// dom_reader, vision, page_diff, goal_verifier, error_detector
+    |                                        ^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+384 -     /// dom_reader, vision, page_diff, goal_verifier, error_detector
+384 +     /// dom_reader, vision, page_diff, `goal_verifier`, error_detector
+    |
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:384:55
+    |
+384 |     /// dom_reader, vision, page_diff, goal_verifier, error_detector
+    |                                                       ^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+384 -     /// dom_reader, vision, page_diff, goal_verifier, error_detector
+384 +     /// dom_reader, vision, page_diff, goal_verifier, `error_detector`
+    |
+
+warning: you are deriving `PartialEq` and can implement `Eq`
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:419:17
+    |
+419 | #[derive(Clone, PartialEq, ::prost::Message)]
+    |                 ^^^^^^^^^ help: consider deriving `Eq` as well: `PartialEq, Eq`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#derive_partial_eq_without_eq
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:453:9
+    |
+453 |     /// silent_fail, wrong_element, blocked_interaction, state_mismatch, goal_drift, timeout, navigation_error
+    |         ^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+453 -     /// silent_fail, wrong_element, blocked_interaction, state_mismatch, goal_drift, timeout, navigation_error
+453 +     /// `silent_fail`, wrong_element, blocked_interaction, state_mismatch, goal_drift, timeout, navigation_error
+    |
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:453:22
+    |
+453 |     /// silent_fail, wrong_element, blocked_interaction, state_mismatch, goal_drift, timeout, navigation_error
+    |                      ^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+453 -     /// silent_fail, wrong_element, blocked_interaction, state_mismatch, goal_drift, timeout, navigation_error
+453 +     /// silent_fail, `wrong_element`, blocked_interaction, state_mismatch, goal_drift, timeout, navigation_error
+    |
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:453:37
+    |
+453 |     /// silent_fail, wrong_element, blocked_interaction, state_mismatch, goal_drift, timeout, navigation_error
+    |                                     ^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+453 -     /// silent_fail, wrong_element, blocked_interaction, state_mismatch, goal_drift, timeout, navigation_error
+453 +     /// silent_fail, wrong_element, `blocked_interaction`, state_mismatch, goal_drift, timeout, navigation_error
+    |
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:453:58
+    |
+453 |     /// silent_fail, wrong_element, blocked_interaction, state_mismatch, goal_drift, timeout, navigation_error
+    |                                                          ^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+453 -     /// silent_fail, wrong_element, blocked_interaction, state_mismatch, goal_drift, timeout, navigation_error
+453 +     /// silent_fail, wrong_element, blocked_interaction, `state_mismatch`, goal_drift, timeout, navigation_error
+    |
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:453:74
+    |
+453 |     /// silent_fail, wrong_element, blocked_interaction, state_mismatch, goal_drift, timeout, navigation_error
+    |                                                                          ^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+453 -     /// silent_fail, wrong_element, blocked_interaction, state_mismatch, goal_drift, timeout, navigation_error
+453 +     /// silent_fail, wrong_element, blocked_interaction, state_mismatch, `goal_drift`, timeout, navigation_error
+    |
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:453:95
+    |
+453 |     /// silent_fail, wrong_element, blocked_interaction, state_mismatch, goal_drift, timeout, navigation_error
+    |                                                                                               ^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+453 -     /// silent_fail, wrong_element, blocked_interaction, state_mismatch, goal_drift, timeout, navigation_error
+453 +     /// silent_fail, wrong_element, blocked_interaction, state_mismatch, goal_drift, timeout, `navigation_error`
+    |
+
+warning: you are deriving `PartialEq` and can implement `Eq`
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:451:17
+    |
+451 | #[derive(Clone, PartialEq, ::prost::Message)]
+    |                 ^^^^^^^^^ help: consider deriving `Eq` as well: `PartialEq, Eq`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#derive_partial_eq_without_eq
+
+warning: you are deriving `PartialEq` and can implement `Eq`
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:480:17
+    |
+480 | #[derive(Clone, PartialEq, ::prost::Message)]
+    |                 ^^^^^^^^^ help: consider deriving `Eq` as well: `PartialEq, Eq`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#derive_partial_eq_without_eq
+
+warning: you are deriving `PartialEq` and can implement `Eq`
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:489:17
+    |
+489 | #[derive(Clone, PartialEq, ::prost::Message)]
+    |                 ^^^^^^^^^ help: consider deriving `Eq` as well: `PartialEq, Eq`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#derive_partial_eq_without_eq
+
+warning: you are deriving `PartialEq` and can implement `Eq`
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:524:17
+    |
+524 | #[derive(Clone, PartialEq, ::prost::Message)]
+    |                 ^^^^^^^^^ help: consider deriving `Eq` as well: `PartialEq, Eq`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#derive_partial_eq_without_eq
+
+warning: you are deriving `PartialEq` and can implement `Eq`
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:551:17
+    |
+551 | #[derive(Clone, PartialEq, ::prost::Message)]
+    |                 ^^^^^^^^^ help: consider deriving `Eq` as well: `PartialEq, Eq`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#derive_partial_eq_without_eq
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:571:19
+    |
+571 |     /// progress, sub_goal_completed, blocked, failed, budget_warning
+    |                   ^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+571 -     /// progress, sub_goal_completed, blocked, failed, budget_warning
+571 +     /// progress, `sub_goal_completed`, blocked, failed, budget_warning
+    |
+
+warning: item in documentation is missing backticks
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:571:56
+    |
+571 |     /// progress, sub_goal_completed, blocked, failed, budget_warning
+    |                                                        ^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+    |
+571 -     /// progress, sub_goal_completed, blocked, failed, budget_warning
+571 +     /// progress, sub_goal_completed, blocked, failed, `budget_warning`
+    |
+
+warning: you are deriving `PartialEq` and can implement `Eq`
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:610:17
+    |
+610 | #[derive(Clone, PartialEq, ::prost::Message)]
+    |                 ^^^^^^^^^ help: consider deriving `Eq` as well: `PartialEq, Eq`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#derive_partial_eq_without_eq
+
+warning: you are deriving `PartialEq` and can implement `Eq`
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:667:17
+    |
+667 | #[derive(Clone, PartialEq, ::prost::Message)]
+    |                 ^^^^^^^^^ help: consider deriving `Eq` as well: `PartialEq, Eq`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#derive_partial_eq_without_eq
+
+warning: you are deriving `PartialEq` and can implement `Eq`
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:715:17
+    |
+715 | #[derive(Clone, PartialEq, ::prost::Message)]
+    |                 ^^^^^^^^^ help: consider deriving `Eq` as well: `PartialEq, Eq`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#derive_partial_eq_without_eq
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:756:9
+    |
+756 | /         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
+757 | |         where
+758 | |             D: TryInto<tonic::transport::Endpoint>,
+759 | |             D::Error: Into<StdError>,
+    | |_____________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+    = note: `-W clippy::missing-errors-doc` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::missing_errors_doc)]`
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:831:9
+    |
+831 | /         pub async fn create_session(
+832 | |             &mut self,
+833 | |             request: impl tonic::IntoRequest<super::CreateSessionRequest>,
+834 | |         ) -> std::result::Result<tonic::Response<super::Session>, tonic::Status> {
+    | |________________________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:852:9
+    |
+852 | /         pub async fn close_session(
+853 | |             &mut self,
+854 | |             request: impl tonic::IntoRequest<super::CloseSessionRequest>,
+855 | |         ) -> std::result::Result<tonic::Response<super::Empty>, tonic::Status> {
+    | |______________________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:873:9
+    |
+873 | /         pub async fn navigate(
+874 | |             &mut self,
+875 | |             request: impl tonic::IntoRequest<super::NavigateRequest>,
+876 | |         ) -> std::result::Result<tonic::Response<super::PageState>, tonic::Status> {
+    | |__________________________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:894:9
+    |
+894 | /         pub async fn execute_action(
+895 | |             &mut self,
+896 | |             request: impl tonic::IntoRequest<super::ExecuteActionRequest>,
+897 | |         ) -> std::result::Result<tonic::Response<super::ActionResult>, tonic::Status> {
+    | |_____________________________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:916:9
+    |
+916 | /         pub async fn get_distilled_dom(
+917 | |             &mut self,
+918 | |             request: impl tonic::IntoRequest<super::DomRequest>,
+919 | |         ) -> std::result::Result<tonic::Response<super::DistilledDom>, tonic::Status> {
+    | |_____________________________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:937:9
+    |
+937 | /         pub async fn capture_screenshot(
+938 | |             &mut self,
+939 | |             request: impl tonic::IntoRequest<super::ScreenshotRequest>,
+940 | |         ) -> std::result::Result<
+941 | |             tonic::Response<super::ScreenshotResponse>,
+942 | |             tonic::Status,
+943 | |         > {
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:961:9
+    |
+961 | /         pub async fn compute_diff(
+962 | |             &mut self,
+963 | |             request: impl tonic::IntoRequest<super::DiffRequest>,
+964 | |         ) -> std::result::Result<tonic::Response<super::DiffReport>, tonic::Status> {
+    | |___________________________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:983:9
+    |
+983 | /         pub async fn create_goal(
+984 | |             &mut self,
+985 | |             request: impl tonic::IntoRequest<super::CreateGoalRequest>,
+986 | |         ) -> std::result::Result<tonic::Response<super::GoalState>, tonic::Status> {
+    | |__________________________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+    --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:1004:9
+     |
+1004 | /         pub async fn get_goal_state(
+1005 | |             &mut self,
+1006 | |             request: impl tonic::IntoRequest<super::GoalStateRequest>,
+1007 | |         ) -> std::result::Result<tonic::Response<super::GoalState>, tonic::Status> {
+     | |__________________________________________________________________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+    --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:1025:9
+     |
+1025 | /         pub async fn update_goal_progress(
+1026 | |             &mut self,
+1027 | |             request: impl tonic::IntoRequest<super::ProgressUpdate>,
+1028 | |         ) -> std::result::Result<tonic::Response<super::GoalState>, tonic::Status> {
+     | |__________________________________________________________________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+    --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:1046:9
+     |
+1046 | /         pub async fn subscribe_goal_updates(
+1047 | |             &mut self,
+1048 | |             request: impl tonic::IntoRequest<super::GoalStateRequest>,
+1049 | |         ) -> std::result::Result<
+1050 | |             tonic::Response<tonic::codec::Streaming<super::GoalUpdate>>,
+1051 | |             tonic::Status,
+1052 | |         > {
+     | |_________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+    --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:1073:9
+     |
+1073 | /         pub async fn submit_eye_reports(
+1074 | |             &mut self,
+1075 | |             request: impl tonic::IntoRequest<super::SubmitReportsRequest>,
+1076 | |         ) -> std::result::Result<tonic::Response<super::RoutedSignal>, tonic::Status> {
+     | |_____________________________________________________________________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+    --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:1094:9
+     |
+1094 | /         pub async fn subscribe_eye_reports(
+1095 | |             &mut self,
+1096 | |             request: impl tonic::IntoRequest<super::SessionRequest>,
+1097 | |         ) -> std::result::Result<
+1098 | |             tonic::Response<tonic::codec::Streaming<super::EyeReport>>,
+1099 | |             tonic::Status,
+1100 | |         > {
+     | |_________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+    --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:1121:9
+     |
+1121 | /         pub async fn classify_distractions(
+1122 | |             &mut self,
+1123 | |             request: impl tonic::IntoRequest<super::DistractionRequest>,
+1124 | |         ) -> std::result::Result<
+1125 | |             tonic::Response<super::DistractionList>,
+1126 | |             tonic::Status,
+1127 | |         > {
+     | |_________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+    --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:1147:9
+     |
+1147 | /         pub async fn scan_injections(
+1148 | |             &mut self,
+1149 | |             request: impl tonic::IntoRequest<super::InjectionScanRequest>,
+1150 | |         ) -> std::result::Result<
+1151 | |             tonic::Response<super::InjectionScanResult>,
+1152 | |             tonic::Status,
+1153 | |         > {
+     | |_________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+    --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:1171:9
+     |
+1171 | /         pub async fn check_action(
+1172 | |             &mut self,
+1173 | |             request: impl tonic::IntoRequest<super::ActionCheckRequest>,
+1174 | |         ) -> std::result::Result<
+1175 | |             tonic::Response<super::ActionCheckResponse>,
+1176 | |             tonic::Status,
+1177 | |         > {
+     | |_________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+    --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:1196:9
+     |
+1196 | /         pub async fn store_score(
+1197 | |             &mut self,
+1198 | |             request: impl tonic::IntoRequest<super::StoreScoreRequest>,
+1199 | |         ) -> std::result::Result<
+1200 | |             tonic::Response<super::StoreScoreResponse>,
+1201 | |             tonic::Status,
+1202 | |         > {
+     | |_________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+    --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:1220:9
+     |
+1220 | /         pub async fn query_best_actions(
+1221 | |             &mut self,
+1222 | |             request: impl tonic::IntoRequest<super::QueryBestActionsRequest>,
+1223 | |         ) -> std::result::Result<
+1224 | |             tonic::Response<super::ScoredActionList>,
+1225 | |             tonic::Status,
+1226 | |         > {
+     | |_________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+    --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:1244:9
+     |
+1244 | /         pub async fn search_similar_decisions(
+1245 | |             &mut self,
+1246 | |             request: impl tonic::IntoRequest<super::SearchRequest>,
+1247 | |         ) -> std::result::Result<
+1248 | |             tonic::Response<super::ScoredActionList>,
+1249 | |             tonic::Status,
+1250 | |         > {
+     | |_________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+    --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:1271:9
+     |
+1271 | /         pub async fn get_budget_status(
+1272 | |             &mut self,
+1273 | |             request: impl tonic::IntoRequest<super::BudgetStatusRequest>,
+1274 | |         ) -> std::result::Result<tonic::Response<super::BudgetStatus>, tonic::Status> {
+     | |_____________________________________________________________________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+    --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:1292:9
+     |
+1292 | /         pub async fn configure_budget(
+1293 | |             &mut self,
+1294 | |             request: impl tonic::IntoRequest<super::BudgetConfigRequest>,
+1295 | |         ) -> std::result::Result<tonic::Response<super::BudgetConfig>, tonic::Status> {
+     | |_____________________________________________________________________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+    --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:1314:9
+     |
+1314 | /         pub async fn health(
+1315 | |             &mut self,
+1316 | |             request: impl tonic::IntoRequest<super::Empty>,
+1317 | |         ) -> std::result::Result<tonic::Response<super::HealthStatus>, tonic::Status> {
+     | |_____________________________________________________________________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: item in documentation is missing backticks
+    --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:1347:89
+     |
+1347 |     /// Generated trait containing gRPC methods that should be implemented for use with AgentNervousSystemServer.
+     |                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+     |
+1347 -     /// Generated trait containing gRPC methods that should be implemented for use with AgentNervousSystemServer.
+1347 +     /// Generated trait containing gRPC methods that should be implemented for use with `AgentNervousSystemServer`.
+     |
+
+warning: item in documentation is missing backticks
+    --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:1396:52
+     |
+1396 |         /// Server streaming response type for the SubscribeGoalUpdates method.
+     |                                                    ^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+     |
+1396 -         /// Server streaming response type for the SubscribeGoalUpdates method.
+1396 +         /// Server streaming response type for the `SubscribeGoalUpdates` method.
+     |
+
+warning: item in documentation is missing backticks
+    --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:1414:52
+     |
+1414 |         /// Server streaming response type for the SubscribeEyeReports method.
+     |                                                    ^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#doc_markdown
+help: try
+     |
+1414 -         /// Server streaming response type for the SubscribeEyeReports method.
+1414 +         /// Server streaming response type for the `SubscribeEyeReports` method.
+     |
+
+warning: calling `EnabledCompressionEncodings::default()` is more clear than this expression
+    --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:1498:47
+     |
+1498 |                 accept_compression_encodings: Default::default(),
+     |                                               ^^^^^^^^^^^^^^^^^^ help: try: `EnabledCompressionEncodings::default()`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#default_trait_access
+     = note: `-W clippy::default-trait-access` implied by `-W clippy::pedantic`
+     = help: to override `-W clippy::pedantic` add `#[allow(clippy::default_trait_access)]`
+
+warning: calling `EnabledCompressionEncodings::default()` is more clear than this expression
+    --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:1499:45
+     |
+1499 |                 send_compression_encodings: Default::default(),
+     |                                             ^^^^^^^^^^^^^^^^^^ help: try: `EnabledCompressionEncodings::default()`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#default_trait_access
+
+warning: this could be a `const fn`
+    --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:1529:9
+     |
+1529 | /         pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+1530 | |             self.max_decoding_message_size = Some(limit);
+1531 | |             self
+1532 | |         }
+     | |_________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_const_for_fn
+     = note: `-W clippy::missing-const-for-fn` implied by `-W clippy::nursery`
+     = help: to override `-W clippy::nursery` add `#[allow(clippy::missing_const_for_fn)]`
+help: make the function `const`
+     |
+1529 |         pub const fn max_decoding_message_size(mut self, limit: usize) -> Self {
+     |             +++++
+
+warning: this could be a `const fn`
+    --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:1537:9
+     |
+1537 | /         pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+1538 | |             self.max_encoding_message_size = Some(limit);
+1539 | |             self
+1540 | |         }
+     | |_________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_const_for_fn
+help: make the function `const`
+     |
+1537 |         pub const fn max_encoding_message_size(mut self, limit: usize) -> Self {
+     |             +++++
+
+warning: this function has too many lines (1059/100)
+    --> C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-3b14a9fd0aef312a\out/ans.rs:1557:9
+     |
+1557 |         fn call(&mut self, req: http::Request<B>) -> Self::Future {
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#too_many_lines
+     = note: `-W clippy::too-many-lines` implied by `-W clippy::pedantic`
+     = help: to override `-W clippy::pedantic` add `#[allow(clippy::too_many_lines)]`
+
+warning: `ans-proto` (lib) generated 87 warnings (run `cargo clippy --fix --lib -p ans-proto -- ` to apply 57 suggestions)
+warning: multiple versions for dependency `hashbrown`: 0.12.3, 0.15.5, 0.17.1
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+  = note: `-W clippy::multiple-crate-versions` implied by `-W clippy::cargo`
+  = help: to override `-W clippy::cargo` add `#[allow(clippy::multiple_crate_versions)]`
+
+warning: multiple versions for dependency `indexmap`: 1.9.3, 2.14.0
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+
+warning: multiple versions for dependency `thiserror`: 1.0.69, 2.0.18
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+
+warning: multiple versions for dependency `thiserror-impl`: 1.0.69, 2.0.18
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+
+warning: multiple versions for dependency `wit-bindgen`: 0.51.0, 0.57.1
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+
+warning: `ans-core` (lib) generated 8 warnings (3 duplicates)
+warning: redundant field names in struct initialization
+   --> crates\ans-distill\src\engine.rs:182:9
+    |
+182 |         tag: tag,
+    |         ^^^^^^^^ help: replace it with: `tag`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#redundant_field_names
+    = note: `-W clippy::redundant-field-names` implied by `-W clippy::all`
+    = help: to override `-W clippy::all` add `#[allow(clippy::redundant_field_names)]`
+
+warning: casting `i64` to `i32` may truncate the value
+   --> crates\ans-distill\src\engine.rs:179:19
+    |
+179 |     let node_id = node["nodeId"].as_i64().unwrap_or(-1) as i32;
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: if this is intentional allow the lint with `#[allow(clippy::cast_possible_truncation)]` ...
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_truncation
+    = note: `-W clippy::cast-possible-truncation` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::cast_possible_truncation)]`
+help: ... or use `try_from` and handle the error accordingly
+    |
+179 -     let node_id = node["nodeId"].as_i64().unwrap_or(-1) as i32;
+179 +     let node_id = i32::try_from(node["nodeId"].as_i64().unwrap_or(-1));
+    |
+
+warning: used underscore-prefixed binding
+   --> crates\ans-distill\src\engine.rs:196:5
+    |
+196 |     ctx._node_map.insert(node_id, idx);
+    |     ^^^^^^^^^^^^^
+    |
+note: binding is defined here
+   --> crates\ans-distill\src\engine.rs:80:5
+    |
+ 80 |     _node_map: HashMap<i32, usize>,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#used_underscore_binding
+    = note: `-W clippy::used-underscore-binding` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::used_underscore_binding)]`
+
+warning: these match arms have identical bodies
+   --> crates\ans-distill\src\engine.rs:348:9
+    |
+348 |         "select" => InteractiveType::Select,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+349 |         "textarea" => InteractiveType::Textarea,
+350 |         "option" => InteractiveType::Select, // Treated as part of select
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: if this is unintentional make the arms return different values
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#match_same_arms
+    = note: `-W clippy::match-same-arms` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::match_same_arms)]`
+help: otherwise merge the patterns into a single arm
+    |
+348 ~         "select" | "option" => InteractiveType::Select,
+349 |         "textarea" => InteractiveType::Textarea,
+350 ~         // Treated as part of select
+    |
+
+warning: use of `format!` to build up a string from an iterator
+   --> crates\ans-distill\src\semantic.rs:126:33
+    |
+126 |           let raw_attrs: String = el
+    |  _________________________________^
+127 | |             .attributes
+128 | |             .iter()
+129 | |             .map(|(k, v)| format!("{k}={v} "))
+130 | |             .collect();
+    | |______________________^
+    |
+help: call `fold` instead
+   --> crates\ans-distill\src\semantic.rs:129:14
+    |
+129 |             .map(|(k, v)| format!("{k}={v} "))
+    |              ^^^
+help: ... and use the `write!` macro here
+   --> crates\ans-distill\src\semantic.rs:129:27
+    |
+129 |             .map(|(k, v)| format!("{k}={v} "))
+    |                           ^^^^^^^^^^^^^^^^^^^
+    = note: this can be written more efficiently by appending to a `String` directly
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#format_collect
+    = note: `-W clippy::format-collect` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::format_collect)]`
+
+warning: assigning the result of `Clone::clone()` may be inefficient
+   --> crates\ans-distill\src\semantic.rs:156:13
+    |
+156 |             current_text = el.text.clone();
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: use `clone_from()`: `current_text.clone_from(&el.text)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#assigning_clones
+    = note: `-W clippy::assigning-clones` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::assigning_clones)]`
+
+warning: these match arms have identical bodies
+   --> crates\ans-distill\src\semantic.rs:180:9
+    |
+180 |         BlockType::Sidebar => 0.3,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+185 |         BlockType::Unknown => 0.3,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: if this is unintentional make the arms return different values
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#match_same_arms
+help: otherwise merge the patterns into a single arm
+    |
+180 ~         BlockType::Sidebar | BlockType::Unknown => 0.3,
+181 |         BlockType::Footer => 0.2,
+...
+184 |         BlockType::Popup => 0.1,
+185 ~         }
+    |
+
+warning: these match arms have identical bodies
+   --> crates\ans-distill\src\semantic.rs:182:9
+    |
+182 |         BlockType::Ad => 0.0,
+    |         ^^^^^^^^^^^^^^^^^^^^
+183 |         BlockType::CookieBanner => 0.0,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: if this is unintentional make the arms return different values
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#match_same_arms
+help: otherwise merge the patterns into a single arm
+    |
+182 ~         BlockType::Ad | BlockType::CookieBanner => 0.0,
+183 ~         BlockType::Popup => 0.1,
+    |
+
+warning: first doc comment paragraph is too long
+ --> crates\ans-distill\src\serialization.rs:1:1
+  |
+1 | / //! Serialize/deserialize distilled DOM between core domain types and
+2 | | //! protobuf-generated types. Used by the gRPC server to convert between
+3 | | //! the internal [`DistilledPage`] and the wire-format [`DistilledDom`].
+  | |_^
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#too_long_first_doc_paragraph
+  = note: `-W clippy::too-long-first-doc-paragraph` implied by `-W clippy::nursery`
+  = help: to override `-W clippy::nursery` add `#[allow(clippy::too_long_first_doc_paragraph)]`
+
+warning: casting `usize` to `i32` may truncate the value on targets with 64-bit wide pointers
+  --> crates\ans-distill\src\serialization.rs:43:47
+   |
+43 |         children: el.children.iter().map(|&c| c as i32).collect(),
+   |                                               ^^^^^^^^
+   |
+   = help: if this is intentional allow the lint with `#[allow(clippy::cast_possible_truncation)]` ...
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_truncation
+help: ... or use `try_from` and handle the error accordingly
+   |
+43 -         children: el.children.iter().map(|&c| c as i32).collect(),
+43 +         children: el.children.iter().map(|&c| i32::try_from(c)).collect(),
+   |
+
+warning: casting `usize` to `i32` may wrap around the value on targets with 32-bit wide pointers
+  --> crates\ans-distill\src\serialization.rs:43:47
+   |
+43 |         children: el.children.iter().map(|&c| c as i32).collect(),
+   |                                               ^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_wrap
+   = note: `-W clippy::cast-possible-wrap` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::cast_possible_wrap)]`
+
+warning: casting `usize` to `i32` may truncate the value on targets with 64-bit wide pointers
+  --> crates\ans-distill\src\serialization.rs:66:64
+   |
+66 |         element_indices: block.element_indices.iter().map(|&i| i as i32).collect(),
+   |                                                                ^^^^^^^^
+   |
+   = help: if this is intentional allow the lint with `#[allow(clippy::cast_possible_truncation)]` ...
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_truncation
+help: ... or use `try_from` and handle the error accordingly
+   |
+66 -         element_indices: block.element_indices.iter().map(|&i| i as i32).collect(),
+66 +         element_indices: block.element_indices.iter().map(|&i| i32::try_from(i)).collect(),
+   |
+
+warning: casting `usize` to `i32` may wrap around the value on targets with 32-bit wide pointers
+  --> crates\ans-distill\src\serialization.rs:66:64
+   |
+66 |         element_indices: block.element_indices.iter().map(|&i| i as i32).collect(),
+   |                                                                ^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_wrap
+
+warning: casting `i32` to `usize` may lose the sign of the value
+   --> crates\ans-distill\src\serialization.rs:133:47
+    |
+133 |         children: el.children.iter().map(|&c| c as usize).collect(),
+    |                                               ^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_sign_loss
+    = note: `-W clippy::cast-sign-loss` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::cast_sign_loss)]`
+
+warning: casting `i32` to `usize` may lose the sign of the value
+   --> crates\ans-distill\src\serialization.rs:169:64
+    |
+169 |         element_indices: block.element_indices.iter().map(|&i| i as usize).collect(),
+    |                                                                ^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_sign_loss
+
+warning: these match arms have identical bodies
+   --> crates\ans-distill\src\serialization.rs:189:9
+    |
+189 |         "all_fields" => DistillMode::AllFields,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+190 |         _ => DistillMode::AllFields,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ the wildcard arm
+    |
+    = help: if this is unintentional make the arms return different values
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#match_same_arms
+help: otherwise remove the non-wildcard arm
+    |
+189 -         "all_fields" => DistillMode::AllFields,
+    |
+
+warning: these match arms have identical bodies
+   --> crates\ans-distill\src\serialization.rs:208:9
+    |
+208 |         "button" => InteractiveType::Button,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+215 |         _ => InteractiveType::Button,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the wildcard arm
+    |
+    = help: if this is unintentional make the arms return different values
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#match_same_arms
+help: otherwise remove the non-wildcard arm
+    |
+208 -         "button" => InteractiveType::Button,
+    |
+
+warning: these match arms have identical bodies
+   --> crates\ans-distill\src\serialization.rs:290:9
+    |
+290 |         "ignore" => ImmuneAction::Ignore,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+291 |         "navigate_back" => ImmuneAction::NavigateBack,
+292 |         _ => ImmuneAction::Ignore,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^ the wildcard arm
+    |
+    = help: if this is unintentional make the arms return different values
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#match_same_arms
+help: otherwise remove the non-wildcard arm
+    |
+290 -         "ignore" => ImmuneAction::Ignore,
+    |
+
+warning: `ans-distill` (lib) generated 26 warnings (8 duplicates) (run `cargo clippy --fix --lib -p ans-distill -- ` to apply 1 suggestion)
+warning: multiple versions for dependency `bitflags`: 1.3.2, 2.11.1
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+  = note: `-W clippy::multiple-crate-versions` implied by `-W clippy::cargo`
+  = help: to override `-W clippy::cargo` add `#[allow(clippy::multiple_crate_versions)]`
+
+warning: multiple versions for dependency `getrandom`: 0.2.17, 0.3.4, 0.4.2
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+
+warning: multiple versions for dependency `hashbrown`: 0.12.3, 0.15.5, 0.17.1
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+
+warning: multiple versions for dependency `r-efi`: 5.3.0, 6.0.0
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+
+warning: docs for function which may panic missing `# Panics` section
+  --> crates\ans-storage\src\decisions.rs:26:5
+   |
+26 |     pub fn insert(&self, record: DecisionRecord) -> usize {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+note: first possible panic found here
+  --> crates\ans-storage\src\decisions.rs:27:27
+   |
+27 |         let mut records = self.records.write().expect("lock poisoned");
+   |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_panics_doc
+   = note: `-W clippy::missing-panics-doc` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::missing_panics_doc)]`
+
+warning: used `expect()` on a `Result` value
+  --> crates\ans-storage\src\decisions.rs:27:27
+   |
+27 |         let mut records = self.records.write().expect("lock poisoned");
+   |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: if this value is an `Err`, it will panic
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#expect_used
+   = note: requested on the command line with `-W clippy::expect-used`
+
+warning: docs for function which may panic missing `# Panics` section
+  --> crates\ans-storage\src\decisions.rs:33:5
+   |
+33 |     pub fn len(&self) -> usize {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+note: first possible panic found here
+  --> crates\ans-storage\src\decisions.rs:34:9
+   |
+34 |         self.records.read().expect("lock poisoned").len()
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_panics_doc
+
+warning: used `expect()` on a `Result` value
+  --> crates\ans-storage\src\decisions.rs:34:9
+   |
+34 |         self.records.read().expect("lock poisoned").len()
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: if this value is an `Err`, it will panic
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#expect_used
+
+warning: docs for function which may panic missing `# Panics` section
+  --> crates\ans-storage\src\decisions.rs:44:5
+   |
+44 | /     pub fn query_similar(
+45 | |         &self,
+46 | |         embedding: &[f32],
+47 | |         k: usize,
+48 | |         min_score: f32,
+49 | |     ) -> Vec<(DecisionRecord, f32)> {
+   | |___________________________________^
+   |
+note: first possible panic found here
+  --> crates\ans-storage\src\decisions.rs:50:23
+   |
+50 |         let records = self.records.read().expect("lock poisoned");
+   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_panics_doc
+
+warning: temporary with significant `Drop` can be early dropped
+  --> crates\ans-storage\src\decisions.rs:50:13
+   |
+49 |       ) -> Vec<(DecisionRecord, f32)> {
+   |  _____________________________________-
+50 | |         let records = self.records.read().expect("lock poisoned");
+   | |             ^^^^^^^
+51 | |         if records.is_empty() {
+52 | |             return Vec::new();
+...  |
+75 | |             .collect()
+76 | |     }
+   | |_____- temporary `records` is currently being dropped at the end of its contained scope
+   |
+   = note: this might lead to unnecessary resource contention
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#significant_drop_tightening
+   = note: `-W clippy::significant-drop-tightening` implied by `-W clippy::nursery`
+   = help: to override `-W clippy::nursery` add `#[allow(clippy::significant_drop_tightening)]`
+help: drop the temporary after the end of its last usage
+   |
+66 ~             .collect();
+67 +         drop(records);
+   |
+
+warning: used `expect()` on a `Result` value
+  --> crates\ans-storage\src\decisions.rs:50:23
+   |
+50 |         let records = self.records.read().expect("lock poisoned");
+   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: if this value is an `Err`, it will panic
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#expect_used
+
+warning: these match arms have identical bodies
+  --> crates\ans-storage\src\serialization.rs:66:13
+   |
+66 |             "click" => ActionType::Click,
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+74 |             _ => ActionType::Click,
+   |             ^^^^^^^^^^^^^^^^^^^^^^ the wildcard arm
+   |
+   = help: if this is unintentional make the arms return different values
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#match_same_arms
+   = note: `-W clippy::match-same-arms` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::match_same_arms)]`
+help: otherwise remove the non-wildcard arm
+   |
+66 -             "click" => ActionType::Click,
+   |
+
+warning: these match arms have identical bodies
+   --> crates\ans-immune\src\classifier.rs:106:9
+    |
+106 |         "ignore" => ImmuneAction::Ignore,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+107 |         "navigate_back" => ImmuneAction::NavigateBack,
+108 |         _ => ImmuneAction::Ignore,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^ the wildcard arm
+    |
+    = help: if this is unintentional make the arms return different values
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#match_same_arms
+    = note: `-W clippy::match-same-arms` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::match_same_arms)]`
+help: otherwise remove the non-wildcard arm
+    |
+106 -         "ignore" => ImmuneAction::Ignore,
+    |
+
+warning: casting `u128` to `i64` may truncate the value
+  --> crates\ans-immune\src\detector.rs:88:29
+   |
+88 |         let _scan_time_us = start.elapsed().as_micros() as i64;
+   |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: if this is intentional allow the lint with `#[allow(clippy::cast_possible_truncation)]` ...
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_truncation
+   = note: `-W clippy::cast-possible-truncation` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::cast_possible_truncation)]`
+help: ... or use `try_from` and handle the error accordingly
+   |
+88 -         let _scan_time_us = start.elapsed().as_micros() as i64;
+88 +         let _scan_time_us = i64::try_from(start.elapsed().as_micros());
+   |
+
+warning: used `expect()` on a `Result` value
+   --> crates\ans-immune\src\detector.rs:105:9
+    |
+105 | /         regex::Regex::new(r#"(?is)style\s*=\s*"[^"]*display\s*:\s*none[^"]*"[^>]*>([^<]{20,})"#)
+106 | |             .expect("invalid display:none regex");
+    | |_________________________________________________^
+    |
+    = note: if this value is an `Err`, it will panic
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#expect_used
+    = note: requested on the command line with `-W clippy::expect-used`
+
+warning: used `expect()` on a `Result` value
+   --> crates\ans-immune\src\detector.rs:123:21
+    |
+123 |       let hidden_re = regex::Regex::new(
+    |  _____________________^
+124 | |         r#"(?is)style\s*=\s*"[^"]*(?:visibility\s*:\s*hidden|opacity\s*:\s*0)[^"]*"[^>]*>([^<]{20,})"#,
+125 | |     )
+126 | |     .expect("invalid hidden element regex");
+    | |___________________________________________^
+    |
+    = note: if this value is an `Err`, it will panic
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#expect_used
+
+warning: used `expect()` on a `Result` value
+   --> crates\ans-immune\src\detector.rs:143:19
+    |
+143 |     let aria_re = regex::Regex::new(r#"(?is)aria-label\s*=\s*"([^"]{30,})""#).expect("invalid aria-label regex");
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: if this value is an `Err`, it will panic
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#expect_used
+
+warning: adding items after statements is confusing, since items exist from the start of the scope
+   --> crates\ans-immune\src\detector.rs:192:5
+    |
+192 |     use std::sync::LazyLock;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#items_after_statements
+    = note: `-W clippy::items-after-statements` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::items_after_statements)]`
+
+warning: adding items after statements is confusing, since items exist from the start of the scope
+   --> crates\ans-immune\src\detector.rs:193:5
+    |
+193 | /     static INSTRUCTION_REGEX: LazyLock<regex::Regex> = LazyLock::new(|| {
+194 | |         regex::Regex::new(
+195 | |             r"(?is)(?:forget\s+(?:all\s+)?(?:your\s+)?(?:previous\s+)?instructions?|you\s+are\s+(?:now|no\s+longer|a\s+different)...
+...   |
+198 | |     });
+    | |_______^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#items_after_statements
+
+warning: used `expect()` on a `Result` value
+   --> crates\ans-immune\src\detector.rs:194:9
+    |
+194 | / ...   regex::Regex::new(
+195 | | ...       r"(?is)(?:forget\s+(?:all\s+)?(?:your\s+)?(?:previous\s+)?instructions?|you\s+are\s+(?:now|no\s+longer|a\s+different)|(...
+196 | | ...   )
+197 | | ...   .expect("invalid instruction-override regex")
+    | |___________________________________________________^
+    |
+    = note: if this value is an `Err`, it will panic
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#expect_used
+
+warning: casting `i32` to `f32` may cause a loss of precision (`i32` is 32 bits wide, but `f32`'s mantissa is only 23 bits wide)
+   --> crates\ans-immune\src\rules.rs:272:17
+    |
+272 |     let ratio = cyrillic_count as f32 / total_chars as f32;
+    |                 ^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_precision_loss
+    = note: `-W clippy::cast-precision-loss` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::cast_precision_loss)]`
+
+warning: casting `i32` to `f32` may cause a loss of precision (`i32` is 32 bits wide, but `f32`'s mantissa is only 23 bits wide)
+   --> crates\ans-immune\src\rules.rs:272:41
+    |
+272 |     let ratio = cyrillic_count as f32 / total_chars as f32;
+    |                                         ^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_precision_loss
+
+warning: used `expect()` on a `Result` value
+   --> crates\ans-immune\src\rules.rs:304:18
+    |
+304 |         pattern: Regex::new(pattern).expect("invalid regex in built-in rule"),
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: if this value is an `Err`, it will panic
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#expect_used
+
+warning: casting `usize` to `i32` may truncate the value on targets with 64-bit wide pointers
+  --> crates\ans-diff\src\engine.rs:84:28
+   |
+84 |                     index: i as i32,
+   |                            ^^^^^^^^
+   |
+   = help: if this is intentional allow the lint with `#[allow(clippy::cast_possible_truncation)]` ...
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_truncation
+   = note: `-W clippy::cast-possible-truncation` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::cast_possible_truncation)]`
+help: ... or use `try_from` and handle the error accordingly
+   |
+84 -                     index: i as i32,
+84 +                     index: i32::try_from(i),
+   |
+
+warning: casting `usize` to `i32` may wrap around the value on targets with 32-bit wide pointers
+  --> crates\ans-diff\src\engine.rs:84:28
+   |
+84 |                     index: i as i32,
+   |                            ^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_wrap
+   = note: `-W clippy::cast-possible-wrap` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::cast_possible_wrap)]`
+
+warning: casting `usize` to `i32` may truncate the value on targets with 64-bit wide pointers
+   --> crates\ans-diff\src\engine.rs:101:28
+    |
+101 |                     index: j as i32,
+    |                            ^^^^^^^^
+    |
+    = help: if this is intentional allow the lint with `#[allow(clippy::cast_possible_truncation)]` ...
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_truncation
+help: ... or use `try_from` and handle the error accordingly
+    |
+101 -                     index: j as i32,
+101 +                     index: i32::try_from(j),
+    |
+
+warning: casting `usize` to `i32` may wrap around the value on targets with 32-bit wide pointers
+   --> crates\ans-diff\src\engine.rs:101:28
+    |
+101 |                     index: j as i32,
+    |                            ^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_wrap
+
+warning: casting `usize` to `f32` may cause a loss of precision (`usize` can be up to 64 bits wide depending on the target architecture, but `f32`'s mantissa is only 23 bits wide)
+   --> crates\ans-diff\src\engine.rs:112:21
+    |
+112 |         let total = (before.elements.len() + after.elements.len()).max(1) as f32;
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_precision_loss
+    = note: `-W clippy::cast-precision-loss` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::cast_precision_loss)]`
+
+warning: casting `usize` to `f32` may cause a loss of precision (`usize` can be up to 64 bits wide depending on the target architecture, but `f32`'s mantissa is only 23 bits wide)
+   --> crates\ans-diff\src\engine.rs:113:23
+    |
+113 |         let changed = (added.len() + removed.len() + modified.len()) as f32;
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_precision_loss
+
+warning: casting `usize` to `i32` may truncate the value on targets with 64-bit wide pointers
+   --> crates\ans-diff\src\engine.rs:220:32
+    |
+220 |                         index: i as i32,
+    |                                ^^^^^^^^
+    |
+    = help: if this is intentional allow the lint with `#[allow(clippy::cast_possible_truncation)]` ...
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_truncation
+help: ... or use `try_from` and handle the error accordingly
+    |
+220 -                         index: i as i32,
+220 +                         index: i32::try_from(i),
+    |
+
+warning: casting `usize` to `i32` may wrap around the value on targets with 32-bit wide pointers
+   --> crates\ans-diff\src\engine.rs:220:32
+    |
+220 |                         index: i as i32,
+    |                                ^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_wrap
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> crates\ans-goal\src\manager.rs:35:5
+   |
+35 | /     pub fn create_goal(
+36 | |         &self,
+37 | |         description: &str,
+38 | |         context: HashMap<String, String>,
+39 | |         _max_steps: u32,
+40 | |     ) -> Result<GoalState, GoalStoreError> {
+   | |__________________________________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+   = note: `-W clippy::missing-errors-doc` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::missing_errors_doc)]`
+
+warning: this argument is passed by value, but not consumed in the function body
+  --> crates\ans-goal\src\manager.rs:38:18
+   |
+38 |         context: HashMap<String, String>,
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_pass_by_value
+   = note: `-W clippy::needless-pass-by-value` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::needless_pass_by_value)]`
+help: consider taking a reference instead
+   |
+38 |         context: &HashMap<String, String>,
+   |                  +
+
+warning: casting `usize` to `f32` may cause a loss of precision (`usize` can be up to 64 bits wide depending on the target architecture, but `f32`'s mantissa is only 23 bits wide)
+  --> crates\ans-goal\src\manager.rs:45:21
+   |
+45 |         let total = sub_goals.len() as f32;
+   |                     ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_precision_loss
+   = note: `-W clippy::cast-precision-loss` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::cast_precision_loss)]`
+
+warning: casting `usize` to `f32` may cause a loss of precision (`usize` can be up to 64 bits wide depending on the target architecture, but `f32`'s mantissa is only 23 bits wide)
+  --> crates\ans-goal\src\manager.rs:46:20
+   |
+46 |           let done = sub_goals
+   |  ____________________^
+47 | |             .iter()
+48 | |             .filter(|s| s.status == SubGoalStatus::Done)
+49 | |             .count() as f32;
+   | |___________________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_precision_loss
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> crates\ans-goal\src\manager.rs:86:5
+   |
+86 | /     pub fn update_progress(
+87 | |         &self,
+88 | |         goal_id: Uuid,
+89 | |         progress: f32,
+90 | |         status: GoalStatus,
+91 | |     ) -> Result<GoalState, GoalStoreError> {
+   | |__________________________________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: `if _ { .. } else { .. }` is an expression
+   --> crates\ans-goal\src\manager.rs:152:5
+    |
+152 | /     let mut prev_id: Option<Uuid> = None;
+153 | |
+154 | |     // 1. Navigation phase
+155 | |     if has_navigation {
+...   |
+165 | |         prev_id = Some(id);
+166 | |     }
+    | |_____^ help: it is more idiomatic to write: `let <mut> prev_id = if has_navigation { ..; Some(id) } else { None };`
+    |
+    = note: you might not need `mut` at all
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#useless_let_if_seq
+    = note: `-W clippy::useless-let-if-seq` implied by `-W clippy::nursery`
+    = help: to override `-W clippy::nursery` add `#[allow(clippy::useless_let_if_seq)]`
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> crates\ans-goal\src\store.rs:46:5
+   |
+46 |     pub fn insert(&self, state: GoalState) -> Result<(), GoalStoreError> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: temporary with significant `Drop` can be early dropped
+  --> crates\ans-goal\src\store.rs:51:17
+   |
+46 |       pub fn insert(&self, state: GoalState) -> Result<(), GoalStoreError> {
+   |  __________________________________________________________________________-
+47 | |         let goal_id = state.goal_id;
+48 | |         let progress = state.progress;
+49 | |         let status = state.status;
+50 | |
+51 | |         let mut map = self
+   | |                 ^^^
+...  |
+68 | |         Ok(())
+69 | |     }
+   | |_____- temporary `map` is currently being dropped at the end of its contained scope
+   |
+   = note: this might lead to unnecessary resource contention
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#significant_drop_tightening
+   = note: `-W clippy::significant-drop-tightening` implied by `-W clippy::nursery`
+   = help: to override `-W clippy::nursery` add `#[allow(clippy::significant_drop_tightening)]`
+help: drop the temporary after the end of its last usage
+   |
+58 ~         map.insert(goal_id, state);
+59 +         drop(map);
+   |
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> crates\ans-goal\src\store.rs:81:5
+   |
+81 |     pub fn update(&self, goal_id: Uuid, state: GoalState) -> Result<(), GoalStoreError> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: temporary with significant `Drop` can be early dropped
+   --> crates\ans-goal\src\store.rs:85:17
+    |
+ 81 |       pub fn update(&self, goal_id: Uuid, state: GoalState) -> Result<(), GoalStoreError> {
+    |  _________________________________________________________________________________________-
+ 82 | |         let progress = state.progress;
+ 83 | |         let status = state.status;
+ 84 | |
+ 85 | |         let mut map = self
+    | |                 ^^^
+...   |
+102 | |         Ok(())
+103 | |     }
+    | |_____- temporary `map` is currently being dropped at the end of its contained scope
+    |
+    = note: this might lead to unnecessary resource contention
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#significant_drop_tightening
+help: drop the temporary after the end of its last usage
+    |
+ 92 ~         map.insert(goal_id, state);
+ 93 +         drop(map);
+    |
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> crates\ans-goal\src\store.rs:107:5
+    |
+107 | /     pub fn update_progress(
+108 | |         &self,
+109 | |         goal_id: Uuid,
+110 | |         progress: f32,
+111 | |         status: GoalStatus,
+112 | |     ) -> Result<GoalState, GoalStoreError> {
+    | |__________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: temporary with significant `Drop` can be early dropped
+   --> crates\ans-goal\src\store.rs:113:17
+    |
+112 |       ) -> Result<GoalState, GoalStoreError> {
+    |  ____________________________________________-
+113 | |         let mut map = self
+    | |                 ^^^
+114 | |             .inner
+115 | |             .write()
+...   |
+139 | |         Ok(snapshot)
+140 | |     }
+    | |_____- temporary `map` is currently being dropped at the end of its contained scope
+    |
+    = note: this might lead to unnecessary resource contention
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#significant_drop_tightening
+help: drop the temporary after the end of its last usage
+    |
+119 ~             .ok_or(GoalStoreError::NotFound(goal_id))?;
+120 +         drop(map);
+    |
+
+warning: temporary with significant `Drop` can be early dropped
+   --> crates\ans-goal\src\store.rs:144:17
+    |
+143 |       pub fn remove(&self, goal_id: &Uuid) -> Option<GoalState> {
+    |  _______________________________________________________________-
+144 | |         let mut map = self.inner.write().ok()?;
+    | |                 ^^^
+145 | |         let removed = map.remove(goal_id);
+...   |
+156 | |         removed
+157 | |     }
+    | |_____- temporary `map` is currently being dropped at the end of its contained scope
+    |
+    = note: this might lead to unnecessary resource contention
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#significant_drop_tightening
+help: merge the temporary construction with its single usage
+    |
+144 ~         
+145 +         let removed = self.inner.write().ok()?.remove(goal_id);
+146 ~         
+    |
+
+warning: `ans-storage` (lib) generated 19 warnings (7 duplicates)
+warning: `ans-immune` (lib) generated 19 warnings (8 duplicates)
+warning: `ans-diff` (lib) generated 16 warnings (8 duplicates)
+warning: `ans-goal` (lib) generated 21 warnings (8 duplicates)
+warning: multiple versions for dependency `getrandom`: 0.2.17, 0.3.4, 0.4.2
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+  = note: `-W clippy::multiple-crate-versions` implied by `-W clippy::cargo`
+  = help: to override `-W clippy::cargo` add `#[allow(clippy::multiple_crate_versions)]`
+
+warning: multiple versions for dependency `rand`: 0.8.6, 0.9.4
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+
+warning: multiple versions for dependency `rand_chacha`: 0.3.1, 0.9.0
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+
+warning: multiple versions for dependency `rand_core`: 0.6.4, 0.9.5
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+
+warning: these match arms have identical bodies
+  --> crates\ans-cdp\src\client.rs:89:21
+   |
+89 |                     Ok(Message::Close(_) | Message::Ping(_) | Message::Pong(_)) => {}
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+94 |                     _ => {}
+   |                     ^^^^^^^ the wildcard arm
+   |
+   = help: if this is unintentional make the arms return different values
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#match_same_arms
+   = note: `-W clippy::match-same-arms` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::match_same_arms)]`
+help: otherwise remove the non-wildcard arm
+   |
+89 -                     Ok(Message::Close(_) | Message::Ping(_) | Message::Pong(_)) => {}
+   |
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> crates\ans-cdp\src\client.rs:143:5
+    |
+143 |     pub async fn launch() -> Result<Self, BrowserError> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+    = note: `-W clippy::missing-errors-doc` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::missing_errors_doc)]`
+
+warning: casting `u128` to `u64` may truncate the value
+   --> crates\ans-cdp\src\client.rs:378:32
+    |
+378 |             execution_time_ms: elapsed.as_millis() as u64,
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: if this is intentional allow the lint with `#[allow(clippy::cast_possible_truncation)]` ...
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_truncation
+    = note: `-W clippy::cast-possible-truncation` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::cast_possible_truncation)]`
+help: ... or use `try_from` and handle the error accordingly
+    |
+378 -             execution_time_ms: elapsed.as_millis() as u64,
+378 +             execution_time_ms: u64::try_from(elapsed.as_millis()),
+    |
+
+warning: casting `u128` to `u64` may truncate the value
+   --> crates\ans-cdp\src\client.rs:398:32
+    |
+398 |             execution_time_ms: elapsed.as_millis() as u64,
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: if this is intentional allow the lint with `#[allow(clippy::cast_possible_truncation)]` ...
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_truncation
+help: ... or use `try_from` and handle the error accordingly
+    |
+398 -             execution_time_ms: elapsed.as_millis() as u64,
+398 +             execution_time_ms: u64::try_from(elapsed.as_millis()),
+    |
+
+warning: casting `u128` to `u64` may truncate the value
+   --> crates\ans-cdp\src\client.rs:444:32
+    |
+444 |             execution_time_ms: elapsed.as_millis() as u64,
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: if this is intentional allow the lint with `#[allow(clippy::cast_possible_truncation)]` ...
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_truncation
+help: ... or use `try_from` and handle the error accordingly
+    |
+444 -             execution_time_ms: elapsed.as_millis() as u64,
+444 +             execution_time_ms: u64::try_from(elapsed.as_millis()),
+    |
+
+warning: use Option::map_or_else instead of an if let/else
+   --> crates\ans-cdp\src\client.rs:457:22
+    |
+457 |           let script = if let Some(sel) = selector {
+    |  ______________________^
+458 | |             format!(
+459 | |                 "document.querySelector('{}')?.scrollIntoView({{ behavior: 'instant', block: 'center' }});",
+460 | |                 escape_js_string(sel)
+...   |
+465 | |             "window.scrollBy(0, 300);".to_string()
+466 | |         };
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#option_if_let_else
+    = note: `-W clippy::option-if-let-else` implied by `-W clippy::nursery`
+    = help: to override `-W clippy::nursery` add `#[allow(clippy::option_if_let_else)]`
+help: try
+    |
+457 ~         let script = selector.map_or_else(|| if let Some(px) = pixels {
+458 +             format!("window.scrollBy(0, {px});")
+459 +         } else {
+460 +             "window.scrollBy(0, 300);".to_string()
+461 +         }, |sel| format!(
+462 +                 "document.querySelector('{}')?.scrollIntoView({{ behavior: 'instant', block: 'center' }});",
+463 +                 escape_js_string(sel)
+464 ~             ));
+    |
+
+warning: casting `u128` to `u64` may truncate the value
+   --> crates\ans-cdp\src\client.rs:479:32
+    |
+479 |             execution_time_ms: elapsed.as_millis() as u64,
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: if this is intentional allow the lint with `#[allow(clippy::cast_possible_truncation)]` ...
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_truncation
+help: ... or use `try_from` and handle the error accordingly
+    |
+479 -             execution_time_ms: elapsed.as_millis() as u64,
+479 +             execution_time_ms: u64::try_from(elapsed.as_millis()),
+    |
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> crates\ans-cdp\src\command.rs:58:5
+   |
+58 |     pub fn into_result(self) -> Result<Json, CdpError> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> crates\ans-cdp\src\command.rs:267:1
+    |
+267 | pub fn parse_dom_node_id(result: &Json) -> Result<i32, CdpError> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: casting `i64` to `i32` may truncate the value
+   --> crates\ans-cdp\src\command.rs:270:18
+    |
+270 |         .map(|v| v as i32)
+    |                  ^^^^^^^^
+    |
+    = help: if this is intentional allow the lint with `#[allow(clippy::cast_possible_truncation)]` ...
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_truncation
+help: ... or use `try_from` and handle the error accordingly
+    |
+270 -         .map(|v| v as i32)
+270 +         .map(|v| i32::try_from(v))
+    |
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> crates\ans-cdp\src\command.rs:278:1
+    |
+278 | pub fn parse_query_selector_result(result: &Json) -> Result<i32, CdpError> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: casting `i64` to `i32` may truncate the value
+   --> crates\ans-cdp\src\command.rs:281:18
+    |
+281 |         .map(|v| v as i32)
+    |                  ^^^^^^^^
+    |
+    = help: if this is intentional allow the lint with `#[allow(clippy::cast_possible_truncation)]` ...
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_truncation
+help: ... or use `try_from` and handle the error accordingly
+    |
+281 -         .map(|v| v as i32)
+281 +         .map(|v| i32::try_from(v))
+    |
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> crates\ans-cdp\src\command.rs:290:1
+    |
+290 | pub fn parse_outer_html(result: &Json) -> Result<String, CdpError> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> crates\ans-cdp\src\command.rs:309:1
+    |
+309 | pub fn parse_box_model(result: &Json) -> Result<BoxModel, CdpError> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> crates\ans-cdp\src\command.rs:324:1
+    |
+324 | pub fn parse_evaluate_result(result: &Json) -> Result<Json, CdpError> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> crates\ans-cdp\src\command.rs:336:1
+    |
+336 | pub fn parse_screenshot_result(result: &Json) -> Result<Vec<u8>, CdpError> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: casting `usize` to `u32` may truncate the value on targets with 64-bit wide pointers
+   --> crates\ans-cdp\src\command.rs:389:19
+    |
+389 |         let idx = CHARS.iter().position(|&c| c == b)? as u32;
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: if this is intentional allow the lint with `#[allow(clippy::cast_possible_truncation)]` ...
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_truncation
+help: ... or use `try_from` and handle the error accordingly
+    |
+389 -         let idx = CHARS.iter().position(|&c| c == b)? as u32;
+389 +         let idx = u32::try_from(CHARS.iter().position(|&c| c == b)?);
+    |
+
+warning: casting `u32` to `u8` may truncate the value
+   --> crates\ans-cdp\src\command.rs:394:22
+    |
+394 |             buf.push((accum >> bits) as u8);
+    |                      ^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: if this is intentional allow the lint with `#[allow(clippy::cast_possible_truncation)]` ...
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_truncation
+help: ... or use `try_from` and handle the error accordingly
+    |
+394 -             buf.push((accum >> bits) as u8);
+394 +             buf.push(u8::try_from(accum >> bits));
+    |
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> crates\ans-cdp\src\process.rs:37:5
+   |
+37 |     pub async fn launch() -> Result<Self, LaunchError> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: casting `u32` to `i32` may wrap around the value
+  --> crates\ans-budget\src\serialization.rs:14:23
+   |
+14 |         budget_cents: status.budget_cents as i32,
+   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, use `cast_signed()` instead: `status.budget_cents.cast_signed()`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_wrap
+   = note: `-W clippy::cast-possible-wrap` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::cast_possible_wrap)]`
+
+warning: casting `u32` to `i32` may wrap around the value
+  --> crates\ans-budget\src\serialization.rs:15:22
+   |
+15 |         spent_cents: status.spent_cents as i32,
+   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, use `cast_signed()` instead: `status.spent_cents.cast_signed()`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_wrap
+
+warning: casting `u32` to `i32` may wrap around the value
+  --> crates\ans-budget\src\serialization.rs:17:34
+   |
+17 |         daily_spend_limit_cents: status.daily_spend_limit_cents as i32,
+   |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, use `cast_signed()` instead: `status.daily_spend_limit_cents.cast_signed()`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_wrap
+
+warning: casting `u32` to `i32` may wrap around the value
+  --> crates\ans-budget\src\serialization.rs:18:28
+   |
+18 |         daily_spent_cents: status.daily_spent_cents as i32,
+   |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, use `cast_signed()` instead: `status.daily_spent_cents.cast_signed()`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_wrap
+
+warning: casting `i32` to `u32` may lose the sign of the value
+  --> crates\ans-budget\src\serialization.rs:28:33
+   |
+28 |         default_per_goal_cents: req.default_per_goal_cents.max(0) as u32,
+   |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, use `cast_unsigned()` instead: `req.default_per_goal_cents.max(0).cast_unsigned()`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_sign_loss
+   = note: `-W clippy::cast-sign-loss` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::cast_sign_loss)]`
+
+warning: casting `i32` to `u32` may lose the sign of the value
+  --> crates\ans-budget\src\serialization.rs:29:34
+   |
+29 |         daily_spend_limit_cents: req.daily_api_key_spend_limit_cents.max(0) as u32,
+   |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, use `cast_unsigned()` instead: `req.daily_api_key_spend_limit_cents.max(0).cast_unsigned()`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_sign_loss
+
+warning: casting `u32` to `i32` may wrap around the value
+  --> crates\ans-budget\src\serialization.rs:42:33
+   |
+42 |         default_per_goal_cents: config.default_per_goal_cents as i32,
+   |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, use `cast_signed()` instead: `config.default_per_goal_cents.cast_signed()`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_wrap
+
+warning: casting `u32` to `i32` may wrap around the value
+  --> crates\ans-budget\src\serialization.rs:43:42
+   |
+43 |         daily_api_key_spend_limit_cents: config.daily_spend_limit_cents as i32,
+   |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, use `cast_signed()` instead: `config.daily_spend_limit_cents.cast_signed()`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_wrap
+
+warning: this argument (1 byte) is passed by reference, but would be more efficient if passed by value (limit: 8 byte)
+  --> crates\ans-budget\src\serialization.rs:50:35
+   |
+50 | const fn budget_mode_to_str(mode: &BudgetMode) -> &'static str {
+   |                                   ^^^^^^^^^^^ help: consider passing by value instead: `BudgetMode`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#trivially_copy_pass_by_ref
+   = note: `-W clippy::trivially-copy-pass-by-ref` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::trivially_copy_pass_by_ref)]`
+
+warning: this could be a `const fn`
+  --> crates\ans-budget\src\tracker.rs:50:5
+   |
+50 | /     pub fn new(config: BudgetConfig) -> Self {
+51 | |         Self {
+52 | |             config,
+53 | |             breaker: CircuitBreaker::new(),
+...  |
+57 | |     }
+   | |_____^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_const_for_fn
+   = note: `-W clippy::missing-const-for-fn` implied by `-W clippy::nursery`
+   = help: to override `-W clippy::nursery` add `#[allow(clippy::missing_const_for_fn)]`
+help: make the function `const`
+   |
+50 |     pub const fn new(config: BudgetConfig) -> Self {
+   |         +++++
+
+warning: this could be a `const fn`
+  --> crates\ans-budget\src\tracker.rs:61:5
+   |
+61 | /     pub fn mode(&self) -> BudgetMode {
+62 | |         self.breaker.current_mode()
+63 | |     }
+   | |_____^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_const_for_fn
+help: make the function `const`
+   |
+61 |     pub const fn mode(&self) -> BudgetMode {
+   |         +++++
+
+warning: casting `u32` to `f32` may cause a loss of precision (`u32` is 32 bits wide, but `f32`'s mantissa is only 23 bits wide)
+  --> crates\ans-budget\src\tracker.rs:75:10
+   |
+75 |         (remaining as f32 / self.config.daily_spend_limit_cents as f32) * 100.0
+   |          ^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_precision_loss
+   = note: `-W clippy::cast-precision-loss` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::cast_precision_loss)]`
+
+warning: casting `u32` to `f32` may cause a loss of precision (`u32` is 32 bits wide, but `f32`'s mantissa is only 23 bits wide)
+  --> crates\ans-budget\src\tracker.rs:75:29
+   |
+75 |         (remaining as f32 / self.config.daily_spend_limit_cents as f32) * 100.0
+   |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_precision_loss
+
+warning: unused `self` argument
+  --> crates\ans-signal\src\contradiction.rs:59:24
+   |
+59 |     fn detect_conflict(&self, a: &EyeReport, b: &EyeReport) -> Option<String> {
+   |                        ^^^^^
+   |
+   = help: consider refactoring to an associated function
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unused_self
+   = note: `-W clippy::unused-self` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::unused_self)]`
+
+warning: `format!(..)` appended to existing `String`
+   --> crates\ans-signal\src\router.rs:241:17
+    |
+241 |                 s.push_str(&format!(", {} overlays", overlays.len()));
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: you may need to import the `std::fmt::Write` trait
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#format_push_string
+    = note: `-W clippy::format-push-string` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::format_push_string)]`
+help: consider using `write!` to avoid the extra allocation
+    |
+241 -                 s.push_str(&format!(", {} overlays", overlays.len()));
+241 +                 let _ = write!(s, ", {} overlays", overlays.len());
+    |
+
+warning: `format!(..)` appended to existing `String`
+   --> crates\ans-signal\src\router.rs:244:17
+    |
+244 |                 s.push_str(&format!(", {} anomalies", anomalies.len()));
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: you may need to import the `std::fmt::Write` trait
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#format_push_string
+help: consider using `write!` to avoid the extra allocation
+    |
+244 -                 s.push_str(&format!(", {} anomalies", anomalies.len()));
+244 +                 let _ = write!(s, ", {} anomalies", anomalies.len());
+    |
+
+warning: avoid using `collect()` when not needed
+   --> crates\ans-signal\src\router.rs:301:10
+    |
+301 |         .collect();
+    |          ^^^^^^^
+302 |
+303 |     if !errors.is_empty() {
+    |         ----------------- the iterator could be used here instead
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_collect
+    = note: `-W clippy::needless-collect` implied by `-W clippy::nursery`
+    = help: to override `-W clippy::nursery` add `#[allow(clippy::needless_collect)]`
+help: check if the original Iterator has anything instead of collecting it and seeing if it's empty
+    |
+298 ~     
+299 |
+300 ~     if !reports
+301 +         .iter()
+302 ~         .filter(|r| matches!(r.content, EyeReportContent::ErrorReport { .. })).next().is_none() {
+    |
+
+warning: casting `usize` to `f32` may cause a loss of precision (`usize` can be up to 64 bits wide depending on the target architecture, but `f32`'s mantissa is only 23 bits wide)
+   --> crates\ans-signal\src\router.rs:344:65
+    |
+344 |         reports.iter().map(|r| r.goal_relevance).sum::<f32>() / reports.len().max(1) as f32;
+    |                                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_precision_loss
+    = note: `-W clippy::cast-precision-loss` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::cast_precision_loss)]`
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> crates\ans-gateway\src\auth.rs:65:5
+   |
+65 |     pub fn load(path: Option<PathBuf>) -> Result<Self, AuthError> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+   = note: `-W clippy::missing-errors-doc` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::missing_errors_doc)]`
+
+warning: use Option::map_or_else instead of an if let/else
+   --> crates\ans-gateway\src\auth.rs:128:15
+    |
+128 |       let key = if let Some(value) = headers.get("x-api-key") {
+    |  _______________^
+129 | |         value.to_str().ok().map(String::from)
+130 | |     } else if let Some(value) = headers.get("authorization") {
+131 | |         value.to_str().ok().and_then(|auth| auth.strip_prefix("Bearer ").map(String::from))
+...   |
+136 | |         None
+137 | |     };
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#option_if_let_else
+    = note: `-W clippy::option-if-let-else` implied by `-W clippy::nursery`
+    = help: to override `-W clippy::nursery` add `#[allow(clippy::option_if_let_else)]`
+help: try
+    |
+128 ~     let key = headers.get("x-api-key").map_or_else(|| if let Some(value) = headers.get("authorization") {
+129 +         value.to_str().ok().and_then(|auth| auth.strip_prefix("Bearer ").map(String::from))
+130 +     } else if let Some(q) = query {
+131 +         q.split('&')
+132 +             .find_map(|pair| pair.strip_prefix("api_key=").map(String::from))
+133 +     } else {
+134 +         None
+135 ~     }, |value| value.to_str().ok().map(String::from));
+    |
+
+warning: used `expect()` on a `Result` value
+   --> crates\ans-gateway\src\auth.rs:214:36
+    |
+214 |                       let response = axum::response::Response::builder()
+    |  ____________________________________^
+215 | |                         .status(axum::http::StatusCode::UNAUTHORIZED)
+216 | |                         .body(axum::body::Body::from(r#"{"error":"invalid API key"}"#))
+217 | |                         .expect("failed to build 401 response");
+    | |_______________________________________________________________^
+    |
+    = note: if this value is an `Err`, it will panic
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#expect_used
+    = note: requested on the command line with `-W clippy::expect-used`
+
+warning: used `expect()` on a `Result` value
+   --> crates\ans-gateway\src\auth.rs:221:36
+    |
+221 |                       let response = axum::response::Response::builder()
+    |  ____________________________________^
+222 | |                         .status(axum::http::StatusCode::UNAUTHORIZED)
+223 | |                         .body(axum::body::Body::from(
+224 | |                             r#"{"error":"missing X-API-Key header"}"#,
+225 | |                         ))
+226 | |                         .expect("failed to build 401 response");
+    | |_______________________________________________________________^
+    |
+    = note: if this value is an `Err`, it will panic
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#expect_used
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> crates\ans-gateway\src\client.rs:18:5
+   |
+18 |     pub async fn connect() -> Result<Self, tonic::transport::Error> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: unused `self` argument
+  --> crates\ans-gateway\src\mcp.rs:38:26
+   |
+38 |     fn handle_initialize(&self, id: Option<Value>) -> Value {
+   |                          ^^^^^
+   |
+   = help: consider refactoring to an associated function
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unused_self
+   = note: `-W clippy::unused-self` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::unused_self)]`
+
+warning: unused `self` argument
+  --> crates\ans-gateway\src\mcp.rs:54:26
+   |
+54 |     fn handle_tools_list(&self, id: Option<Value>) -> Value {
+   |                          ^^^^^
+   |
+   = help: consider refactoring to an associated function
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unused_self
+
+warning: this function has too many lines (133/100)
+  --> crates\ans-gateway\src\mcp.rs:54:5
+   |
+54 |     fn handle_tools_list(&self, id: Option<Value>) -> Value {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#too_many_lines
+   = note: `-W clippy::too-many-lines` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::too_many_lines)]`
+
+warning: this could be rewritten as `let...else`
+   --> crates\ans-gateway\src\mcp.rs:192:9
+    |
+192 | /         let tool_name = match params.and_then(|p| p.get("name")).and_then(|n| n.as_str()) {
+193 | |             Some(name) => name,
+194 | |             None => return json_rpc_error(id, -32602, "Missing params.name"),
+195 | |         };
+    | |__________^ help: consider writing: `let Some(tool_name) = params.and_then(|p| p.get("name")).and_then(|n| n.as_str()) else { return json_rpc_error(id, -32602, "Missing params.name") };`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#manual_let_else
+    = note: `-W clippy::manual-let-else` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::manual_let_else)]`
+
+warning: function call inside of `unwrap_or`
+   --> crates\ans-gateway\src\mcp.rs:200:14
+    |
+200 |             .unwrap_or(json!({}));
+    |              ^^^^^^^^^^^^^^^^^^^^ help: try: `unwrap_or_else(|| json!({}))`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#or_fun_call
+    = note: `-W clippy::or-fun-call` implied by `-W clippy::nursery`
+    = help: to override `-W clippy::nursery` add `#[allow(clippy::or_fun_call)]`
+
+warning: temporary with significant `Drop` can be early dropped
+   --> crates\ans-gateway\src\mcp.rs:235:17
+    |
+231 |       async fn tool_create_session(&self, args: &Value) -> Result<String, String> {
+    |  _________________________________________________________________________________-
+232 | |         let goal_id = Self::str_arg(args, "goal_id").unwrap_or("");
+233 | |         let start_url = Self::str_arg(args, "start_url").unwrap_or("about:blank");
+234 | |
+235 | |         let mut client = self.client.clone_client();
+    | |                 ^^^^^^
+...   |
+254 | |         .unwrap_or_else(|e| format!("serialization error: {e}")))
+255 | |     }
+    | |_____- temporary `client` is currently being dropped at the end of its contained scope
+    |
+    = note: this might lead to unnecessary resource contention
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#significant_drop_tightening
+    = note: `-W clippy::significant-drop-tightening` implied by `-W clippy::nursery`
+    = help: to override `-W clippy::nursery` add `#[allow(clippy::significant_drop_tightening)]`
+help: merge the temporary construction with its single usage
+    |
+235 ~         
+236 +         let resp = self.client.clone_client().into_inner();
+237 |         let req = tonic::Request::new(ans_proto::ans::CreateSessionRequest {
+...
+242 |
+243 ~         
+    |
+
+warning: temporary with significant `Drop` can be early dropped
+   --> crates\ans-gateway\src\mcp.rs:261:17
+    |
+257 |       async fn tool_navigate(&self, args: &Value) -> Result<String, String> {
+    |  ___________________________________________________________________________-
+258 | |         let session_id = Self::str_arg(args, "session_id").ok_or("session_id required")?;
+259 | |         let url = Self::str_arg(args, "url").ok_or("url required")?;
+260 | |
+261 | |         let mut client = self.client.clone_client();
+    | |                 ^^^^^^
+...   |
+280 | |         .unwrap_or_else(|e| format!("serialization error: {e}")))
+281 | |     }
+    | |_____- temporary `client` is currently being dropped at the end of its contained scope
+    |
+    = note: this might lead to unnecessary resource contention
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#significant_drop_tightening
+help: merge the temporary construction with its single usage
+    |
+261 ~         
+262 +         let resp = self.client.clone_client().into_inner();
+263 |         let req = tonic::Request::new(ans_proto::ans::NavigateRequest {
+...
+268 |
+269 ~         
+    |
+
+warning: temporary with significant `Drop` can be early dropped
+   --> crates\ans-gateway\src\mcp.rs:289:17
+    |
+283 |       async fn tool_execute_action(&self, args: &Value) -> Result<String, String> {
+    |  _________________________________________________________________________________-
+284 | |         let session_id = Self::str_arg(args, "session_id").ok_or("session_id required")?;
+285 | |         let action_type = Self::str_arg(args, "action_type").ok_or("action_type required")?;
+286 | |         let selector = Self::str_arg(args, "selector").unwrap_or("");
+...   |
+289 | |         let mut client = self.client.clone_client();
+    | |                 ^^^^^^
+...   |
+311 | |         .unwrap_or_else(|e| format!("serialization error: {e}")))
+312 | |     }
+    | |_____- temporary `client` is currently being dropped at the end of its contained scope
+    |
+    = note: this might lead to unnecessary resource contention
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#significant_drop_tightening
+help: merge the temporary construction with its single usage
+    |
+289 ~         
+290 +         let resp = self.client.clone_client().into_inner();
+291 |         let req = tonic::Request::new(ans_proto::ans::ExecuteActionRequest {
+...
+300 |
+301 ~         
+    |
+
+warning: temporary with significant `Drop` can be early dropped
+   --> crates\ans-gateway\src\mcp.rs:361:17
+    |
+354 |       async fn tool_screenshot(&self, args: &Value) -> Result<String, String> {
+    |  _____________________________________________________________________________-
+355 | |         let session_id = Self::str_arg(args, "session_id").ok_or("session_id required")?;
+356 | |         let full_page = args
+357 | |             .get("full_page")
+...   |
+361 | |         let mut client = self.client.clone_client();
+    | |                 ^^^^^^
+...   |
+382 | |         .unwrap_or_else(|e| format!("serialization error: {e}")))
+383 | |     }
+    | |_____- temporary `client` is currently being dropped at the end of its contained scope
+    |
+    = note: this might lead to unnecessary resource contention
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#significant_drop_tightening
+help: merge the temporary construction with its single usage
+    |
+361 ~         
+362 +         let resp = self.client.clone_client().into_inner();
+363 |         let req = tonic::Request::new(ans_proto::ans::ScreenshotRequest {
+...
+370 |
+371 ~         
+    |
+
+warning: temporary with significant `Drop` can be early dropped
+   --> crates\ans-gateway\src\mcp.rs:389:17
+    |
+385 |       async fn tool_get_dom(&self, args: &Value) -> Result<String, String> {
+    |  __________________________________________________________________________-
+386 | |         let session_id = Self::str_arg(args, "session_id").ok_or("session_id required")?;
+387 | |         let mode = Self::str_arg(args, "mode").unwrap_or("input_fields");
+388 | |
+389 | |         let mut client = self.client.clone_client();
+    | |                 ^^^^^^
+...   |
+408 | |         .unwrap_or_else(|e| format!("serialization error: {e}")))
+409 | |     }
+    | |_____- temporary `client` is currently being dropped at the end of its contained scope
+    |
+    = note: this might lead to unnecessary resource contention
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#significant_drop_tightening
+help: merge the temporary construction with its single usage
+    |
+389 ~         
+390 +         let resp = self.client.clone_client().into_inner();
+391 |         let req = tonic::Request::new(ans_proto::ans::DomRequest {
+...
+395 |
+396 ~         
+    |
+
+warning: temporary with significant `Drop` can be early dropped
+   --> crates\ans-gateway\src\mcp.rs:414:17
+    |
+411 |       async fn tool_check_goal(&self, args: &Value) -> Result<String, String> {
+    |  _____________________________________________________________________________-
+412 | |         let goal_id = Self::str_arg(args, "goal_id").ok_or("goal_id required")?;
+413 | |
+414 | |         let mut client = self.client.clone_client();
+    | |                 ^^^^^^
+...   |
+433 | |         .unwrap_or_else(|e| format!("serialization error: {e}")))
+434 | |     }
+    | |_____- temporary `client` is currently being dropped at the end of its contained scope
+    |
+    = note: this might lead to unnecessary resource contention
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#significant_drop_tightening
+help: merge the temporary construction with its single usage
+    |
+414 ~         
+415 +         let resp = self.client.clone_client().into_inner();
+416 |         let req = tonic::Request::new(ans_proto::ans::GoalStateRequest {
+...
+419 |
+420 ~         
+    |
+
+warning: temporary with significant `Drop` can be early dropped
+   --> crates\ans-gateway\src\mcp.rs:449:17
+    |
+436 |       async fn tool_create_goal(&self, args: &Value) -> Result<String, String> {
+    |  ______________________________________________________________________________-
+437 | |         let description = Self::str_arg(args, "description").ok_or("description required")?;
+438 | |         let context_str = Self::str_arg(args, "context").unwrap_or("");
+439 | |         let max_steps = args
+...   |
+449 | |         let mut client = self.client.clone_client();
+    | |                 ^^^^^^
+...   |
+469 | |         .unwrap_or_else(|e| format!("serialization error: {e}")))
+470 | |     }
+    | |_____- temporary `client` is currently being dropped at the end of its contained scope
+    |
+    = note: this might lead to unnecessary resource contention
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#significant_drop_tightening
+help: merge the temporary construction with its single usage
+    |
+449 ~         
+450 +         let resp = self.client.clone_client().into_inner();
+451 |         let req = tonic::Request::new(ans_proto::ans::CreateGoalRequest {
+...
+457 |
+458 ~         
+    |
+
+warning: casting `i64` to `i32` may truncate the value
+   --> crates\ans-gateway\src\mcp.rs:439:25
+    |
+439 |           let max_steps = args
+    |  _________________________^
+440 | |             .get("max_steps")
+441 | |             .and_then(serde_json::Value::as_i64)
+442 | |             .unwrap_or(100) as i32;
+    | |__________________________________^
+    |
+    = help: if this is intentional allow the lint with `#[allow(clippy::cast_possible_truncation)]` ...
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_truncation
+    = note: `-W clippy::cast-possible-truncation` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::cast_possible_truncation)]`
+help: ... or use `try_from` and handle the error accordingly
+    |
+439 ~         let max_steps = i32::try_from(args
+440 +             .get("max_steps")
+441 +             .and_then(serde_json::Value::as_i64)
+442 ~             .unwrap_or(100));
+    |
+
+warning: this argument is passed by value, but not consumed in the function body
+   --> crates\ans-gateway\src\mcp.rs:475:47
+    |
+475 | fn json_rpc_result(id: Option<Value>, result: Value) -> Value {
+    |                                               ^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_pass_by_value
+    = note: `-W clippy::needless-pass-by-value` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::needless_pass_by_value)]`
+help: consider taking a reference instead
+    |
+475 | fn json_rpc_result(id: Option<Value>, result: &Value) -> Value {
+    |                                               +
+
+warning: casting `i64` to `i32` may truncate the value
+   --> crates\ans-gateway\src\rest.rs:223:25
+    |
+223 |           let max_steps = body
+    |  _________________________^
+224 | |             .get("max_steps")
+225 | |             .and_then(serde_json::Value::as_i64)
+226 | |             .unwrap_or(100) as i32;
+    | |__________________________________^
+    |
+    = help: if this is intentional allow the lint with `#[allow(clippy::cast_possible_truncation)]` ...
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_truncation
+help: ... or use `try_from` and handle the error accordingly
+    |
+223 ~         let max_steps = i32::try_from(body
+224 +             .get("max_steps")
+225 +             .and_then(serde_json::Value::as_i64)
+226 ~             .unwrap_or(100));
+    |
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> crates\ans-gateway\src\lib.rs:43:5
+   |
+43 |     pub async fn init() -> Result<Self, Box<dyn std::error::Error>> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: temporary with significant `Drop` can be early dropped
+   --> crates\ans-gateway\src\lib.rs:61:13
+    |
+ 59 |       pub fn router(&self) -> Router {
+    |  ____________________________________-
+ 60 | |         let mcp = self.mcp.clone();
+ 61 | |         let rest = self.rest.clone();
+    | |             ^^^^
+ 62 | |         let ws = self.ws.clone();
+...   |
+171 | |         router
+172 | |     }
+    | |_____- temporary `rest` is currently being dropped at the end of its contained scope
+    |
+    = note: this might lead to unnecessary resource contention
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#significant_drop_tightening
+help: drop the temporary after the end of its last usage
+    |
+163 ~                             let rest = rest;
+164 +                             drop(rest);
+    |
+
+warning: this function has too many lines (106/100)
+  --> crates\ans-gateway\src\lib.rs:59:5
+   |
+59 |     pub fn router(&self) -> Router {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#too_many_lines
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> crates\ans-gateway\src\lib.rs:176:5
+    |
+176 |     pub async fn serve(self, addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: unused `async` for function with no await statements
+  --> crates\ans-gateway\src\rest.rs:23:5
+   |
+23 | /     pub async fn health(&self) -> Json<Value> {
+24 | |         Json(json!({
+25 | |             "status": "ok",
+26 | |             "version": env!("CARGO_PKG_VERSION"),
+27 | |             "gateway": "ans-gateway"
+28 | |         }))
+29 | |     }
+   | |_____^
+   |
+   = help: consider removing the `async` from this function
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unused_async
+   = note: `-W clippy::unused-async` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::unused_async)]`
+
+warning: unused `async` for function with no await statements
+  --> crates\ans-gateway\src\ws.rs:43:5
+   |
+43 | /     pub async fn handle_upgrade(&self, ws: WebSocketUpgrade) -> impl IntoResponse {
+44 | |         let event_rx = self.event_tx.subscribe();
+45 | |         ws.on_upgrade(move |socket| handle_socket(socket, event_rx))
+46 | |     }
+   | |_____^
+   |
+   = help: consider removing the `async` from this function
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unused_async
+
+warning: `ans-cdp` (lib) generated 32 warnings (9 duplicates)
+warning: `ans-budget` (lib) generated 21 warnings (8 duplicates) (run `cargo clippy --fix --lib -p ans-budget -- ` to apply 2 suggestions)
+warning: `ans-signal` (lib) generated 13 warnings (8 duplicates)
+warning: `ans-gateway` (lib) generated 34 warnings (8 duplicates)
+warning: docs for function returning `Result` missing `# Errors` section
+  --> crates\ans-ipc\src\arrow_ipc.rs:31:5
+   |
+31 |     pub fn create() -> Result<Self, std::io::Error> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+   = note: `-W clippy::missing-errors-doc` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::missing_errors_doc)]`
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> crates\ans-ipc\src\arrow_ipc.rs:52:5
+   |
+52 |     pub fn write_batch(&self, batch: &RecordBatch) -> Result<(), arrow::error::ArrowError> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> crates\ans-ipc\src\arrow_ipc.rs:61:5
+   |
+61 |     pub fn read_batch(&self) -> Result<RecordBatch, arrow::error::ArrowError> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> crates\ans-ipc\src\server.rs:81:5
+   |
+81 |     pub async fn serve(self, addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: casting `u64` to `i64` may wrap around the value
+   --> crates\ans-ipc\src\server.rs:185:29
+    |
+185 |             dom_node_count: state.dom_node_count as i64,
+    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, use `cast_signed()` instead: `state.dom_node_count.cast_signed()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_wrap
+    = note: `-W clippy::cast-possible-wrap` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::cast_possible_wrap)]`
+
+warning: casting `u64` to `i64` may wrap around the value
+   --> crates\ans-ipc\src\server.rs:215:32
+    |
+215 |             execution_time_ms: outcome.execution_time_ms as i64,
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, use `cast_signed()` instead: `outcome.execution_time_ms.cast_signed()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_wrap
+
+warning: casting `i32` to `u8` may lose the sign of the value
+   --> crates\ans-ipc\src\server.rs:249:26
+    |
+249 |                 quality: req.quality.clamp(1, 100) as u8,
+    |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_sign_loss
+    = note: `-W clippy::cast-sign-loss` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::cast_sign_loss)]`
+
+warning: casting `usize` to `i64` may wrap around the value on targets with 64-bit wide pointers
+   --> crates\ans-ipc\src\server.rs:262:25
+    |
+262 |             size_bytes: bytes.len() as i64,
+    |                         ^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_wrap
+
+warning: casting `i32` to `u32` may lose the sign of the value
+   --> crates\ans-ipc\src\server.rs:337:57
+    |
+337 |             .create_goal(&req.description, req.context, req.max_steps as u32)
+    |                                                         ^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, use `cast_unsigned()` instead: `req.max_steps.cast_unsigned()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_sign_loss
+
+warning: casting `u128` to `i64` may truncate the value
+   --> crates\ans-ipc\src\server.rs:565:28
+    |
+565 |         let scan_time_us = start.elapsed().as_micros() as i64;
+    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: if this is intentional allow the lint with `#[allow(clippy::cast_possible_truncation)]` ...
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_truncation
+    = note: `-W clippy::cast-possible-truncation` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::cast_possible_truncation)]`
+help: ... or use `try_from` and handle the error accordingly
+    |
+565 -         let scan_time_us = start.elapsed().as_micros() as i64;
+565 +         let scan_time_us = i64::try_from(start.elapsed().as_micros());
+    |
+
+warning: casting `usize` to `i64` may wrap around the value on targets with 64-bit wide pointers
+   --> crates\ans-ipc\src\server.rs:617:28
+    |
+617 |             total_records: total as i64,
+    |                            ^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_wrap
+
+warning: casting `i32` to `usize` may lose the sign of the value
+   --> crates\ans-ipc\src\server.rs:626:17
+    |
+626 |         let k = req.k.clamp(1, 100) as usize;
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_sign_loss
+
+warning: casting `i32` to `usize` may lose the sign of the value
+   --> crates\ans-ipc\src\server.rs:651:17
+    |
+651 |         let k = req.k.clamp(1, 100) as usize;
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_sign_loss
+
+warning: temporary with significant `Drop` can be early dropped
+   --> crates\ans-ipc\src\server.rs:678:13
+    |
+676 |       ) -> Result<Response<BudgetStatus>, Status> {
+    |  _________________________________________________-
+677 | |         let req = request.into_inner();
+678 | |         let tracker = self.budget.lock().await;
+    | |             ^^^^^^^
+679 | |         let status = tracker.status();
+...   |
+683 | |         ))
+684 | |     }
+    | |_____- temporary `tracker` is currently being dropped at the end of its contained scope
+    |
+    = note: this might lead to unnecessary resource contention
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#significant_drop_tightening
+    = note: `-W clippy::significant-drop-tightening` implied by `-W clippy::nursery`
+    = help: to override `-W clippy::nursery` add `#[allow(clippy::significant_drop_tightening)]`
+help: merge the temporary construction with its single usage
+    |
+678 ~         
+679 +         let status = self.budget.lock().await.status();
+680 ~         
+    |
+
+warning: temporary with significant `Drop` can be early dropped
+   --> crates\ans-ipc\src\server.rs:698:13
+    |
+689 |       ) -> Result<Response<BudgetConfig>, Status> {
+    |  _________________________________________________-
+690 | |         let req = request.into_inner();
+691 | |         let config = ans_budget::serialization::proto_to_budget_config(&req);
+...   |
+698 | |         let tracker = self.budget.lock().await;
+    | |             ^^^^^^^
+...   |
+701 | |         Ok(Response::new(proto_config))
+702 | |     }
+    | |_____- temporary `tracker` is currently being dropped at the end of its contained scope
+    |
+    = note: this might lead to unnecessary resource contention
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#significant_drop_tightening
+help: drop the temporary after the end of its last usage
+    |
+699 ~         let proto_config = ans_budget::serialization::budget_config_to_proto(tracker.config());
+700 +         drop(tracker);
+    |
+
+warning: casting `usize` to `i32` may truncate the value on targets with 64-bit wide pointers
+   --> crates\ans-ipc\src\server.rs:710:30
+    |
+710 |             active_sessions: self.sessions.session_count() as i32,
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: if this is intentional allow the lint with `#[allow(clippy::cast_possible_truncation)]` ...
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_truncation
+help: ... or use `try_from` and handle the error accordingly
+    |
+710 -             active_sessions: self.sessions.session_count() as i32,
+710 +             active_sessions: i32::try_from(self.sessions.session_count()),
+    |
+
+warning: casting `usize` to `i32` may wrap around the value on targets with 32-bit wide pointers
+   --> crates\ans-ipc\src\server.rs:710:30
+    |
+710 |             active_sessions: self.sessions.session_count() as i32,
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_wrap
+
+warning: this argument (1 byte) is passed by reference, but would be more efficient if passed by value (limit: 8 byte)
+   --> crates\ans-ipc\src\server.rs:789:30
+    |
+789 | fn goal_status_event(status: &ans_core::goal::GoalStatus) -> String {
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider passing by value instead: `ans_core::goal::GoalStatus`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#trivially_copy_pass_by_ref
+    = note: `-W clippy::trivially-copy-pass-by-ref` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::trivially_copy_pass_by_ref)]`
+
+warning: casting `i32` to `u32` may lose the sign of the value
+   --> crates\ans-ipc\src\server.rs:864:26
+    |
+864 |             max_retries: e.max_retries as u32,
+    |                          ^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, use `cast_unsigned()` instead: `e.max_retries.cast_unsigned()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_sign_loss
+
+warning: it is more idiomatic to use `Option<&T>` instead of `&Option<T>`
+   --> crates\ans-ipc\src\server.rs:879:1
+    |
+879 | / fn format_eye_content(content: &Option<ans_proto::ans::eye_report::Content>) -> String {
+880 | |     use ans_proto::ans::eye_report::Content;
+881 | |     match content {
+882 | |         Some(Content::Dom(dom)) => {
+...   |
+915 | | }
+    | |_^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#ref_option
+    = note: `-W clippy::ref-option` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::ref_option)]`
+help: change this to
+    |
+879 - fn format_eye_content(content: &Option<ans_proto::ans::eye_report::Content>) -> String {
+879 + fn format_eye_content(content: Option<&ans_proto::ans::eye_report::Content>) -> String {
+    |
+
+warning: casting `usize` to `i32` may truncate the value on targets with 64-bit wide pointers
+   --> crates\ans-ipc\src\server.rs:885:48
+    |
+885 |                 dom.dom.as_ref().map_or(0, |d| d.elements.len() as i32),
+    |                                                ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: if this is intentional allow the lint with `#[allow(clippy::cast_possible_truncation)]` ...
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_truncation
+help: ... or use `try_from` and handle the error accordingly
+    |
+885 -                 dom.dom.as_ref().map_or(0, |d| d.elements.len() as i32),
+885 +                 dom.dom.as_ref().map_or(0, |d| i32::try_from(d.elements.len())),
+    |
+
+warning: casting `usize` to `i32` may wrap around the value on targets with 32-bit wide pointers
+   --> crates\ans-ipc\src\server.rs:885:48
+    |
+885 |                 dom.dom.as_ref().map_or(0, |d| d.elements.len() as i32),
+    |                                                ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_wrap
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> crates\ans-ipc\src\session.rs:53:5
+   |
+53 | /     pub async fn create(
+54 | |         &self,
+55 | |         goal_id: Uuid,
+56 | |         start_url: Option<String>,
+57 | |     ) -> Result<Uuid, BrowserError> {
+   | |___________________________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: docs for function returning `Result` missing `# Errors` section
+  --> crates\ans-ipc\src\session.rs:86:5
+   |
+86 |     pub async fn close(&self, session_id: Uuid) -> Result<(), BrowserError> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: temporary with significant `Drop` in `if let` scrutinee will live until the end of the `if let` expression
+  --> crates\ans-ipc\src\session.rs:88:31
+   |
+88 |         if let Some(handle) = self.sessions.write().await.remove(&session_id) {
+   |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+89 |             handle.backend.close().await?;
+90 |         }
+   |          - temporary lives until here
+   |
+   = note: this might lead to deadlocks or other unexpected behavior
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#significant_drop_in_scrutinee
+   = note: `-W clippy::significant-drop-in-scrutinee` implied by `-W clippy::nursery`
+   = help: to override `-W clippy::nursery` add `#[allow(clippy::significant_drop_in_scrutinee)]`
+help: try moving the temporary above the match
+   |
+88 ~         let value = self.sessions.write().await.remove(&session_id);
+89 ~         if let Some(handle) = value {
+   |
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> crates\ans-ipc\src\session.rs:104:5
+    |
+104 | /     pub async fn execute_action(
+105 | |         &self,
+106 | |         session_id: Uuid,
+107 | |         action: &Action,
+108 | |     ) -> Result<ActionOutcome, BrowserError> {
+    | |____________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: this function has too many lines (103/100)
+   --> crates\ans-ipc\src\session.rs:104:5
+    |
+104 | /     pub async fn execute_action(
+105 | |         &self,
+106 | |         session_id: Uuid,
+107 | |         action: &Action,
+108 | |     ) -> Result<ActionOutcome, BrowserError> {
+    | |____________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#too_many_lines
+    = note: `-W clippy::too-many-lines` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::too_many_lines)]`
+
+warning: temporary with significant `Drop` can be early dropped
+   --> crates\ans-ipc\src\session.rs:109:13
+    |
+108 |       ) -> Result<ActionOutcome, BrowserError> {
+    |  ______________________________________________-
+109 | |         let sessions = self.sessions.read().await;
+    | |             ^^^^^^^^
+110 | |         let handle = sessions
+111 | |             .get(&session_id)
+...   |
+213 | |         Ok(outcome)
+214 | |     }
+    | |_____- temporary `sessions` is currently being dropped at the end of its contained scope
+    |
+    = note: this might lead to unnecessary resource contention
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#significant_drop_tightening
+help: drop the temporary after the end of its last usage
+    |
+112 ~             .ok_or(BrowserError::BrowserClosed)?;
+113 +         drop(sessions);
+    |
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> crates\ans-ipc\src\session.rs:217:5
+    |
+217 |     pub async fn navigate(&self, session_id: Uuid, url: &str) -> Result<PageState, BrowserError> {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: temporary with significant `Drop` can be early dropped
+   --> crates\ans-ipc\src\session.rs:218:13
+    |
+217 |       pub async fn navigate(&self, session_id: Uuid, url: &str) -> Result<PageState, BrowserError> {
+    |  __________________________________________________________________________________________________-
+218 | |         let sessions = self.sessions.read().await;
+    | |             ^^^^^^^^
+219 | |         let handle = sessions
+220 | |             .get(&session_id)
+...   |
+223 | |         handle.backend.navigate(url, Duration::from_secs(30)).await
+224 | |     }
+    | |_____- temporary `sessions` is currently being dropped at the end of its contained scope
+    |
+    = note: this might lead to unnecessary resource contention
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#significant_drop_tightening
+help: drop the temporary after the end of its last usage
+    |
+221 ~             .ok_or(BrowserError::BrowserClosed)?;
+222 +         drop(sessions);
+    |
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> crates\ans-ipc\src\session.rs:227:5
+    |
+227 | /     pub async fn get_distilled_dom(
+228 | |         &self,
+229 | |         session_id: Uuid,
+230 | |         mode: DistillMode,
+231 | |     ) -> Result<DistilledPage, BrowserError> {
+    | |____________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: temporary with significant `Drop` can be early dropped
+   --> crates\ans-ipc\src\session.rs:232:13
+    |
+231 |       ) -> Result<DistilledPage, BrowserError> {
+    |  ______________________________________________-
+232 | |         let sessions = self.sessions.read().await;
+    | |             ^^^^^^^^
+233 | |         let handle = sessions
+234 | |             .get(&session_id)
+235 | |             .ok_or(BrowserError::BrowserClosed)?;
+236 | |         handle.backend.get_distilled_dom(mode).await
+237 | |     }
+    | |_____- temporary `sessions` is currently being dropped at the end of its contained scope
+    |
+    = note: this might lead to unnecessary resource contention
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#significant_drop_tightening
+help: drop the temporary after the end of its last usage
+    |
+235 ~             .ok_or(BrowserError::BrowserClosed)?;
+236 +         drop(sessions);
+    |
+
+warning: docs for function returning `Result` missing `# Errors` section
+   --> crates\ans-ipc\src\session.rs:240:5
+    |
+240 | /     pub async fn capture_screenshot(
+241 | |         &self,
+242 | |         session_id: Uuid,
+243 | |         format: ImageFormat,
+244 | |         full_page: bool,
+245 | |     ) -> Result<Vec<u8>, BrowserError> {
+    | |______________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_errors_doc
+
+warning: temporary with significant `Drop` can be early dropped
+   --> crates\ans-ipc\src\session.rs:246:13
+    |
+245 |       ) -> Result<Vec<u8>, BrowserError> {
+    |  ________________________________________-
+246 | |         let sessions = self.sessions.read().await;
+    | |             ^^^^^^^^
+247 | |         let handle = sessions
+248 | |             .get(&session_id)
+249 | |             .ok_or(BrowserError::BrowserClosed)?;
+250 | |         handle.backend.capture_screenshot(format, full_page).await
+251 | |     }
+    | |_____- temporary `sessions` is currently being dropped at the end of its contained scope
+    |
+    = note: this might lead to unnecessary resource contention
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#significant_drop_tightening
+help: drop the temporary after the end of its last usage
+    |
+249 ~             .ok_or(BrowserError::BrowserClosed)?;
+250 +         drop(sessions);
+    |
+
+warning: `ans-ipc` (lib) generated 48 warnings (14 duplicates)
+warning: multiple versions for dependency `tower-http`: 0.5.2, 0.6.11
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#multiple_crate_versions
+
+warning: used `expect()` on a `Result` value
+  --> crates\ans-daemon\src\main.rs:35:5
+   |
+35 |     color_eyre::install().expect("failed to install color-eyre panic handler");
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: if this value is an `Err`, it will panic
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#expect_used
+   = note: requested on the command line with `-W clippy::expect-used`
+
+warning: `ans-daemon` (bin "ans-daemon") generated 16 warnings (14 duplicates)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.38s

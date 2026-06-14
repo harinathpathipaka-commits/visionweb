@@ -1,0 +1,9 @@
+{
+  "id": "15",
+  "subject": "Phase 6-7: Database + SaaS Connectors",
+  "description": "Create connectors/ directory: base abstract class, Postgres, MySQL, schema interpreter, sync engine, and SaaS connectors (Stripe, Salesforce, HubSpot)",
+  "activeForm": "Building database and SaaS connectors",
+  "status": "completed",
+  "blocks": [],
+  "blockedBy": []
+}

@@ -1,0 +1,48 @@
+from __future__ import annotations
+
+import pytest
+from unittest.mock import patch
+
+from src.logging_setup import get_logger, set_correlation_id, get_correlation_id, elapsed_ms, start_request_timer
+
+
+class TestCorrelationId:
+    def test_set_and_get(self):
+        cid = set_correlation_id("abc123")
+        assert cid == "abc123"
+        assert get_correlation_id() == "abc123"
+
+    def test_auto_generated(self):
+        cid = set_correlation_id()
+        assert len(cid) == 12
+        assert get_correlation_id() == cid
+
+
+class TestLogger:
+    def test_get_logger_returns_logger(self):
+        log = get_logger("test")
+        assert log is not None
+
+    def test_logger_emits(self):
+        log = get_logger("test")
+        records: list = []
+        capture = type("_H", (object,), {"emit": lambda self, r: records.append(r)})()
+        from logging import Handler
+        class _CaptureHandler(Handler):
+            def emit(self, record):
+                records.append(record)
+        handler = _CaptureHandler()
+        log.addHandler(handler)
+        with patch("src.logging_setup.LOG_FORMAT", "text"):
+            set_correlation_id("test-123")
+            log.warning("test_message")
+        log.removeHandler(handler)
+        assert any("test_message" in r.getMessage() for r in records)
+
+
+class TestElapsed:
+    def test_elapsed_returns_float(self):
+        start_request_timer()
+        ms = elapsed_ms()
+        assert isinstance(ms, float)
+        assert ms >= 0.0

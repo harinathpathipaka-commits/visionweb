@@ -1,0 +1,272 @@
+from __future__ import annotations
+
+import json
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+from fastapi import FastAPI, File, Header, HTTPException, Query, Request, UploadFile
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+
+from .cache import ValkeyCache, ValkeyQueue
+from .ingestion import build_observations, detect_delimiter, profile_csv
+from .ingestion_api import run_ingestion
+from .models import SolveResult
+from .pipeline import solve
+from .storage import init_storage
+
+
+app = FastAPI(
+    title="Equation Layer API",
+    description="Quantitative reasoning infrastructure for AI agents",
+    version="1.0.0",
+)
+
+cache = ValkeyCache()
+queue = ValkeyQueue()
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+# ── Pydantic models ──────────────────────────────────────────────────────────
+
+class SolveRequest(BaseModel):
+    query: str
+    x_values: List[float] = Field(min_length=1)
+    y_values: List[float] = Field(min_length=1)
+    x_historical: Optional[List[float]] = None
+    y_historical: Optional[List[float]] = None
+
+
+class SolveResponse(BaseModel):
+    trace_id: str
+    equation_family: str
+    sympy_expr: str
+    parameters: Dict[str, float]
+    answer: float
+    unit: str
+    uncertainty_std: float
+    ci_95_lower: float
+    ci_95_upper: float
+    r2_adj: float
+    gate_passed: bool
+    prose: str
+
+
+class EquationDetail(BaseModel):
+    equation_id: int
+    domain: str
+    family: str
+    sympy_expr: str
+    parameters: Dict[str, float]
+    r2_adj: float
+    holdout_mape: float
+    aic: float
+    n_obs: int
+    drift_status: str
+    confidence_level: str
+    active_version_id: Optional[int]
+    active_from: Optional[str]
+
+
+class EquationVersion(BaseModel):
+    version_id: int
+    form_family: str
+    sympy_ast: str
+    parameters: Dict[str, float]
+    r2_adj: float
+    holdout_mape: float
+    aic: float
+    n_obs: int
+    created_at: str
+    source: str
+    shadow_status: str
+
+
+class IngestionResponse(BaseModel):
+    job_id: int
+    file_id: int
+    status: str
+    total_rows: int
+    observations_created: int
+    issues_count: int
+
+
+class HealthResponse(BaseModel):
+    status: str
+    version: str
+    components: Dict[str, str]
+    timestamp: str
+
+
+class LedgerEvent(BaseModel):
+    event_type: str
+    payload: str
+    created_at: str
+
+
+# ── Endpoints ────────────────────────────────────────────────────────────────
+
+@app.get("/v1/health", response_model=HealthResponse)
+async def health():
+    return HealthResponse(
+        status="healthy",
+        version="1.0.0",
+        components={
+            "cache": "available" if cache.available else "fallback",
+            "queue": "available" if queue._client else "fallback",
+            "db": "available",
+        },
+        timestamp=_now(),
+    )
+
+
+@app.post("/v1/solve", response_model=SolveResponse)
+async def solve_endpoint(
+    body: SolveRequest,
+    request: Request,
+    x_idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+):
+    if len(body.x_values) != len(body.y_values):
+        raise HTTPException(400, "x_values and y_values must have same length")
+
+    db_path = _get_db_path()
+    init_storage(db_path)
+
+    result: SolveResult = solve(
+        query=body.query,
+        x_values=body.x_values,
+        y_values=body.y_values,
+        db_path=db_path,
+        llm_client=None,
+        x_historical=body.x_historical,
+        y_historical=body.y_historical,
+    )
+
+    from .formatter import format_output
+    prose = format_output(result)
+
+    return SolveResponse(
+        trace_id=result.trace_id,
+        equation_family=result.equation.family,
+        sympy_expr=result.equation.sympy_expr,
+        parameters=result.equation.parameters,
+        answer=result.compute.answer,
+        unit="",
+        uncertainty_std=round(result.probabilistic.std, 6),
+        ci_95_lower=round(result.probabilistic.ci_95[0], 6),
+        ci_95_upper=round(result.probabilistic.ci_95[1], 6),
+        r2_adj=round(result.equation.stats.r2_adj, 6),
+        gate_passed=result.gate.passed,
+        prose=prose,
+    )
+
+
+@app.post("/v1/ingest", response_model=IngestionResponse)
+async def ingest_endpoint(file: UploadFile = File(...)):
+    if not file.filename:
+        raise HTTPException(400, "No file provided")
+
+    content = await file.read()
+    content_type = file.content_type or "text/csv"
+    db_path = _get_db_path()
+    init_storage(db_path)
+
+    job = run_ingestion(db_path, file.filename, content_type, content)
+    queue.enqueue_ingestion(job.file_id)
+
+    return IngestionResponse(
+        job_id=job.job_id,
+        file_id=job.file_id,
+        status=job.status,
+        total_rows=job.total_rows,
+        observations_created=job.observations_created,
+        issues_count=job.issues_count,
+    )
+
+
+@app.get("/v1/equations/{equation_id}", response_model=EquationDetail)
+async def get_equation(equation_id: int):
+    import sqlite3
+    db_path = _get_db_path()
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            """SELECT e.*, ev.stats_json
+               FROM equation_library e
+               LEFT JOIN equation_versions ev ON e.active_version_id = ev.version_id
+               WHERE e.equation_id = ?""",
+            (equation_id,),
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, f"Equation {equation_id} not found")
+
+    stats = json.loads(row["stats_json"] or "{}")
+    return EquationDetail(
+        equation_id=row["equation_id"],
+        domain=row["domain"],
+        family=row["form_family"],
+        sympy_expr=row["sympy_ast"],
+        parameters=json.loads(row["parameters_json"] or "{}"),
+        r2_adj=float(stats.get("r2_adj", 0)),
+        holdout_mape=float(stats.get("holdout_mape", 0)),
+        aic=float(stats.get("aic", 0)),
+        n_obs=row["n_obs"],
+        drift_status=row["drift_status"],
+        confidence_level=row["confidence_level"],
+        active_version_id=row["active_version_id"],
+        active_from=row["active_from"],
+    )
+
+
+@app.get("/v1/equations/{equation_id}/versions", response_model=List[EquationVersion])
+async def get_equation_versions(equation_id: int):
+    import sqlite3
+    db_path = _get_db_path()
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT * FROM equation_versions WHERE equation_id = ? ORDER BY created_at DESC",
+            (equation_id,),
+        ).fetchall()
+
+    result: List[EquationVersion] = []
+    for r in rows:
+        stats = json.loads(r["stats_json"] or "{}")
+        result.append(EquationVersion(
+            version_id=r["version_id"],
+            form_family=r["form_family"],
+            sympy_ast=r["sympy_ast"],
+            parameters=json.loads(r["parameters_json"] or "{}"),
+            r2_adj=float(stats.get("r2_adj", 0)),
+            holdout_mape=float(stats.get("holdout_mape", 0)),
+            aic=float(stats.get("aic", 0)),
+            n_obs=r["n_obs"],
+            created_at=r["created_at"],
+            source=r["source"],
+            shadow_status=r["shadow_status"],
+        ))
+    return result
+
+
+@app.get("/v1/ledger/{trace_id}", response_model=List[LedgerEvent])
+async def get_ledger(trace_id: str):
+    import sqlite3
+    db_path = _get_db_path()
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT event_type, payload, created_at FROM epistemic_ledger WHERE trace_id = ? ORDER BY event_id",
+            (trace_id,),
+        ).fetchall()
+    return [LedgerEvent(event_type=r["event_type"], payload=r["payload"], created_at=r["created_at"]) for r in rows]
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _get_db_path() -> str:
+    import os
+    return os.environ.get("EL_DB_PATH", ".el_data.db")

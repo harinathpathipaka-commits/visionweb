@@ -1,0 +1,176 @@
+//! Budget tracker — per-goal and global (per-API-key) spend tracking.
+//!
+//! Before any LLM/Vision API call, the tracker:
+//! 1. Checks remaining budget → updates circuit breaker mode
+//! 2. If mode disallows the call → returns cached/fallback response
+//! 3. If allowed → tracks actual token usage from API response
+//! 4. Updates spend counters
+
+use crate::circuit_breaker::CircuitBreaker;
+use ans_core::budget::BudgetMode;
+
+/// Global budget configuration.
+#[derive(Debug, Clone)]
+pub struct BudgetConfig {
+    pub default_per_goal_cents: u32,
+    pub daily_spend_limit_cents: u32,
+    pub normal_threshold_pct: f32,
+    pub conservative_threshold_pct: f32,
+    pub critical_threshold_pct: f32,
+}
+
+impl Default for BudgetConfig {
+    fn default() -> Self {
+        Self {
+            default_per_goal_cents: 500,
+            daily_spend_limit_cents: 5000,
+            normal_threshold_pct: 20.0,
+            conservative_threshold_pct: 10.0,
+            critical_threshold_pct: 5.0,
+        }
+    }
+}
+
+/// Thread-safe global budget tracker.
+///
+/// Tracks spend across all goals for a single API key. Circuit breaker
+/// tightens as daily budget is consumed. Per-goal trackers are created
+/// on demand with their own budget caps.
+pub struct BudgetTracker {
+    config: BudgetConfig,
+    breaker: CircuitBreaker,
+    /// Total spent today across all goals.
+    daily_spent_cents: u32,
+    /// Total spent since tracker creation.
+    total_spent_cents: u32,
+}
+
+impl BudgetTracker {
+    pub fn new(config: BudgetConfig) -> Self {
+        Self {
+            config,
+            breaker: CircuitBreaker::new(),
+            daily_spent_cents: 0,
+            total_spent_cents: 0,
+        }
+    }
+
+    /// Current budget mode based on daily spend vs daily limit.
+    pub fn mode(&self) -> BudgetMode {
+        self.breaker.current_mode()
+    }
+
+    /// Remaining daily budget percentage.
+    pub fn remaining_pct(&self) -> f32 {
+        if self.config.daily_spend_limit_cents == 0 {
+            return 0.0;
+        }
+        let remaining = self
+            .config
+            .daily_spend_limit_cents
+            .saturating_sub(self.daily_spent_cents);
+        (remaining as f32 / self.config.daily_spend_limit_cents as f32) * 100.0
+    }
+
+    /// Track spend against the daily budget. Updates circuit breaker.
+    pub fn track_spend(&mut self, cost_cents: u32) {
+        self.daily_spent_cents = self.daily_spent_cents.saturating_add(cost_cents);
+        self.total_spent_cents = self.total_spent_cents.saturating_add(cost_cents);
+        self.breaker.update(self.remaining_pct());
+    }
+
+    /// Get the full budget status snapshot.
+    pub fn status(&self) -> BudgetStatus {
+        BudgetStatus {
+            mode: self.mode(),
+            budget_cents: self.config.daily_spend_limit_cents,
+            spent_cents: self.total_spent_cents,
+            remaining_pct: self.remaining_pct(),
+            daily_spend_limit_cents: self.config.daily_spend_limit_cents,
+            daily_spent_cents: self.daily_spent_cents,
+        }
+    }
+
+    /// Update the budget configuration. Resets circuit breaker
+    /// if the daily limit was increased.
+    pub fn configure(&mut self, config: BudgetConfig) {
+        let limit_increased = config.daily_spend_limit_cents > self.config.daily_spend_limit_cents;
+        self.config = config;
+        if limit_increased {
+            self.breaker = CircuitBreaker::new();
+            self.breaker.update(self.remaining_pct());
+        }
+    }
+
+    /// Current config, for serialization.
+    pub fn config(&self) -> &BudgetConfig {
+        &self.config
+    }
+}
+
+/// Snapshot of budget state.
+#[derive(Debug, Clone)]
+pub struct BudgetStatus {
+    pub mode: BudgetMode,
+    pub budget_cents: u32,
+    pub spent_cents: u32,
+    pub remaining_pct: f32,
+    pub daily_spend_limit_cents: u32,
+    pub daily_spent_cents: u32,
+}
+
+impl Default for BudgetTracker {
+    fn default() -> Self {
+        Self::new(BudgetConfig::default())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normal_mode_at_full_budget() {
+        let tracker = BudgetTracker::new(BudgetConfig::default());
+        assert_eq!(tracker.mode(), BudgetMode::Normal);
+        assert!(tracker.remaining_pct() > 90.0);
+    }
+
+    #[test]
+    fn test_mode_transitions_on_spend() {
+        let config = BudgetConfig {
+            daily_spend_limit_cents: 100,
+            ..Default::default()
+        };
+        let mut tracker = BudgetTracker::new(config);
+
+        // Spend 88 → 12% remaining → Conservative (10-20%)
+        tracker.track_spend(88);
+        assert_eq!(tracker.mode(), BudgetMode::Conservative);
+
+        // Spend 96 → 4% remaining → Emergency (<5%)
+        tracker.track_spend(96);
+        assert_eq!(tracker.mode(), BudgetMode::Emergency);
+    }
+
+    #[test]
+    fn test_configure_resets_on_limit_increase() {
+        let mut tracker = BudgetTracker::new(BudgetConfig::default());
+        tracker.track_spend(4900); // almost all of 5000
+        assert_eq!(tracker.mode(), BudgetMode::Emergency);
+
+        tracker.configure(BudgetConfig {
+            daily_spend_limit_cents: 10000,
+            ..Default::default()
+        });
+        assert_eq!(tracker.mode(), BudgetMode::Normal);
+    }
+
+    #[test]
+    fn test_status_snapshot() {
+        let tracker = BudgetTracker::new(BudgetConfig::default());
+        let status = tracker.status();
+        assert_eq!(status.mode, BudgetMode::Normal);
+        assert_eq!(status.spent_cents, 0);
+    }
+}

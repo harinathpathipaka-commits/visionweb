@@ -1,0 +1,17 @@
+[package]
+name = "ans-signal"
+version.workspace = true
+edition.workspace = true
+description = "Signal router — relevance scoring, noise suppression, cross-eye synthesis"
+
+[dependencies]
+ans-proto.workspace = true
+ans-core.workspace = true
+tokio.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+
+[lints]
+workspace = true

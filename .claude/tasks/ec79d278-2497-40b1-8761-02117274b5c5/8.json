@@ -1,0 +1,8 @@
+{
+  "id": "8",
+  "subject": "Phase 9: Temporal Alignment Engine",
+  "description": "Build temporal_alignment.py with frequency detection, alignment, resampling.",
+  "status": "completed",
+  "blocks": [],
+  "blockedBy": []
+}

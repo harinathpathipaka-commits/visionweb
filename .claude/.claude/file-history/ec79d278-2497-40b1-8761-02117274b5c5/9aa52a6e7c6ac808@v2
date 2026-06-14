@@ -1,0 +1,103 @@
+{
+  "domain": "finance.saas.smb",
+  "variables": {
+    "mrr": {
+      "unit": "USD",
+      "aliases": ["monthly recurring revenue", "subscription revenue", "recurring revenue"],
+      "typical_range": [0, 10000000],
+      "temporal_granularity": "monthly"
+    },
+    "arr": {
+      "unit": "USD",
+      "aliases": ["annual recurring revenue", "annual run rate", "yearly revenue"],
+      "typical_range": [0, 120000000],
+      "temporal_granularity": "monthly"
+    },
+    "churn": {
+      "unit": "percentage",
+      "aliases": ["churn rate", "attrition", "customer churn", "logo churn", "revenue churn"],
+      "typical_range": [0, 100],
+      "temporal_granularity": "monthly"
+    },
+    "cac": {
+      "unit": "USD",
+      "aliases": ["customer acquisition cost", "acquisition cost", "cost per customer"],
+      "typical_range": [0, 100000],
+      "temporal_granularity": "monthly"
+    },
+    "ltv": {
+      "unit": "USD",
+      "aliases": ["lifetime value", "customer lifetime value", "clv", "ltv"],
+      "typical_range": [0, 1000000],
+      "temporal_granularity": "monthly"
+    },
+    "arpu": {
+      "unit": "USD",
+      "aliases": ["average revenue per user", "average revenue per account", "revenue per user"],
+      "typical_range": [0, 100000],
+      "temporal_granularity": "monthly"
+    },
+    "customers": {
+      "unit": "count",
+      "aliases": ["accounts", "clients", "logos", "subscribers", "users"],
+      "typical_range": [0, 1000000],
+      "temporal_granularity": "monthly"
+    },
+    "growth": {
+      "unit": "percentage",
+      "aliases": ["growth rate", "mrr growth", "revenue growth", "yoy growth"],
+      "typical_range": [-100, 1000],
+      "temporal_granularity": "monthly"
+    },
+    "margin": {
+      "unit": "percentage",
+      "aliases": ["gross margin", "profit margin", "operating margin", "net margin"],
+      "typical_range": [0, 100],
+      "temporal_granularity": "quarterly"
+    },
+    "burn": {
+      "unit": "USD",
+      "aliases": ["burn rate", "cash burn", "monthly burn", "net burn"],
+      "typical_range": [0, 10000000],
+      "temporal_granularity": "monthly"
+    },
+    "runway": {
+      "unit": "months",
+      "aliases": ["cash runway", "months of runway"],
+      "typical_range": [0, 60],
+      "temporal_granularity": "monthly"
+    },
+    "pipeline": {
+      "unit": "USD",
+      "aliases": ["sales pipeline", "qualified pipeline", "pipeline value"],
+      "typical_range": [0, 100000000],
+      "temporal_granularity": "quarterly"
+    },
+    "conversion": {
+      "unit": "percentage",
+      "aliases": ["conversion rate", "win rate", "trial conversion", "lead conversion"],
+      "typical_range": [0, 100],
+      "temporal_granularity": "monthly"
+    },
+    "expansion": {
+      "unit": "percentage",
+      "aliases": ["expansion revenue", "expansion mrr", "net revenue retention", "ndr"],
+      "typical_range": [0, 200],
+      "temporal_granularity": "monthly"
+    }
+  },
+  "constraints": {
+    "elasticity_signs": {
+      "price": "negative",
+      "cac": "negative",
+      "churn": "negative"
+    }
+  },
+  "common_relationships": [
+    {"independent": "customers", "dependent": "mrr", "expected_form": "linear"},
+    {"independent": "cac", "dependent": "customers", "expected_form": "inverse_power"},
+    {"independent": "churn", "dependent": "ltv", "expected_form": "inverse"},
+    {"independent": "arpu", "dependent": "ltv", "expected_form": "linear"},
+    {"independent": "mrr", "dependent": "arr", "expected_form": "linear"}
+  ]
+}

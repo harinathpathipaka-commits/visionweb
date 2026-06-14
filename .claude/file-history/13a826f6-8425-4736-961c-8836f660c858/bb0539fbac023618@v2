@@ -1,0 +1,68 @@
+# ────────────────────────────────────────────────────────────
+# Agent Nervous System — Configuration
+# Version: 0.1.0 (Phase 0)
+# ────────────────────────────────────────────────────────────
+
+[daemon]
+log_level = "info"               # trace, debug, info, warn, error
+log_format = "json"              # json or pretty
+data_dir = "~/.ans"
+arrow_shm_dir = "auto"           # auto = platform-detected
+
+[gateway]
+mcp_enabled = true
+rest_enabled = true
+websocket_enabled = true
+port = 50052                     # External API (MCP + REST + WebSocket)
+
+[gateway.auth]
+api_keys_file = "~/.ans/api_keys.json"
+rate_limit_per_minute = 60
+max_concurrent_sessions_per_key = 5
+
+[ipc]
+grpc_port = 50051                # Internal gRPC (loopback only)
+grpc_host = "127.0.0.1"
+
+[chromium]
+executable = "auto"              # auto-detect from PATH
+headless = true
+pool_size = 4
+max_sessions_per_instance = 1
+
+[immune]
+heuristic_rules_path = "~/.ans/rules/"
+classification_timeout_ms = 10   # combined distraction + injection scan
+# wasm_model_path = "~/.ans/models/immune.wasm"  # v2 only
+
+[injection]
+enabled = true
+boundary_markers = "strict"      # strict = wrap ALL external content
+hidden_content_scan = true
+instruction_patterns_file = "~/.ans/rules/injection_patterns.toml"
+obfuscation_detect = true
+min_score_to_sanitize = 0.7
+min_score_to_block = 0.9
+
+[budget]
+default_per_goal_cents = 500     # $5.00
+daily_api_key_spend_limit_cents = 50000  # $500/day
+
+[budget.circuit_breaker]
+normal_threshold_pct = 20
+conservative_threshold_pct = 10
+critical_threshold_pct = 5
+emergency_threshold_pct = 0
+
+[storage]
+lance_db_path = "~/.ans/decisions.lance"
+embedding_dim = 768
+vector_index_type = "auto"       # brute-force < 100K, IVF_PQ >= 100K
+embedding_model = "all-MiniLM-L6-v2"  # 384-dim alternative
+snapshot_interval_secs = 30
+
+[limits]
+max_sessions_per_goal = 5
+max_action_history = 100
+max_eye_reports = 50
+session_timeout_secs = 3600

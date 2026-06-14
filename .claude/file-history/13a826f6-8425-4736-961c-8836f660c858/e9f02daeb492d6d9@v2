@@ -1,0 +1,10 @@
+"""Agent Nervous System — Python intelligence layer.
+
+This package contains:
+- eyes/     — The 5 Eyes: DOM Reader, Vision, Page Diff, Goal Verifier, Error Detector
+- coordinator/ — Cross-Eye Coordinator with contradiction resolution
+- decomposer/  — Goal Decomposer (LLM: text → structured sub-goals with verifiable criteria)
+- scoring/     — Decision scoring engine (3-layer business outcome model)
+"""
+
+__version__ = "0.1.0"

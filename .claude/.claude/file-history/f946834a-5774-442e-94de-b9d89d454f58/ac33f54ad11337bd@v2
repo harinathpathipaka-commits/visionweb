@@ -1,0 +1,71 @@
+from __future__ import annotations
+
+import pytest
+from fastapi import HTTPException
+from unittest.mock import MagicMock, patch
+
+from src.auth import authenticate, generate_api_key, _load_keys
+
+
+class TestApiKeyFormat:
+    def test_generated_key_has_prefix(self):
+        key = generate_api_key()
+        assert key.startswith("el_")
+
+    def test_generated_key_is_unique(self):
+        keys = {generate_api_key() for _ in range(20)}
+        assert len(keys) == 20
+
+
+class TestLoadKeys:
+    @patch.dict("src.auth.os.environ", {"EL_API_KEYS": "key1:alice,key2:bob"})
+    def test_parses_keys(self):
+        keys = _load_keys()
+        assert keys == {"key1": "alice", "key2": "bob"}
+
+    @patch.dict("src.auth.os.environ", {}, clear=True)
+    def test_empty_when_not_set(self):
+        keys = _load_keys()
+        assert keys == {}
+
+
+class TestAuthenticate:
+    @pytest.mark.asyncio
+    @patch.dict("src.auth.os.environ", {"EL_API_KEYS": "secret:admin"}, clear=True)
+    async def test_missing_header_raises_401(self):
+        request = MagicMock()
+        request.url.path = "/v1/solve"
+        with pytest.raises(HTTPException) as exc:
+            await authenticate(request, None)
+        assert exc.value.status_code == 401
+
+    @pytest.mark.asyncio
+    @patch.dict("src.auth.os.environ", {"EL_API_KEYS": "secret:admin"}, clear=True)
+    async def test_wrong_key_raises_403(self):
+        request = MagicMock()
+        request.url.path = "/v1/solve"
+        with pytest.raises(HTTPException) as exc:
+            await authenticate(request, "wrong")
+        assert exc.value.status_code == 403
+
+    @pytest.mark.asyncio
+    @patch.dict("src.auth.os.environ", {"EL_API_KEYS": "secret:admin"}, clear=True)
+    async def test_correct_key_sets_client(self):
+        request = MagicMock()
+        request.url.path = "/v1/solve"
+        await authenticate(request, "secret")
+        assert request.state.api_client == "admin"
+
+    @pytest.mark.asyncio
+    async def test_no_keys_configured_allows_all(self):
+        request = MagicMock()
+        request.url.path = "/v1/solve"
+        with patch.dict("src.auth.os.environ", {}, clear=True):
+            await authenticate(request, None)
+
+    @pytest.mark.asyncio
+    async def test_health_endpoint_skips_auth(self):
+        request = MagicMock()
+        request.url.path = "/v1/health"
+        with patch.dict("src.auth.os.environ", {"EL_API_KEYS": "k:u"}, clear=True):
+            await authenticate(request, None)

@@ -1,0 +1,174 @@
+from __future__ import annotations
+
+import json
+import os
+import signal
+import time
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
+
+from .cache import ValkeyQueue
+from .pipeline import solve
+from .storage import (
+    get_or_create_equation,
+    init_storage,
+    insert_version,
+    promote_version,
+    record_shadow_eval,
+)
+from .gating import gate
+from .fitting import choose_best, fit_canonical_families
+from .pysr_discovery import run_pysr_primary
+from dataclasses import asdict
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+class BackgroundWorker:
+    """Polling worker that processes Valkey queues for async refit and ingestion."""
+
+    def __init__(
+        self,
+        worker_id: str = "worker-1",
+        db_path: str = ".el_data.db",
+        poll_interval: float = 2.0,
+    ):
+        self.worker_id = worker_id
+        self.db_path = db_path
+        self.poll_interval = poll_interval
+        self._queue = ValkeyQueue()
+        self._running = False
+        self._jobs_processed = 0
+
+    def start(self) -> None:
+        self._running = True
+        init_storage(self.db_path)
+        signal.signal(signal.SIGINT, self._handle_stop)
+        if hasattr(signal, 'SIGTERM'):
+            signal.signal(signal.SIGTERM, self._handle_stop)
+
+        while self._running:
+            job = self._queue.dequeue(self.worker_id, timeout=int(self.poll_interval))
+            if job is None:
+                continue
+
+            try:
+                self._process(job)
+                self._jobs_processed += 1
+            except Exception:
+                pass
+
+    def stop(self) -> None:
+        self._running = False
+
+    @property
+    def jobs_processed(self) -> int:
+        return self._jobs_processed
+
+    def _handle_stop(self, signum, frame):
+        self._running = False
+
+    def _process(self, job: Dict[str, Any]) -> None:
+        job_type = job.get("type")
+        if job_type == "refit":
+            self._process_refit(job)
+        elif job_type == "ingestion":
+            self._process_ingestion(job)
+
+    def _process_refit(self, job: Dict[str, Any]) -> None:
+        equation_id = job.get("equation_id")
+        if not equation_id:
+            return
+
+        import sqlite3
+        import uuid
+
+        db_path = self.db_path
+        with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT var_hash, domain, form_family, sympy_ast, parameters_json, stats_json "
+                "FROM equation_library WHERE equation_id = ?",
+                (equation_id,),
+            ).fetchone()
+
+        if not row:
+            return
+
+        from .models import FitStats
+        stats_raw = json.loads(row["stats_json"] or "{}")
+        current_stats = FitStats(
+            r2_adj=float(stats_raw.get("r2_adj", 0)),
+            holdout_mape=float(stats_raw.get("holdout_mape", float("inf"))),
+            aic=float(stats_raw.get("aic", float("inf"))),
+            residual_random=bool(stats_raw.get("residual_random", False)),
+            n_obs=int(stats_raw.get("n_obs", 0)),
+        )
+
+        # Load observations for this variable relationship to re-fit.
+        # Parse var_hash to get the dependent variable name: "domain:x_var:y_var"
+        var_hash = row["var_hash"] if row["var_hash"] else ""
+        parts = var_hash.split(":") if var_hash else []
+        y_var = parts[-1] if len(parts) >= 3 else "y"
+        with sqlite3.connect(db_path) as conn:
+            obs_rows = conn.execute(
+                "SELECT value, entity_id FROM observation_ledger WHERE variable = ? ORDER BY timestamp",
+                (y_var,),
+            ).fetchall()
+
+        if len(obs_rows) < 8:
+            return
+
+        x_values = list(range(len(obs_rows)))
+        y_values = [r[0] for r in obs_rows]
+
+        now = _now()
+        canonical = fit_canonical_families(x_values, y_values)
+        pysr_result = run_pysr_primary(x_values, y_values)
+        candidates = canonical + [pysr_result.equation]
+        new_eq = choose_best(candidates, domain=row["domain"] or "general")
+
+        if new_eq is None:
+            return
+
+        # Shadow evaluate
+        version_id = insert_version(
+            db_path=db_path,
+            equation_id=equation_id,
+            form_family=new_eq.family,
+            sympy_ast=new_eq.sympy_expr,
+            parameters=new_eq.parameters,
+            stats=asdict(new_eq.stats),
+            n_obs=new_eq.stats.n_obs,
+            created_at=now,
+            source="worker_refit",
+            provenance={"source": "worker", "worker_id": self.worker_id},
+        )
+
+        gate_result = gate(new_eq.stats)
+        record_shadow_eval(
+            db_path=db_path,
+            version_id=version_id,
+            mape=new_eq.stats.holdout_mape,
+            aic=new_eq.stats.aic,
+            residual_random=new_eq.stats.residual_random,
+            passed=gate_result.passed,
+            evaluated_at=now,
+        )
+
+        if gate_result.passed and new_eq.stats.aic < current_stats.aic:
+            promote_version(db_path, equation_id, version_id, now, "worker_auto_improved")
+
+    def _process_ingestion(self, job: Dict[str, Any]) -> None:
+        file_id = job.get("file_id")
+        if not file_id:
+            return
+        import sqlite3
+        db_path = self.db_path
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                "UPDATE ingestion_jobs SET status = 'processed' WHERE file_id = ?",
+                (file_id,),
+            )

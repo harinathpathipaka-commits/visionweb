@@ -1,0 +1,22 @@
+//! DOM distillation engine.
+//!
+//! Takes raw CDP DOM tree → strips invisible/spam nodes → annotates
+//! interactive elements → segments semantic blocks → scores goal relevance.
+//! Output mode controls what gets stripped vs. kept.
+
+use ans_core::distill::{DistillMode, DistilledPage};
+use ans_core::BrowserBackend;
+
+/// The distiller. Created once, reused across pages.
+pub struct Distiller;
+
+impl Distiller {
+    /// Distill a page from a browser backend in the given mode.
+    pub async fn distill(
+        &self,
+        _backend: &dyn BrowserBackend,
+        _mode: DistillMode,
+    ) -> DistilledPage {
+        todo!("Phase 2: DOM + Diff")
+    }
+}

@@ -1,0 +1,199 @@
+"""Embedding generator — OpenAI text-embedding-3-small via async API.
+
+Produces 1536-dim embeddings for (action, tool, context) tuples.
+Used by the Decision Intelligence layer for similarity-based retrieval.
+Falls back to a deterministic hash-based embedding on API failure.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import struct
+
+import numpy as np
+import httpx
+from openai import AsyncOpenAI
+
+from ans_nerves.config import get_embedding_api_key, get_config
+from ans_nerves.logging import get_logger
+
+logger = get_logger(__name__)
+
+
+class EmbeddingGenerator:
+    """Generates embeddings using OpenAI's text-embedding-3-small.
+
+    Singleton — client is created once and reused.
+    Falls back to hash-based embeddings on API failure.
+    """
+
+    def __init__(self, model_name: str | None = None) -> None:
+        config = get_config()
+        self._model_name = model_name or config.llm.embedding_model
+        self._dimension = config.llm.embedding_dim
+        self._client: AsyncOpenAI | None = None
+
+    @property
+    def dimension(self) -> int:
+        return self._dimension
+
+    @property
+    def model_available(self) -> bool:
+        """Always True — OpenAI embeddings don't need a local model download."""
+        return True
+
+    def _ensure_client(self) -> AsyncOpenAI:
+        if self._client is None:
+            api_key = get_embedding_api_key()
+            self._client = AsyncOpenAI(
+                api_key=api_key,
+                timeout=httpx.Timeout(30.0),
+                max_retries=1,
+            )
+        return self._client
+
+    async def _call_openai(self, texts: list[str]) -> list[list[float]]:
+        """Call OpenAI embedding API. Returns list of embeddings or raises."""
+        client = self._ensure_client()
+        response = await client.embeddings.create(
+            model=self._model_name,
+            input=texts,
+            dimensions=self._dimension,
+        )
+        return [d.embedding for d in sorted(response.data, key=lambda d: d.index)]
+
+    def embed(self, text: str) -> list[float]:
+        """Generate embedding for a single text string.
+
+        Note: This is synchronous for backward compatibility. It blocks the
+        event loop. Prefer embed_async for new code.
+        """
+        import asyncio
+
+        if not text.strip():
+            return [0.0] * self._dimension
+
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # We're inside an async context — create a new task
+                import concurrent.futures
+                future = asyncio.run_coroutine_threadsafe(
+                    self.embed_async(text), loop
+                )
+                return future.result(timeout=30)
+            return asyncio.run(self.embed_async(text))
+        except Exception as exc:
+            logger.warning(
+                "EmbeddingGenerator: OpenAI embedding failed for '%s...': %s. Using fallback.",
+                text[:60], exc,
+            )
+            return self._fallback_embed(text)
+
+    async def embed_async(self, text: str) -> list[float]:
+        """Async version — use this from async contexts."""
+        if not text.strip():
+            return [0.0] * self._dimension
+
+        try:
+            results = await self._call_openai([text])
+            return results[0]
+        except Exception as exc:
+            logger.warning(
+                "EmbeddingGenerator: OpenAI embedding failed for '%s...': %s. Using fallback.",
+                text[:60], exc,
+            )
+            return self._fallback_embed(text)
+
+    async def embed_batch_async(self, texts: list[str]) -> list[list[float]]:
+        """Generate embeddings for multiple texts via async API."""
+        if not texts:
+            return []
+
+        non_empty = [t if t.strip() else " " for t in texts]
+
+        try:
+            return await self._call_openai(non_empty)
+        except Exception as exc:
+            logger.warning(
+                "EmbeddingGenerator: batch OpenAI embedding failed: %s. Using fallback.",
+                exc,
+            )
+            return [self._fallback_embed(t) for t in texts]
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Generate embeddings for multiple texts (sync wrapper)."""
+        import asyncio
+
+        if not texts:
+            return []
+
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                future = asyncio.run_coroutine_threadsafe(
+                    self.embed_batch_async(texts), loop
+                )
+                return future.result(timeout=60)
+            return asyncio.run(self.embed_batch_async(texts))
+        except Exception as exc:
+            logger.warning(
+                "EmbeddingGenerator: batch embedding failed: %s. Using fallback.", exc,
+            )
+            return [self._fallback_embed(t) for t in texts]
+
+    def _fallback_embed(self, text: str) -> list[float]:
+        """Deterministic hash-based embedding when API is unavailable.
+
+        Uses SHA-256 over whitespace-delimited tokens to produce a sparse
+        vector. Same text always produces the same embedding, and similar
+        texts produce overlapping dimensions — preserving some similarity
+        signal for LanceDB ANN search.
+        """
+        tokens = text.lower().split()
+        if not tokens:
+            return [0.0] * self._dimension
+
+        vec = np.zeros(self._dimension, dtype=np.float32)
+
+        for token in set(tokens):
+            h = hashlib.sha256(token.encode()).digest()
+            for i in range(0, 32, 4):
+                idx = struct.unpack("<I", h[i : i + 4])[0] % self._dimension
+                vec[idx] += 1.0
+
+        norm = float(np.linalg.norm(vec))
+        if norm > 0:
+            vec = vec / norm
+
+        return vec.tolist()
+
+    def build_context_text(
+        self,
+        action_type: str = "",
+        selector: str = "",
+        tool: str = "",
+        goal_description: str = "",
+        page_type: str = "",
+    ) -> str:
+        """Build a canonical context string for embedding."""
+        parts = [
+            f"action:{action_type}",
+            f"tool:{tool}",
+            f"selector:{selector}",
+            f"goal:{goal_description}",
+            f"page:{page_type}",
+        ]
+        return " ".join(parts)
+
+
+# Singleton
+_generator: EmbeddingGenerator | None = None
+
+
+def get_embedding_generator() -> EmbeddingGenerator:
+    global _generator
+    if _generator is None:
+        _generator = EmbeddingGenerator()
+    return _generator

@@ -1,0 +1,156 @@
+from __future__ import annotations
+
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+from scipy import stats as sp_stats
+
+
+def granger_causality(
+    x: List[float],
+    y: List[float],
+    max_lag: int = 4,
+    significance: float = 0.05,
+) -> Dict[str, Any]:
+    """Test whether x Granger-causes y (i.e., past values of x help predict y).
+
+    Uses F-test comparing restricted (AR only) vs unrestricted (AR + x lags) models.
+    Returns {causal: bool, best_lag, p_value, f_stat}.
+    """
+    n = len(x)
+    if n < 2 * max_lag + 2:
+        return {"causal": False, "best_lag": None, "p_value": 1.0,
+                "f_stat": 0.0, "reason": f"Need at least {2*max_lag+2} observations, have {n}"}
+
+    x_arr = np.array(x, dtype=np.float64)
+    y_arr = np.array(y, dtype=np.float64)
+
+    best_p = 1.0
+    best_lag = None
+    best_f = 0.0
+
+    for lag in range(1, max_lag + 1):
+        # Build lagged matrices
+        T = n - lag
+        if T < lag + 2:
+            continue
+
+        # Restricted: y_t = a + b1*y_{t-1} + ... + blag*y_{t-lag}
+        Y = y_arr[lag:]  # t = lag, ..., n-1
+        X_restricted = np.column_stack([np.ones(T), y_arr[lag-1:-1]]) if lag == 1 else \
+            np.column_stack([np.ones(T)] + [y_arr[lag-1-i:-1-i] for i in range(lag)])
+
+        # Unrestricted: add x lags
+        X_unrestricted = np.column_stack([X_restricted] + [x_arr[lag-1-i:-1-i] for i in range(lag)]) if lag == 1 else \
+            np.column_stack([np.ones(T)] +
+                           [y_arr[lag-1-i:-1-i] for i in range(lag)] +
+                           [x_arr[lag-1-i:-1-i] for i in range(lag)])
+
+        try:
+            # Fit restricted
+            coeffs_r = np.linalg.lstsq(X_restricted, Y, rcond=None)[0]
+            ssr_r = float(np.sum((Y - X_restricted @ coeffs_r) ** 2))
+
+            # Fit unrestricted
+            coeffs_u = np.linalg.lstsq(X_unrestricted, Y, rcond=None)[0]
+            ssr_u = float(np.sum((Y - X_unrestricted @ coeffs_u) ** 2))
+
+            # F-test
+            p_r = X_restricted.shape[1]  # params in restricted
+            p_u = X_unrestricted.shape[1]  # params in unrestricted
+            df1 = p_u - p_r
+            df2 = T - p_u
+
+            if df2 <= 0 or ssr_u < 1e-15:
+                continue
+
+            f_stat = ((ssr_r - ssr_u) / df1) / (ssr_u / df2)
+            if f_stat <= 0:
+                continue
+
+            p_val = float(1.0 - sp_stats.f.cdf(f_stat, df1, df2))
+
+            if p_val < best_p:
+                best_p = p_val
+                best_lag = lag
+                best_f = f_stat
+
+        except np.linalg.LinAlgError:
+            continue
+
+    if best_lag is None:
+        return {"causal": False, "best_lag": None, "p_value": 1.0, "f_stat": 0.0,
+                "reason": "Could not fit any lag models"}
+
+    return {
+        "causal": best_p < significance,
+        "best_lag": best_lag,
+        "p_value": round(best_p, 6),
+        "f_stat": round(best_f, 4),
+        "significance_threshold": significance,
+        "recommendation": (
+            f"X Granger-causes Y (lag={best_lag}, p={best_p:.4f}). "
+            f"Past values of X improve prediction of Y."
+        ) if best_p < significance else (
+            f"No evidence that X Granger-causes Y (best lag={best_lag}, p={best_p:.4f})."
+        ),
+    }
+
+
+def partial_correlation(
+    x: List[float],
+    y: List[float],
+    z: List[float],  # control variable
+) -> Dict[str, float]:
+    """Compute correlation between x and y controlling for z.
+
+    Partial r = (r_xy - r_xz * r_yz) / sqrt((1-r_xz²)(1-r_yz²))
+    """
+    x_arr = np.array(x, dtype=np.float64)
+    y_arr = np.array(y, dtype=np.float64)
+    z_arr = np.array(z, dtype=np.float64)
+
+    mask = np.isfinite(x_arr) & np.isfinite(y_arr) & np.isfinite(z_arr)
+    if mask.sum() < 3:
+        return {"partial_r": 0.0, "r_xy": 0.0, "r_xz": 0.0, "r_yz": 0.0}
+
+    r_xy = float(np.corrcoef(x_arr[mask], y_arr[mask])[0, 1])
+    r_xz = float(np.corrcoef(x_arr[mask], z_arr[mask])[0, 1])
+    r_yz = float(np.corrcoef(y_arr[mask], z_arr[mask])[0, 1])
+
+    denom = np.sqrt((1 - r_xz**2) * (1 - r_yz**2))
+    partial_r = (r_xy - r_xz * r_yz) / denom if denom > 1e-10 else 0.0
+
+    return {
+        "partial_r": round(float(partial_r), 6),
+        "r_xy": round(r_xy, 6),
+        "r_xz": round(r_xz, 6),
+        "r_yz": round(r_yz, 6),
+        "confounding_suspected": bool(abs(r_xy) > 0.3 and abs(partial_r) < abs(r_xy) * 0.5),
+    }
+
+
+def check_confounding(
+    x: List[float],
+    y: List[float],
+    controls: Dict[str, List[float]],
+) -> Dict[str, Any]:
+    """Check if any control variable confounds the x→y relationship.
+
+    Returns list of controls with partial correlation and confounding assessment.
+    """
+    results = []
+    for name, z_vals in controls.items():
+        pc = partial_correlation(x, y, z_vals)
+        results.append({
+            "control": name,
+            "partial_r": pc["partial_r"],
+            "original_r": pc["r_xy"],
+            "confounding": pc["confounding_suspected"],
+            "interpretation": (
+                f"Controlling for '{name}' reduces correlation from {pc['r_xy']:.3f} to {pc['partial_r']:.3f}. "
+                f"{'Possible confounder.' if pc['confounding_suspected'] else 'Relationship appears direct.'}"
+            ),
+        })
+
+    return {"x_y_correlation": results[0]["original_r"] if results else 0.0, "controls": results}

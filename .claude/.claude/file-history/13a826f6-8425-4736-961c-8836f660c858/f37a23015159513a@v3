@@ -1,0 +1,206 @@
+//! Model Context Protocol (MCP) server — JSON-RPC over HTTP.
+//!
+//! Exposes the Agent Nervous System as MCP tools for Claude, ChatGPT,
+//! and other MCP-compatible AI agents.
+//!
+//! Specification: https://spec.modelcontextprotocol.io
+
+use serde_json::{json, Value};
+
+use crate::client::InternalClient;
+
+/// MCP server state shared across requests.
+#[derive(Clone)]
+pub struct McpServer {
+    client: InternalClient,
+}
+
+impl McpServer {
+    pub fn new(client: InternalClient) -> Self {
+        Self { client }
+    }
+
+    /// Handle an incoming JSON-RPC request. Returns the JSON-RPC response.
+    pub async fn handle_request(&self, body: Value) -> Value {
+        let id = body.get("id").cloned();
+        let method = body.get("method").and_then(|m| m.as_str()).unwrap_or("");
+
+        match method {
+            "initialize" => self.handle_initialize(id).await,
+            "tools/list" => self.handle_tools_list(id).await,
+            "tools/call" => self.handle_tools_call(id, &body).await,
+            _ => json_rpc_error(id, -32601, &format!("Method not found: {}", method)),
+        }
+    }
+
+    async fn handle_initialize(&self, id: Option<Value>) -> Value {
+        json_rpc_result(
+            id,
+            json!({
+                "protocolVersion": "2024-11-05",
+                "serverInfo": {
+                    "name": "agent-nervous-system",
+                    "version": env!("CARGO_PKG_VERSION")
+                },
+                "capabilities": {
+                    "tools": {}
+                }
+            }),
+        )
+    }
+
+    async fn handle_tools_list(&self, id: Option<Value>) -> Value {
+        json_rpc_result(
+            id,
+            json!({
+                "tools": [
+                    {
+                        "name": "navigate",
+                        "description": "Navigate the browser to a URL",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "url": { "type": "string", "description": "The URL to navigate to" },
+                                "session_id": { "type": "string", "description": "Browser session ID" }
+                            },
+                            "required": ["url", "session_id"]
+                        }
+                    },
+                    {
+                        "name": "click",
+                        "description": "Click an element on the page",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "selector": { "type": "string", "description": "CSS selector for the element" },
+                                "session_id": { "type": "string", "description": "Browser session ID" }
+                            },
+                            "required": ["selector", "session_id"]
+                        }
+                    },
+                    {
+                        "name": "type_text",
+                        "description": "Type text into an input element",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "selector": { "type": "string", "description": "CSS selector for the input" },
+                                "value": { "type": "string", "description": "Text to type" },
+                                "session_id": { "type": "string", "description": "Browser session ID" }
+                            },
+                            "required": ["selector", "value", "session_id"]
+                        }
+                    },
+                    {
+                        "name": "screenshot",
+                        "description": "Capture a screenshot of the current page",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "session_id": { "type": "string", "description": "Browser session ID" },
+                                "full_page": { "type": "boolean", "description": "Capture full scrollable page" }
+                            },
+                            "required": ["session_id"]
+                        }
+                    },
+                    {
+                        "name": "get_dom",
+                        "description": "Get the distilled DOM of the current page",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "session_id": { "type": "string", "description": "Browser session ID" },
+                                "mode": { "type": "string", "description": "Distillation mode: text_only, input_fields, all_fields" }
+                            },
+                            "required": ["session_id"]
+                        }
+                    },
+                    {
+                        "name": "check_goal",
+                        "description": "Check the progress of a goal",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "goal_id": { "type": "string", "description": "Goal ID to check" }
+                            },
+                            "required": ["goal_id"]
+                        }
+                    }
+                ]
+            }),
+        )
+    }
+
+    async fn handle_tools_call(&self, id: Option<Value>, body: &Value) -> Value {
+        let params = match body.get("params").and_then(|p| p.get("name")).and_then(|n| n.as_str()) {
+            Some(name) => {
+                let args = body
+                    .get("params")
+                    .and_then(|p| p.get("arguments"))
+                    .cloned()
+                    .unwrap_or(json!({}));
+                (name.to_string(), args)
+            }
+            None => return json_rpc_error(id, -32602, "Missing params.name"),
+        };
+
+        let (tool_name, args) = params;
+
+        match tool_name.as_str() {
+            "navigate" | "click" | "type_text" | "screenshot" | "get_dom" | "check_goal" => {
+                json_rpc_result(
+                    id,
+                    json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!("Tool '{}' called with args: {}", tool_name, args)
+                        }]
+                    }),
+                )
+            }
+            other => json_rpc_error(id, -32602, &format!("Unknown tool: {}", other)),
+        }
+    }
+}
+
+// ── JSON-RPC helpers ──────────────────────────────────────────────
+
+fn json_rpc_result(id: Option<Value>, result: Value) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id.unwrap_or(Value::Null),
+        "result": result
+    })
+}
+
+fn json_rpc_error(id: Option<Value>, code: i32, message: &str) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id.unwrap_or(Value::Null),
+        "error": {
+            "code": code,
+            "message": message
+        }
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_json_rpc_result_format() {
+        let result = json_rpc_result(Some(json!(1)), json!({"ok": true}));
+        assert_eq!(result["jsonrpc"], "2.0");
+        assert_eq!(result["id"], 1);
+        assert_eq!(result["result"]["ok"], true);
+    }
+
+    #[test]
+    fn test_json_rpc_error_format() {
+        let error = json_rpc_error(Some(json!(2)), -32601, "Not found");
+        assert_eq!(error["jsonrpc"], "2.0");
+        assert_eq!(error["id"], 2);
+        assert_eq!(error["error"]["code"], -32601);
+    }
+}

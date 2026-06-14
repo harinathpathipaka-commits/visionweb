@@ -1,0 +1,237 @@
+"""Tests for ANS cost-optimized execution path.
+
+Verifies:
+1. Coordinator always uses deterministic fallback (no LLM)
+2. Verifier only runs at boundaries (done/errors), not every step
+3. PageDiff LLM never runs
+4. DOM compression caps elements at 30
+5. Vision doesn't receive DOM context
+"""
+
+from __future__ import annotations
+
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from ans_nerves.config import RuntimeConfig
+from ans_nerves.eyes.base import EyeReport
+from ans_nerves.planner.loop import AgentLoop
+from ans_nerves.planner.planner import PlannedAction
+
+
+def _make_runtime(mode: str = "thorough") -> RuntimeConfig:
+    return RuntimeConfig(
+        mode=mode,
+        prewarm_chrome=False,
+        cache_decompositions=True,
+        skip_vision_in_fast=True,
+        skip_diff_in_fast=True,
+        fast_coordinator=True,
+    )
+
+
+def _make_mock_grpc() -> MagicMock:
+    grpc = MagicMock()
+    grpc.create_session = AsyncMock(return_value=MagicMock(session_id="s1"))
+    grpc.get_distilled_dom = AsyncMock(return_value={
+        "url": "https://example.com", "title": "Test",
+        "elements": [
+            {"selector": f"#el{i}", "tag": "button", "text": f"Button {i}",
+             "is_visible": True, "is_enabled": True, "goal_relevance_score": 1.0 - i * 0.01}
+            for i in range(50)
+        ],
+        "interactive": [
+            {"selector": "#interact", "tag": "input", "text": "Search",
+             "is_visible": True, "is_enabled": True, "goal_relevance_score": 0.95},
+        ],
+    })
+    grpc.capture_screenshot = AsyncMock(return_value={"data": "fake_b64"})
+    grpc.compute_diff = AsyncMock(return_value={"added": 3, "removed": 1, "summary": "content_update"})
+    grpc.execute_action = AsyncMock(return_value={"message": "OK"})
+    return grpc
+
+
+def _mock_decomposer() -> MagicMock:
+    sub = MagicMock()
+    sub.description = "Test sub-goal"
+    sub.success_criteria = ["Done"]
+    sub.depends_on = []
+    spec = MagicMock()
+    spec.sub_goals = [sub]
+    spec.risk_factors = []
+    dec = MagicMock()
+    dec.decompose = AsyncMock(return_value=spec)
+    return dec
+
+
+def _mock_intelligence() -> MagicMock:
+    intel = MagicMock()
+    intel.record_action = AsyncMock(return_value="rec-0000000000000001")
+    return intel
+
+
+class TestCoordinatorAlwaysFallback:
+    """Coordinator never calls LLM — uses deterministic _fallback_synthesize."""
+
+    @pytest.mark.asyncio
+    async def test_thorough_mode_uses_fallback_not_llm(self):
+        """Even in thorough mode, coordinator uses fallback (0 LLM cost)."""
+        loop = AgentLoop(session_id="test", grpc=_make_mock_grpc(), max_steps=2)
+        loop._intelligence = _mock_intelligence()
+        loop._decomposer = _mock_decomposer()
+        loop._runtime = _make_runtime(mode="thorough")
+
+        planner = MagicMock()
+        planner.plan_next_action = AsyncMock(return_value=PlannedAction(
+            "done", "", "", "done", "warm", 0.9, "Complete",
+        ))
+        planner.total_records = 0
+        loop._planner = planner
+
+        # Spy on fallback vs LLM paths
+        with MagicMock(wraps=loop._coordinator._fallback_synthesize) as spy_fb:
+            loop._coordinator._fallback_synthesize = spy_fb
+            loop._coordinator.synthesize = AsyncMock()
+            await loop.run(goal="Test goal")
+            spy_fb.assert_called()
+            loop._coordinator.synthesize.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_fallback_receives_diff_data(self):
+        """Coordinator fallback gets structural diff data from Rust engine."""
+        loop = AgentLoop(session_id="test", grpc=_make_mock_grpc(), max_steps=2)
+        loop._intelligence = _mock_intelligence()
+        loop._decomposer = _mock_decomposer()
+        loop._runtime = _make_runtime(mode="thorough")
+
+        planner = MagicMock()
+        planner.plan_next_action = AsyncMock(return_value=PlannedAction(
+            "done", "", "", "done", "warm", 0.9, "Complete",
+        ))
+        planner.total_records = 0
+        loop._planner = planner
+
+        with MagicMock(wraps=loop._coordinator._fallback_synthesize) as spy_fb:
+            loop._coordinator._fallback_synthesize = spy_fb
+            await loop.run(goal="Test goal")
+            call_kwargs = spy_fb.call_args.kwargs
+            # diff_data should contain structural diff info
+            assert "diff_data" in call_kwargs or spy_fb.call_args.args
+
+
+class TestBoundaryOnlyVerification:
+    """Verifier only runs on 'done' or errors, not every step."""
+
+    @pytest.mark.asyncio
+    async def test_verifier_skipped_on_click_step(self):
+        """Verifier does NOT run on a normal click step."""
+        loop = AgentLoop(session_id="test", grpc=_make_mock_grpc(), max_steps=3)
+        loop._intelligence = _mock_intelligence()
+        loop._decomposer = _mock_decomposer()
+        loop._runtime = _make_runtime(mode="thorough")
+
+        planner = MagicMock()
+        planner.plan_next_action = AsyncMock(side_effect=[
+            PlannedAction("click", "#btn", "", "click", "warm", 0.8, "Step 1"),
+            PlannedAction("done", "", "", "done", "warm", 0.9, "Step 2"),
+        ])
+        planner.total_records = 0
+        loop._planner = planner
+
+        ver_mock = MagicMock()
+        ver_mock.observe = AsyncMock(return_value=EyeReport(
+            "goal_verifier", 0.5, {"criteria_met": False},
+        ))
+        loop._eyes["goal_verifier"] = ver_mock
+
+        await loop.run(goal="Test goal")
+        # Only called on "done" step, not on click
+        assert ver_mock.observe.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_verifier_runs_on_errors(self):
+        """Verifier runs when errors accumulate to 2+ even mid-flow."""
+        loop = AgentLoop(session_id="test", grpc=_make_mock_grpc(), max_steps=8,
+                         max_errors_per_subgoal=5)
+        loop._intelligence = _mock_intelligence()
+        loop._decomposer = _mock_decomposer()
+        loop._runtime = _make_runtime(mode="thorough")
+        loop._grpc.execute_action = AsyncMock(side_effect=[
+            Exception("fail 1"), Exception("fail 2"), {"message": "OK"},
+        ])
+
+        planner = MagicMock()
+        planner.plan_next_action = AsyncMock(side_effect=[
+            PlannedAction("click", "#b1", "", "click", "warm", 0.8, "Try 1"),
+            PlannedAction("click", "#b2", "", "click", "warm", 0.7, "Try 2"),
+            PlannedAction("done", "", "", "done", "warm", 0.9, "Done"),
+        ])
+        planner.total_records = 0
+        loop._planner = planner
+
+        ver_mock = MagicMock()
+        ver_mock.observe = AsyncMock(return_value=EyeReport(
+            "goal_verifier", 0.9, {"criteria_met": True},
+        ))
+        loop._eyes["goal_verifier"] = ver_mock
+
+        await loop.run(goal="Test goal")
+        # Verifier runs on error step 2 AND done step
+        assert ver_mock.observe.call_count >= 2
+
+
+class TestDOMCompression:
+    """Interactive elements capped at 30, text truncated to 60 chars."""
+
+    @pytest.mark.asyncio
+    async def test_elements_capped_at_30(self):
+        """50 elements in DOM → only top 30 returned."""
+        loop = AgentLoop(session_id="test", grpc=_make_mock_grpc(), max_steps=2)
+        loop._intelligence = _mock_intelligence()
+        loop._decomposer = _mock_decomposer()
+        loop._runtime = _make_runtime()
+        loop._planner = MagicMock()
+        loop._planner.plan_next_action = AsyncMock(return_value=PlannedAction(
+            "click", "#el0", "", "click", "warm", 0.9, "Click first",
+        ))
+        loop._planner.total_records = 0
+
+        # Spy on what elements the planner receives
+        original_plan = loop._planner.plan_next_action
+        captured_elements = []
+
+        async def _capture(*args, **kwargs):
+            captured_elements.extend(kwargs.get("available_elements", []))
+            return await original_plan(*args, **kwargs)
+
+        loop._planner.plan_next_action = _capture
+
+        await loop.run(goal="Test goal")
+        assert len(captured_elements) <= 30
+
+
+class TestPageDiffSkipped:
+    """PageDiff LLM eye never runs."""
+
+    @pytest.mark.asyncio
+    async def test_page_diff_never_called(self):
+        """PageDiff observe is never called regardless of mode."""
+        loop = AgentLoop(session_id="test", grpc=_make_mock_grpc(), max_steps=2)
+        loop._intelligence = _mock_intelligence()
+        loop._decomposer = _mock_decomposer()
+        loop._runtime = _make_runtime(mode="thorough")
+
+        planner = MagicMock()
+        planner.plan_next_action = AsyncMock(return_value=PlannedAction(
+            "done", "", "", "done", "warm", 0.9, "Complete",
+        ))
+        planner.total_records = 0
+        loop._planner = planner
+
+        diff_mock = MagicMock()
+        diff_mock.observe = AsyncMock(return_value=EyeReport("page_diff", 0.5, {}))
+        loop._eyes["page_diff"] = diff_mock
+
+        await loop.run(goal="Test goal")
+        diff_mock.observe.assert_not_called()

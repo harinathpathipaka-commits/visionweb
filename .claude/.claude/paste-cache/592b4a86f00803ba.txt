@@ -1,0 +1,13 @@
+What is wrong — four issues
+Issue 1 — The LLM proposing equation forms is dangerous.
+The constraint says: "LLM extracts variables AND proposes equations. No pre-defined library." This reintroduces the LLM into the reasoning loop at the most critical step. If the LLM proposes the wrong equation forms — which it will on unfamiliar domains — the entire pipeline fits a wrong equation with high statistical confidence and produces a precisely wrong answer. An equation fitted perfectly to the wrong form is more dangerous than no equation at all.
+The correct architecture: LLM extracts variables only. PySR explores the equation space systematically without LLM guidance. The LLM should never propose equation forms — that is exactly the reasoning job you are taking away from it.
+Issue 2 — "No pre-defined library" removes your biggest advantage.
+Without a pre-populated equation library, every query for a new customer starts from zero observations. The fitter has nothing to fit from. The cold start problem becomes severe. The library is your moat — the accumulated equations from every customer observation. Removing it removes the compounding effect that makes the system smarter over time.
+The fix: keep the library. Layer 3 checks the library first. If an equation exists for this variable set and domain — retrieve it. If not — fit a new one and add it. Never start from zero.
+Issue 3 — Three missing pieces from our last conversation not addressed.
+The Domain Router — classifies query domain before Layer 1, loads correct equation library and extractor schema — is not in the document.
+The Data Ingestion Pipeline — how observations flow into the equation library so the fitter has data to work with — is not in the document. This is the most critical missing piece operationally.
+The Fallback Router — when Layer 6 confidence gate fails, where does the query go — is not defined. Silent failure is not acceptable in production.
+Issue 4 — NetworkX and Epistemic Ledger appear in the stack but nowhere in the 6 layers.
+If they are part of the architecture, they need a defined position in the pipeline. If they are not load-bearing for v1, remove them from the stack table to avoid scope creep.

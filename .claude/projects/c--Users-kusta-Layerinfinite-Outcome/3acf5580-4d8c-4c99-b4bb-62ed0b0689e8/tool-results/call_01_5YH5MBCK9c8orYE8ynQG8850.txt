@@ -1,0 +1,252 @@
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\index.ts-29-];
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\index.ts-30-
+layer5\api\index.ts:31:if (process.env.NODE_ENV === 'production') {
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\index.ts-32-    REQUIRED_ENV_VARS.push('LAYERINFINITE_INTERNAL_SECRET');
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\index.ts-33-}
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\index.ts-49-// In development, LAYERINFINITE_DEV_API_KEY is optional 
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\index.ts-50-// (falls back to real auth). Never required in production.
+layer5\api\index.ts:51:if (process.env.NODE_ENV !== 'production' &&
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\index.ts-52-    !process.env.LAYERINFINITE_DEV_API_KEY) {
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\index.ts-53-    console.warn(
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\index.ts-93-
+layer5\api\index.ts-94-\ ── FATAL: Dev bypass CANNOT be active in production ──────────
+layer5\api\index.ts:95:if (process.env.NODE_ENV === 'production' &&
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\index.ts-96-    process.env.LAYERINFINITE_DEV_BYPASS === 'true') {
+layer5\api\index.ts-97-    console.error('FATAL: Dev bypass cannot be active in production. Set LAYERINFINITE_DEV_BYPASS=false.');
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\index.ts-108-
+layer5\api\index.ts-109-\ Warn loudly in production if no https:// origin is configured
+layer5\api\index.ts:110:if (process.env.NODE_ENV === 'production') {
+layer5\api\index.ts-111-    const hasHttps = allowedOrigins.some(o => o.startsWith('https://'));
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\index.ts-112-    if (!hasHttps) {
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\index.ts-455-const v1 = new Hono();
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\index.ts-456-
+layer5\api\index.ts:457:const primaryAuth = process.env.NODE_ENV === 'production'
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\index.ts-458-    ? authMiddleware
+layer5\api\index.ts-459-    : devAuthMiddleware;
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\index.ts-531-app.onError((err, c) => {
+layer5\api\index.ts-532-    console.error('[layerinfinite] Unhandled error:', err.message);
+layer5\api\index.ts:533:    const isProduction = process.env.NODE_ENV === 'production';
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\index.ts-534-    return c.json(
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\index.ts-535-        {
+layer5\api\index.ts-536-            error: 'Internal server error',
+layer5\api\index.ts-537-            code: 'INTERNAL_ERROR',
+layer5\api\index.ts:538:            ...(isProduction ? {} : { message: err.message }),
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\index.ts-539-        },
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\index.ts-540-        500
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\business-webhook.ts-66-  // In production, always enforce HMAC verification.
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\business-webhook.ts-67-  // In development, allow unverified requests for testing.
+layer5\api\routes\business-webhook.ts:68:  if (process.env.NODE_ENV === 'production') {
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\business-webhook.ts-69-    const rawBody = JSON.stringify(body);
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\business-webhook.ts-70-    const signatureHeader = c.req.header('X-LI-Webhook-Signature');
+--
+layer5\api\lib\adapters\langgraph-adapter.ts-188-                episode_id: cp.thread_id ?? null,
+layer5\api\lib\adapters\langgraph-adapter.ts-189-                session_id: cp.checkpoint_id ?? null,
+layer5\api\lib\adapters\langgraph-adapter.ts:190:                environment: 'production',
+layer5\api\lib\adapters\langgraph-adapter.ts-191-                feedback_signal: 'immediate',
+layer5\api\lib\adapters\langgraph-adapter.ts-192-                signal_source: 'explicit',
+--
+layer5\api\lib\adapters\langgraph-adapter.ts-234-                episode_id: ev.metadata?.thread_id ?? ev.run_id ?? null,
+layer5\api\lib\adapters\langgraph-adapter.ts-235-                session_id: ev.run_id ?? null,
+layer5\api\lib\adapters\langgraph-adapter.ts:236:                environment: 'production',
+layer5\api\lib\adapters\langgraph-adapter.ts-237-                feedback_signal: 'immediate',
+layer5\api\lib\adapters\langgraph-adapter.ts-238-                signal_source: 'explicit',
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\middleware\auth.ts-201-/**
+layer5\api\middleware\auth.ts-202- * Development auth: accepts the service role key as the API key.
+layer5\api\middleware\auth.ts:203: * ONLY active when NODE_ENV !== 'production'.
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\middleware\auth.ts-204- * Injects the demo agent/customer for testing.
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\middleware\auth.ts-205- */
+layer5\api\middleware\auth.ts-206-export async function devAuthMiddleware(c: Context, next: Next): Promise<Response | void> {
+layer5\api\middleware\auth.ts:207:    if (process.env.NODE_ENV === 'production') {
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\middleware\auth.ts-208-        return authMiddleware(c, next);
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\middleware\auth.ts-209-    }
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\middleware\auth.ts-211-    const apiKey = c.req.header('X-API-Key') ?? c.req.header('Authorization')?.replace('Bearer ', '');
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\middleware\auth.ts-212-
+layer5\api\middleware\auth.ts:213:    if (!apiKey && process.env.NODE_ENV !== 'production') {
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\middleware\auth.ts-214-        return c.json(
+layer5\api\middleware\auth.ts-215-            { error: 'Missing API key. Set X-API-Key header. For dev: set LAYERINFINITE_DEV_API_KEY env var.', code: 'MISSING_API_KEY' },
+--
+layer5\api\lib\adapters\langchain-adapter.ts-224-            resource_cost_units: tokenCost,
+layer5\api\lib\adapters\langchain-adapter.ts-225-            resource_cost_type: tokenCost !== null ? 'tokens' : null,
+layer5\api\lib\adapters\langchain-adapter.ts:226:            environment: 'production',
+layer5\api\lib\adapters\langchain-adapter.ts-227-            feedback_signal: 'immediate',
+layer5\api\lib\adapters\langchain-adapter.ts-228-            signal_source: 'explicit',
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\webhook.ts-161-
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\webhook.ts-162-    // Keep local dev easy to test while keeping production strict.
+layer5\api\routes\webhook.ts:163:    if (process.env.NODE_ENV !== 'production') {
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\webhook.ts-164-        return true;
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\webhook.ts-165-    }
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\pending-signals.ts-6-const pendingSignalsRoute = new Hono();
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\pending-signals.ts-7-
+layer5\api\routes\pending-signals.ts:8:const primaryAuth = process.env.NODE_ENV === 'production'
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\pending-signals.ts-9-    ? authMiddleware
+layer5\api\routes\pending-signals.ts-10-    : devAuthMiddleware;
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\import.ts-633-}
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\import.ts-634-
+layer5\api\routes\import.ts:635:export function normalizeEnvironment(raw: unknown): 'production' | 'staging' | 'development' {
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\import.ts-636-    const normalized = String(raw ?? 'production').trim().toLowerCase();
+layer5\api\routes\import.ts-637-    const aliases: Record<string, 'production' | 'staging' | 'development'> = {
+--
+layer5\api\routes\import.ts-765-            return UUID_RE.test(s) ? s : null;
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\import.ts-766-        });
+layer5\api\routes\import.ts:767:        const environment = extractField(rec, ENVIRONMENT_FIELDS, (v) => normalizeEnvironment(v)) ?? 'production';
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\import.ts-768-
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\import.ts-769-        // Task resolution
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\log-outcome.ts-1002-            .eq('action_id', actionId)
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\log-outcome.ts-1003-            .eq('task_name', taskName)
+layer5\api\routes\log-outcome.ts:1004:            .eq('environment', 'production')
+layer5\api\routes\log-outcome.ts-1005-            .order('timestamp', { ascending: false })
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\log-outcome.ts-1006-            .limit(20);
+--
+layer5\api\routes\log-outcome.ts-1517-\ Debounce duration: controlled by env var.
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\log-outcome.ts-1518-// Default 15s for production (safe under load), 2s for development.
+layer5\api\routes\log-outcome.ts:1519:const REFRESH_DEBOUNCE_MS = process.env.NODE_ENV === 'production'
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\log-outcome.ts-1520-    ? Number(process.env.MV_REFRESH_DEBOUNCE_MS ?? 15_000)
+layer5\api\routes\log-outcome.ts-1521-    : 2_000;
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\discrepancy.ts-76-const discrepancyRoute = new Hono();
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\discrepancy.ts-77-
+layer5\api\routes\discrepancy.ts:78:const primaryAuth = process.env.NODE_ENV === 'production'
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\discrepancy.ts-79-    ? authMiddleware
+layer5\api\routes\discrepancy.ts-80-    : devAuthMiddleware;
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\get-scores.ts-196-export const getScoresRouter = new Hono();
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\get-scores.ts-197-
+layer5\api\routes\get-scores.ts:198:function normalizeEnvironment(value: string | undefined): 'production' | 'staging' | 'development' {
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\get-scores.ts-199-    const normalized = (value ?? 'production').trim().toLowerCase();
+layer5\api\routes\get-scores.ts-200-    const aliases: Record<string, 'production' | 'staging' | 'development'> = {
+--
+layer5\api\lib\environment-isolation.ts-7- * Rules:
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\lib\environment-isolation.ts-8- *   - Outcomes in staging are tagged environment='staging'
+layer5\api\lib\environment-isolation.ts:9: *   - Materialized views filter WHERE environment = 'production'
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\lib\environment-isolation.ts-10- *   - World model training only uses production data
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\lib\environment-isolation.ts-11- *   - Staging outcomes can be queried separately for testing
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\lib\environment-isolation.ts-18- */
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\lib\environment-isolation.ts-19-
+layer5\api\lib\environment-isolation.ts:20:export type Environment = 'production' | 'staging' | 'development';
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\lib\environment-isolation.ts-21-
+layer5\api\lib\environment-isolation.ts-22-const VALID_ENVIRONMENTS: ReadonlySet<string> = new Set([
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\lib\environment-isolation.ts-30-/**
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\lib\environment-isolation.ts-31- * Resolve the environment for a request.
+layer5\api\lib\environment-isolation.ts:32: * Precedence: header > NODE_ENV > default('production').
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\lib\environment-isolation.ts-33- */
+layer5\api\lib\environment-isolation.ts-34-export function resolveEnvironment(headerValue?: string | null): Environment {
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\lib\environment-isolation.ts-49-
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\lib\environment-isolation.ts-50-/**
+layer5\api\lib\environment-isolation.ts:51: * Is the given environment a non-production (staging/dev) environment?
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\lib\environment-isolation.ts-52- */
+layer5\api\lib\environment-isolation.ts-53-export function isNonProduction(env: Environment): boolean {
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\lib\environment-isolation.ts-56-
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\lib\environment-isolation.ts-57-/**
+layer5\api\lib\environment-isolation.ts:58: * Is the given environment production?
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\lib\environment-isolation.ts-59- */
+layer5\api\lib\environment-isolation.ts:60:export function isProduction(env: Environment): boolean {
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\lib\environment-isolation.ts-61-  return env === 'production';
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\lib\environment-isolation.ts-62-}
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\lib\environment-isolation.ts-64-/**
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\lib\environment-isolation.ts-65- * Build the environment filter suffix for Supabase queries.
+layer5\api\lib\environment-isolation.ts:66: * In production: `.eq('environment', 'production')` (or no filter for
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\lib\environment-isolation.ts-67- * tables that store only production data).
+layer5\api\lib\environment-isolation.ts-68- * In staging: `.eq('environment', 'staging')` for isolation.
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-64-    it('returns context for the correct tenant', async () => {
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-65-        const tenantRows = new Map<string, DimContextRow[]>([
+layer5\api\tests\context-leakage.test.ts:66:            ['customer_A', [{ context_id: 'ctx-A', context_vector: '[1,0,0]', embedding_model: 'gte-small', source_text: 'billing', embedding_schema_version: 2, environment: 'production' }]],
+layer5\api\tests\context-leakage.test.ts:67:            ['customer_B', [{ context_id: 'ctx-B', context_vector: '[1,0,0]', embedding_model: 'gte-small', source_text: 'billing', embedding_schema_version: 2, environment: 'production' }]],
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-68-        ]);
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-69-
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-78-    it('returns null when tenant has no matching context', async () => {
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-79-        const tenantRows = new Map<string, DimContextRow[]>([
+layer5\api\tests\context-leakage.test.ts:80:            ['customer_B', [{ context_id: 'ctx-B', context_vector: '[1,0,0]', embedding_model: 'gte-small', source_text: 'billing', embedding_schema_version: 2, environment: 'production' }]],
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-81-        ]);
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-82-
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-90-    it('does not leak customer_B context to customer_A query', async () => {
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-91-        const tenantRows = new Map<string, DimContextRow[]>([
+layer5\api\tests\context-leakage.test.ts:92:            ['customer_B', [{ context_id: 'ctx-B', context_vector: '[1,0,0]', embedding_model: 'gte-small', source_text: 'billing', embedding_schema_version: 2, environment: 'production' }]],
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-93-        ]);
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-94-
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-103-    it('same issue_type across two tenants returns correct ctx for each', async () => {
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-104-        const tenantRows = new Map<string, DimContextRow[]>([
+layer5\api\tests\context-leakage.test.ts:105:            ['customer_A', [{ context_id: 'ctx-A', context_vector: '[1,0,0]', embedding_model: 'gte-small', source_text: 'billing', embedding_schema_version: 2, environment: 'production' }]],
+layer5\api\tests\context-leakage.test.ts:106:            ['customer_B', [{ context_id: 'ctx-B', context_vector: '[1,0,0]', embedding_model: 'gte-small', source_text: 'billing', embedding_schema_version: 2, environment: 'production' }]],
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-107-        ]);
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-108-
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-119-        const tenantRows = new Map<string, DimContextRow[]>([
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-120-            ['customer_A', [
+layer5\api\tests\context-leakage.test.ts:121:                { context_id: 'ctx-prod', context_vector: '[1,0,0]', embedding_model: 'gte-small', source_text: 'billing', embedding_schema_version: 2, environment: 'production' },
+layer5\api\tests\context-leakage.test.ts-122-                { context_id: 'ctx-stage', context_vector: '[1,0,0]', embedding_model: 'gte-small', source_text: 'billing', embedding_schema_version: 2, environment: 'staging' },
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-123-            ]],
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-127-
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-128-        const result = await findClosestContext([1, 0, 0], 'customer_A', {
+layer5\api\tests\context-leakage.test.ts:129:            environment: 'production',
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-130-        });
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-131-
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-132-        expect(result?.context_id).toBe('ctx-prod');
+layer5\api\tests\context-leakage.test.ts:133:        expect(eqSpy).toHaveBeenCalledWith('environment', 'production');
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-134-    });
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-135-
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-144-
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-145-        const result = await findClosestContext([1, 0, 0], 'customer_A', {
+layer5\api\tests\context-leakage.test.ts:146:            environment: 'production',
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-147-        });
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\context-leakage.test.ts-148-
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\layer1\schema.test.ts-134-    });
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\layer1\schema.test.ts-135-
+layer5\api\tests\layer1\schema.test.ts:136:    test("normalizes unknown environment 'unknown_env' to 'production' and returns 201", async () => {
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\layer1\schema.test.ts-137-        const res = await app.request('/', {
+layer5\api\tests\layer1\schema.test.ts-138-            method: 'POST',
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\contracts.ts-6-const contractsRoute = new Hono();
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\contracts.ts-7-
+layer5\api\routes\contracts.ts:8:const primaryAuth = process.env.NODE_ENV === 'production'
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\contracts.ts-9-    ? authMiddleware
+layer5\api\routes\contracts.ts-10-    : devAuthMiddleware;
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\get-recommendations.ts-199-        .replace(/^_+|_+$/g, '') || issueType.trim();
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\get-recommendations.ts-200-
+layer5\api\routes\get-recommendations.ts:201:    const normalizedEnv = (environment ?? 'production').trim().toLowerCase() || 'production';
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\get-recommendations.ts-202-
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\routes\get-recommendations.ts-203-    try {
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\log-outcome-schema-coercion.test.ts-204-    // ── environment normalization (regression test) ───────────
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\log-outcome-schema-coercion.test.ts-205-
+layer5\api\tests\log-outcome-schema-coercion.test.ts:206:    it('environment: "prod" → normalized to "production"', async () => {
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\log-outcome-schema-coercion.test.ts-207-        const c = makeContext({
+layer5\api\tests\log-outcome-schema-coercion.test.ts-208-            action_name: 'retry_payment',
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\log-outcome-schema-coercion.test.ts-212-        });
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\log-outcome-schema-coercion.test.ts-213-        const body = await parseAndSanitizeRequest(c);
+layer5\api\tests\log-outcome-schema-coercion.test.ts:214:        expect(body.environment).toBe('production');
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\log-outcome-schema-coercion.test.ts-215-    });
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\tests\log-outcome-schema-coercion.test.ts-216-
+--
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\lib\supabase.ts-18-
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\lib\supabase.ts-19-// Only load .env file in development — Railway injects env vars directly in production
+layer5\api\lib\supabase.ts:20:if (process.env.NODE_ENV !== 'production') {
+C:\Users\kusta\Layerinfinite\Outcome\layer5\api\lib\supabase.ts-21-    const __dirname = dirname(fileURLToPath(import.meta.url));
+layer5\api\lib\supabase.ts-22-    config({ path: resolve(__dirname, '..', '.env') });
+
+[Showing results with pagination = limit: 250]

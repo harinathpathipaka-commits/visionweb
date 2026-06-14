@@ -1,0 +1,77 @@
+from __future__ import annotations
+
+import json
+import logging
+import os
+import sys
+import time
+import uuid
+from contextvars import ContextVar
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
+
+_correlation_id: ContextVar[str] = ContextVar("correlation_id", default="")
+_request_start: ContextVar[float] = ContextVar("request_start", default=0.0)
+
+LOG_LEVEL = os.environ.get("EL_LOG_LEVEL", "INFO").upper()
+LOG_FORMAT = os.environ.get("EL_LOG_FORMAT", "json")  # "json" or "text"
+
+
+class _StructuredFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        ts = datetime.now(timezone.utc).isoformat()
+        payload: Dict[str, Any] = {
+            "ts": ts,
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        }
+        corr_id = _correlation_id.get()
+        if corr_id:
+            payload["correlation_id"] = corr_id
+        if record.exc_info and record.exc_info[1]:
+            payload["error"] = str(record.exc_info[1])
+        for key in ("path", "method", "status", "latency_ms", "user_agent"):
+            if hasattr(record, key):
+                val = getattr(record, key)
+                if val is not None and val != "":
+                    payload[key] = val
+        if LOG_FORMAT == "text":
+            return f"{payload['ts']} [{payload['level']}] {payload.get('correlation_id', '-')} {payload['msg']}"
+        return json.dumps(payload, default=str)
+
+
+_logger = logging.getLogger("el")
+_logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
+_handler = logging.StreamHandler(sys.stdout)
+_handler.setFormatter(_StructuredFormatter())
+_logger.handlers.clear()
+_logger.addHandler(_handler)
+_logger.propagate = False
+
+
+def get_logger(name: Optional[str] = None) -> logging.Logger:
+    if name:
+        return _logger.getChild(name)
+    return _logger
+
+
+def set_correlation_id(cid: Optional[str] = None) -> str:
+    cid = cid or str(uuid.uuid4())[:12]
+    _correlation_id.set(cid)
+    return cid
+
+
+def get_correlation_id() -> str:
+    return _correlation_id.get()
+
+
+def start_request_timer() -> None:
+    _request_start.set(time.monotonic())
+
+
+def elapsed_ms() -> float:
+    start = _request_start.get()
+    if start == 0.0:
+        return 0.0
+    return (time.monotonic() - start) * 1000

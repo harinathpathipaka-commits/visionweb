@@ -1,0 +1,200 @@
+//! Proto ↔ Core type conversion for goal state types.
+//!
+//! The proto layer uses strings for IDs/enums (transport-safe).
+//! The core layer uses proper Rust types (Uuid, enums).
+
+use ans_core::goal::{GoalContext, GoalState, GoalStatus, SubGoal, SubGoalStatus};
+use ans_proto::ans;
+use uuid::Uuid;
+
+/// Core GoalState → proto GoalState.
+pub fn goal_state_to_proto(state: &GoalState) -> ans::GoalState {
+    ans::GoalState {
+        goal_id: state.goal_id.to_string(),
+        description: state.description.clone(),
+        status: goal_status_to_str(state.status).into(),
+        progress: state.progress,
+        sub_goals: state.sub_goals.iter().map(sub_goal_to_proto).collect(),
+        context: Some(goal_context_to_proto(&state.context)),
+        created_at: state.created_at.timestamp_millis(),
+        updated_at: state.updated_at.timestamp_millis(),
+    }
+}
+
+/// Proto GoalState → core GoalState.
+pub fn proto_to_goal_state(proto: &ans::GoalState) -> Option<GoalState> {
+    let goal_id = Uuid::parse_str(&proto.goal_id).ok()?;
+    Some(GoalState {
+        goal_id,
+        description: proto.description.clone(),
+        status: str_to_goal_status(&proto.status),
+        progress: proto.progress,
+        sub_goals: proto.sub_goals.iter().map(proto_to_sub_goal).collect(),
+        context: proto
+            .context
+            .as_ref()
+            .map(proto_to_goal_context)
+            .unwrap_or_default(),
+        created_at: chrono::DateTime::from_timestamp_millis(proto.created_at)
+            .unwrap_or_else(chrono::Utc::now),
+        updated_at: chrono::DateTime::from_timestamp_millis(proto.updated_at)
+            .unwrap_or_else(chrono::Utc::now),
+    })
+}
+
+// ── SubGoal ──────────────────────────────────────────────────────────
+
+fn sub_goal_to_proto(sg: &SubGoal) -> ans::SubGoal {
+    ans::SubGoal {
+        id: sg.id.to_string(),
+        description: sg.description.clone(),
+        success_criteria: sg.success_criteria.clone(),
+        depends_on: sg.depends_on.iter().map(|id| id.to_string()).collect(),
+        status: sub_goal_status_to_str(sg.status).into(),
+    }
+}
+
+fn proto_to_sub_goal(proto: &ans::SubGoal) -> SubGoal {
+    SubGoal {
+        id: Uuid::parse_str(&proto.id).unwrap_or_else(|_| Uuid::new_v4()),
+        description: proto.description.clone(),
+        success_criteria: proto.success_criteria.clone(),
+        depends_on: proto
+            .depends_on
+            .iter()
+            .filter_map(|id| Uuid::parse_str(id).ok())
+            .collect(),
+        status: str_to_sub_goal_status(&proto.status),
+    }
+}
+
+// ── GoalContext ──────────────────────────────────────────────────────
+
+fn goal_context_to_proto(ctx: &GoalContext) -> ans::GoalContext {
+    ans::GoalContext {
+        current_url: ctx.current_url.clone().unwrap_or_default(),
+        last_action: ctx.last_action.clone().unwrap_or_default(),
+        last_observation: ctx.last_observation.clone().unwrap_or_default(),
+        intent_embedding: ctx.intent_embedding.clone(),
+        distraction_count: ctx.distraction_count,
+    }
+}
+
+fn proto_to_goal_context(proto: &ans::GoalContext) -> GoalContext {
+    GoalContext {
+        current_url: if proto.current_url.is_empty() {
+            None
+        } else {
+            Some(proto.current_url.clone())
+        },
+        last_action: if proto.last_action.is_empty() {
+            None
+        } else {
+            Some(proto.last_action.clone())
+        },
+        last_observation: if proto.last_observation.is_empty() {
+            None
+        } else {
+            Some(proto.last_observation.clone())
+        },
+        intent_embedding: proto.intent_embedding.clone(),
+        distraction_count: proto.distraction_count,
+    }
+}
+
+// ── Enum ↔ string converters ────────────────────────────────────────
+
+pub fn goal_status_to_str(status: GoalStatus) -> &'static str {
+    match status {
+        GoalStatus::Pending => "pending",
+        GoalStatus::Active => "active",
+        GoalStatus::Completed => "completed",
+        GoalStatus::Failed => "failed",
+        GoalStatus::Blocked => "blocked",
+    }
+}
+
+pub fn str_to_goal_status(s: &str) -> GoalStatus {
+    match s {
+        "active" => GoalStatus::Active,
+        "completed" => GoalStatus::Completed,
+        "failed" => GoalStatus::Failed,
+        "blocked" => GoalStatus::Blocked,
+        _ => GoalStatus::Pending,
+    }
+}
+
+fn sub_goal_status_to_str(status: SubGoalStatus) -> &'static str {
+    match status {
+        SubGoalStatus::Pending => "pending",
+        SubGoalStatus::Active => "active",
+        SubGoalStatus::Done => "done",
+        SubGoalStatus::Blocked => "blocked",
+    }
+}
+
+fn str_to_sub_goal_status(s: &str) -> SubGoalStatus {
+    match s {
+        "active" => SubGoalStatus::Active,
+        "done" => SubGoalStatus::Done,
+        "blocked" => SubGoalStatus::Blocked,
+        _ => SubGoalStatus::Pending,
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_roundtrip_goal_state() {
+        let ctx = GoalContext {
+            current_url: Some("https://example.com".into()),
+            ..Default::default()
+        };
+
+        let state = GoalState {
+            goal_id: Uuid::new_v4(),
+            description: "Book a flight to NYC".into(),
+            status: GoalStatus::Active,
+            progress: 0.3,
+            sub_goals: vec![SubGoal {
+                id: Uuid::new_v4(),
+                description: "Navigate to airline site".into(),
+                success_criteria: vec!["Page loads".into()],
+                depends_on: vec![],
+                status: SubGoalStatus::Done,
+            }],
+            context: ctx,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        let proto = goal_state_to_proto(&state);
+        let roundtripped = proto_to_goal_state(&proto).unwrap();
+
+        assert_eq!(roundtripped.goal_id, state.goal_id);
+        assert_eq!(roundtripped.description, state.description);
+        assert_eq!(roundtripped.status, state.status);
+        assert_eq!(roundtripped.sub_goals.len(), 1);
+        assert_eq!(
+            roundtripped.sub_goals[0].description,
+            "Navigate to airline site"
+        );
+        assert_eq!(roundtripped.sub_goals[0].status, SubGoalStatus::Done);
+        assert_eq!(
+            roundtripped.context.current_url,
+            Some("https://example.com".into())
+        );
+    }
+
+    #[test]
+    fn test_status_strings() {
+        assert_eq!(str_to_goal_status("active"), GoalStatus::Active);
+        assert_eq!(str_to_goal_status("completed"), GoalStatus::Completed);
+        assert_eq!(str_to_goal_status("failed"), GoalStatus::Failed);
+        assert_eq!(str_to_goal_status("blocked"), GoalStatus::Blocked);
+        assert_eq!(str_to_goal_status("garbage"), GoalStatus::Pending);
+    }
+}

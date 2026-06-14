@@ -1,0 +1,148 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+
+SALESFORCE_VARIABLE_MAP: Dict[str, Dict[str, str]] = {
+    "Opportunity": {
+        "Amount": "pipeline",
+        "ExpectedRevenue": "pipeline",
+        "CloseDate": "timestamp",
+        "Probability": "conversion",
+        "CreatedDate": "timestamp",
+    },
+    "Account": {
+        "CreatedDate": "timestamp",
+        "NumberOfEmployees": "customers",
+    },
+    "Lead": {
+        "CreatedDate": "timestamp",
+        "ConvertedDate": "timestamp",
+    },
+}
+
+
+@dataclass(frozen=True)
+class SalesforceConfig:
+    instance_url: str
+    access_token: str
+    api_version: str = "v58.0"
+    page_size: int = 2000
+
+
+class SalesforceConnector:
+    """Reads Salesforce objects via REST API and maps to Equation Layer variables."""
+
+    def __init__(self, config: SalesforceConfig):
+        self.config = config
+        self._base_url = f"{config.instance_url}/services/data/{config.api_version}"
+
+    def _headers(self) -> Dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.config.access_token}",
+            "Content-Type": "application/json",
+        }
+
+    def _get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        import urllib.request
+        import json as json_mod
+
+        qs = ""
+        if params:
+            import urllib.parse
+            qs = "?" + urllib.parse.urlencode(params)
+
+        req = urllib.request.Request(
+            self._base_url + path + qs,
+            headers=self._headers(),
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return json_mod.loads(resp.read().decode("utf-8"))
+        except Exception as exc:
+            raise ConnectionError(f"Salesforce API call failed: {exc}") from exc
+
+    def _query(self, soql: str) -> List[Dict[str, Any]]:
+        params = {"q": soql}
+        all_records: List[Dict[str, Any]] = []
+        done = False
+        next_url: Optional[str] = None
+
+        while not done:
+            if next_url:
+                raw = self._get(next_url)
+            else:
+                raw = self._get("/query", params)
+
+            all_records.extend(raw.get("records", []))
+            done = raw.get("done", True)
+            next_url = raw.get("nextRecordsUrl", None)
+
+        return all_records
+
+    def fetch_opportunities(
+        self, since: Optional[str] = None, limit: int = 2000
+    ) -> List[Dict[str, Any]]:
+        fields = "Id,Name,Amount,ExpectedRevenue,CloseDate,Probability,StageName,CreatedDate"
+        soql = f"SELECT {fields} FROM Opportunity"
+        if since:
+            soql += f" WHERE CreatedDate >= {since}"
+        soql += f" ORDER BY CreatedDate DESC LIMIT {limit}"
+        records = self._query(soql)
+        return self._map_opportunities(records)
+
+    def fetch_accounts(self, limit: int = 2000) -> List[Dict[str, Any]]:
+        fields = "Id,Name,Industry,NumberOfEmployees,CreatedDate"
+        soql = f"SELECT {fields} FROM Account ORDER BY CreatedDate DESC LIMIT {limit}"
+        return self._query(soql)
+
+    def fetch_leads(
+        self, since: Optional[str] = None, limit: int = 2000
+    ) -> List[Dict[str, Any]]:
+        fields = "Id,Name,Status,CreatedDate,ConvertedDate"
+        soql = f"SELECT {fields} FROM Lead"
+        if since:
+            soql += f" WHERE CreatedDate >= {since}"
+        soql += f" ORDER BY CreatedDate DESC LIMIT {limit}"
+        return self._query(soql)
+
+    def introspect(self) -> List[Dict[str, Any]]:
+        """List available objects and their field metadata."""
+        raw = self._get("/sobjects")
+        return raw.get("sobjects", [])
+
+    def _map_opportunities(self, records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        obs: List[Dict[str, Any]] = []
+        for opp in records:
+            amt = float(opp.get("Amount") or 0)
+            if amt > 0:
+                obs.append({
+                    "variable": "pipeline",
+                    "value": amt,
+                    "unit": "USD",
+                    "timestamp": self._parse_date(opp.get("CloseDate")),
+                    "entity_id": opp.get("Id"),
+                })
+            prob = float(opp.get("Probability") or 0)
+            if prob > 0:
+                obs.append({
+                    "variable": "conversion",
+                    "value": prob / 100.0,
+                    "unit": "percentage",
+                    "timestamp": self._parse_date(opp.get("CreatedDate")),
+                    "entity_id": opp.get("Id"),
+                })
+        return obs
+
+    @staticmethod
+    def _parse_date(val: Optional[str]) -> Optional[str]:
+        if not val:
+            return None
+        try:
+            dt = datetime.fromisoformat(val.replace("Z", "+00:00"))
+            return dt.strftime("%Y-%m-%d")
+        except ValueError:
+            return val[:10]

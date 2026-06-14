@@ -1,0 +1,170 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Sequence, Tuple
+
+
+@dataclass(frozen=True)
+class Variable:
+    name: str
+    unit: str
+
+
+@dataclass(frozen=True)
+class Observation:
+    variable: str
+    value: float
+    unit: str
+    timestamp: str
+    entity_id: Optional[str]
+    quality_score: float
+
+
+@dataclass(frozen=True)
+class ExtractionResult:
+    variables: List[Variable]
+    assumptions: List[str]
+    domain: str
+
+
+@dataclass(frozen=True)
+class CorrelationResult:
+    rho: Dict[Tuple[str, str], float]
+    drift_flags: Dict[Tuple[str, str], bool]
+
+
+@dataclass(frozen=True)
+class FitStats:
+    r2_adj: float
+    holdout_mape: float
+    aic: float
+    residual_random: bool
+    n_obs: int
+
+
+@dataclass(frozen=True)
+class EquationFit:
+    family: str
+    parameters: Dict[str, float]
+    stats: FitStats
+    sympy_expr: str
+
+
+@dataclass(frozen=True)
+class ComputeResult:
+    answer: float
+    derivatives: Dict[str, float]
+    curvature: Dict[str, float]
+
+
+@dataclass(frozen=True)
+class ProbabilisticResult:
+    mean: float
+    std: float
+    ci_95: Tuple[float, float]
+    tail_risk: Optional[float]
+
+
+@dataclass(frozen=True)
+class GateResult:
+    passed: bool
+    reason: Optional[str]
+
+
+@dataclass(frozen=True)
+class SolveResult:
+    equation: EquationFit
+    compute: ComputeResult
+    probabilistic: ProbabilisticResult
+    gate: GateResult
+    trace_id: str
+
+
+@dataclass(frozen=True)
+class ColumnProfile:
+    column_name: str
+    inferred_type: str
+    null_pct: float
+    unique_pct: float
+    sample_values: List[str]
+
+
+@dataclass(frozen=True)
+class SchemaMapping:
+    column_name: str
+    variable: str
+    unit: str
+    confidence: float
+    time_column: bool
+    entity_key: Optional[str]
+
+
+@dataclass(frozen=True)
+class ObservationDraft:
+    variable: str
+    value: Optional[float]
+    unit: str
+    timestamp: Optional[str]
+    entity_id: Optional[str]
+    row_index: int
+
+
+@dataclass(frozen=True)
+class QualityIssue:
+    row_index: int
+    column_name: str
+    code: str
+    severity: str
+    message: str
+
+
+@dataclass(frozen=True)
+class IngestionSummary:
+    total_rows: int
+    observations_created: int
+    issues_count: int
+    status: str
+
+
+@dataclass(frozen=True)
+class IngestionJob:
+    job_id: int
+    file_id: int
+    status: str
+    total_rows: int
+    observations_created: int
+    issues_count: int
+
+
+@dataclass(frozen=True)
+class GraphNode:
+    variable: str
+    domain: str
+    n_equations: int
+
+
+@dataclass(frozen=True)
+class GraphEdge:
+    source: str
+    target: str
+    equation_id: int
+    family: str
+    sympy_expr: str
+
+
+@dataclass(frozen=True)
+class GraphPath:
+    nodes: List[str]
+    edges: List[GraphEdge]
+    cumulative_uncertainty: float
+
+
+@dataclass(frozen=True)
+class ConflictDetail:
+    equation_id_a: int
+    equation_id_b: int
+    variable_pair: str
+    reason: str
+    elasticity_a: Optional[float]
+    elasticity_b: Optional[float]
+    resolution_status: str

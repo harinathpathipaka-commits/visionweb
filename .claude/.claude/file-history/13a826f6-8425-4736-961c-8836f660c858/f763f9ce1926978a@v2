@@ -1,0 +1,1 @@
+- [Decision Intelligence Layer](decision-intelligence-layer.md) — Inbuilt feedback loop (NOT middleware) that recommends/executes next best action based on prior action outcomes, errors, and context

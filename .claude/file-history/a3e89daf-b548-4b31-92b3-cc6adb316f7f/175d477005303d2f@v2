@@ -1,0 +1,133 @@
+//! Agent Nervous System daemon entry point.
+//!
+//! Starts two servers:
+//! - gRPC server on loopback:50051 (internal Python/TS clients)
+//! - Gateway on loopback:50052 (external AI agents — MCP, REST, WS)
+//!
+//! Both run concurrently. Chromium instances are cleaned up on exit
+//! via RAII drop guards. Ctrl+C triggers graceful shutdown.
+
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::path::PathBuf;
+
+use ans_ipc::IpcServer;
+use clap::Parser;
+use tracing_subscriber::EnvFilter;
+
+#[derive(Parser)]
+#[command(name = "ans-daemon", version, about = "Agent Nervous System daemon")]
+struct Cli {
+    /// gRPC port to bind on loopback
+    #[arg(long, default_value = "50051")]
+    grpc_port: u16,
+
+    /// Gateway port to bind on loopback
+    #[arg(long, default_value = "50052")]
+    gateway_port: u16,
+
+    /// Path to ans.toml configuration file
+    #[arg(long, default_value = "ans.toml")]
+    config: PathBuf,
+
+    /// Path to nerves/ directory (Python intelligence layer)
+    #[arg(long, default_value = "nerves")]
+    nerves_dir: PathBuf,
+
+    /// Number of Chromium instances to pre-warm (default 2, 0 to disable)
+    #[arg(long, default_value = "2")]
+    prewarm: usize,
+}
+
+#[tokio::main]
+async fn main() {
+    if let Err(e) = color_eyre::install() {
+        eprintln!("Failed to install color-eyre panic handler: {e}");
+        std::process::exit(1);
+    }
+
+    let cli = Cli::parse();
+
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("ans=debug,info")),
+        )
+        .init();
+
+    tracing::info!(version = env!("CARGO_PKG_VERSION"), "ans-daemon starting");
+
+    if let Some(cfg) = load_config(&cli.config) {
+        tracing::info!(?cfg, "Config loaded");
+    } else {
+        tracing::info!("No config file found, using defaults");
+    }
+
+    // ── Start gRPC server in background ──────────────────────────────
+    let nerves_abs = if cli.nerves_dir.is_absolute() {
+        cli.nerves_dir.clone()
+    } else {
+        std::env::current_dir().unwrap_or_default().join(&cli.nerves_dir)
+    };
+    let server = IpcServer::new()
+        .with_nerves_dir(nerves_abs)
+        .with_pool_size(cli.prewarm);
+    let goal_store = server.goal_store(); // clone before server moves into spawn
+    let sessions = server.session_manager(); // clone before server moves into spawn
+    let goals = server.goal_manager(); // clone for error recovery resume
+    let grpc_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), cli.grpc_port);
+
+    let grpc_handle = tokio::spawn(async move {
+        if let Err(e) = server.serve(grpc_addr).await {
+            tracing::error!(%e, "gRPC server exited with error");
+        }
+    });
+
+    // Give the gRPC server a moment to bind before starting the gateway
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+
+    // ── Start gateway ────────────────────────────────────────────────
+    let gw_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), cli.gateway_port);
+
+    let gw_handle = match ans_gateway::Gateway::init(
+        cli.grpc_port,
+        Some(goal_store),
+        Some(sessions),
+        Some(goals),
+    )
+    .await
+    {
+        Ok(gateway) => {
+            tracing::info!("Gateway starting on {}", gw_addr);
+            tokio::spawn(async move {
+                if let Err(e) = gateway.serve(gw_addr).await {
+                    tracing::error!(%e, "Gateway exited with error");
+                }
+            })
+        }
+        Err(e) => {
+            tracing::warn!(%e, "Gateway failed to initialize — running gRPC-only");
+            // Still wait for gRPC server
+            let _ = grpc_handle.await;
+            return;
+        }
+    };
+
+    // ── Wait for shutdown ────────────────────────────────────────────
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            tracing::info!("Shutdown signal received");
+        }
+        _ = grpc_handle => {
+            tracing::warn!("gRPC server exited unexpectedly");
+        }
+        _ = gw_handle => {
+            tracing::warn!("Gateway exited unexpectedly");
+        }
+    }
+
+    tracing::info!("ans-daemon shut down cleanly");
+}
+
+fn load_config(path: &PathBuf) -> Option<toml::Value> {
+    let content = std::fs::read_to_string(path).ok()?;
+    toml::from_str(&content).ok()
+}

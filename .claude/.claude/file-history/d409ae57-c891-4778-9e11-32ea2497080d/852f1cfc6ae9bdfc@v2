@@ -1,0 +1,155 @@
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
+
+
+def split_by_category(
+    values: List[float],
+    categories: List[str],
+) -> Dict[str, List[float]]:
+    """Split a series by category labels. Returns {category: [values]}."""
+    groups: Dict[str, List[float]] = {}
+    for v, cat in zip(values, categories):
+        key = str(cat) if cat is not None else "unknown"
+        groups.setdefault(key, []).append(float(v))
+    return groups
+
+
+def split_by_quantile(
+    values: List[float],
+    group_values: List[float],
+    n_groups: int = 4,
+) -> Dict[str, List[float]]:
+    """Split values into quantile buckets of group_values.
+
+    Returns {f"Q{i}": [values in that quantile of group_values]}.
+    """
+    arr = np.array(group_values, dtype=np.float64)
+    quantiles = np.percentile(arr, np.linspace(0, 100, n_groups + 1)[1:-1])
+
+    groups: Dict[str, List[float]] = {f"Q{i+1}": [] for i in range(n_groups)}
+    for v, gv in zip(values, group_values):
+        placed = False
+        for i, q in enumerate(quantiles):
+            if gv <= q:
+                groups[f"Q{i+1}"].append(float(v))
+                placed = True
+                break
+        if not placed:
+            groups[f"Q{n_groups}"].append(float(v))
+
+    return groups
+
+
+def compare_segments(
+    segments: Dict[str, List[float]],
+    metric_name: str = "value",
+) -> Dict[str, Any]:
+    """Compare a metric across segments. Returns stats per segment + ANOVA-like summary."""
+    segment_stats = {}
+    grand_mean = 0.0
+    total_n = 0
+    all_values = []
+
+    for name, vals in segments.items():
+        if len(vals) < 2:
+            segment_stats[name] = {"n": len(vals), "mean": float(np.mean(vals)) if vals else 0.0,
+                                    "std": 0.0, "min": 0.0, "max": 0.0}
+            continue
+        arr = np.array(vals, dtype=np.float64)
+        segment_stats[name] = {
+            "n": len(vals),
+            "mean": round(float(np.mean(arr)), 4),
+            "std": round(float(np.std(arr)), 4),
+            "min": round(float(np.min(arr)), 4),
+            "max": round(float(np.max(arr)), 4),
+            "median": round(float(np.median(arr)), 4),
+        }
+        all_values.extend(vals)
+        total_n += len(vals)
+        grand_mean += np.sum(arr)
+
+    grand_mean = grand_mean / total_n if total_n > 0 else 0.0
+
+    # Between-group variance / total variance
+    ss_between = 0.0
+    ss_total = 0.0
+    if all_values:
+        grand_arr = np.array(all_values, dtype=np.float64)
+        ss_total = float(np.sum((grand_arr - grand_mean) ** 2))
+        for name, vals in segments.items():
+            if vals:
+                seg_mean = np.mean(vals)
+                ss_between += len(vals) * (seg_mean - grand_mean) ** 2
+
+    explained_ratio = round(ss_between / ss_total, 4) if ss_total > 1e-10 else 0.0
+
+    # Find segments with significant deviation
+    significant = []
+    for name, stats in segment_stats.items():
+        if stats["n"] >= 3:
+            diff = stats["mean"] - grand_mean
+            se = stats["std"] / np.sqrt(stats["n"]) if stats["std"] > 0 else 0.0
+            z = diff / se if se > 0 else 0.0
+            if abs(z) > 2.0:
+                significant.append({
+                    "segment": name,
+                    "mean": stats["mean"],
+                    "grand_mean": round(grand_mean, 4),
+                    "deviation": round(diff, 4),
+                    "z_score": round(z, 2),
+                    "direction": "above average" if diff > 0 else "below average",
+                })
+
+    return {
+        "metric": metric_name,
+        "n_segments": len(segments),
+        "total_n": total_n,
+        "grand_mean": round(grand_mean, 4),
+        "variance_explained_by_segments": explained_ratio,
+        "segments": segment_stats,
+        "significant_deviations": significant,
+        "insight": (
+            f"Segment membership explains {explained_ratio*100:.1f}% of variance in {metric_name}. "
+            f"{len(significant)} segments show significant deviation from the mean."
+        ),
+    }
+
+
+def compare_fits(
+    segment_fits: Dict[str, Dict[str, float]],  # {segment_name: {slope, intercept, r2}}
+) -> Dict[str, Any]:
+    """Compare fitted relationships across segments."""
+    segments = []
+    for name, fit in segment_fits.items():
+        segments.append({
+            "segment": name,
+            "slope": fit.get("slope", 0.0),
+            "intercept": fit.get("intercept", 0.0),
+            "r2": fit.get("r2", 0.0),
+        })
+
+    if not segments:
+        return {"summary": "No segments to compare.", "segments": []}
+
+    slopes = [s["slope"] for s in segments]
+    r2s = [s["r2"] for s in segments]
+
+    # Find most/least responsive
+    most = max(segments, key=lambda s: abs(s["slope"]))
+    best_fit = max(segments, key=lambda s: s["r2"])
+
+    return {
+        "segments": segments,
+        "slope_range": [round(min(slopes), 4), round(max(slopes), 4)],
+        "r2_range": [round(min(r2s), 4), round(max(r2s), 4)],
+        "most_responsive_segment": most["segment"],
+        "best_fit_segment": best_fit["segment"],
+        "summary": (
+            f"'{most['segment']}' is most responsive (slope={most['slope']:.4f}). "
+            f"'{best_fit['segment']}' has best fit (R²={best_fit['r2']:.4f}). "
+            f"Slope varies from {min(slopes):.4f} to {max(slopes):.4f} across segments."
+        ),
+    }

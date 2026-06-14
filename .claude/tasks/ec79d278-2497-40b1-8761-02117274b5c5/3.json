@@ -1,0 +1,8 @@
+{
+  "id": "3",
+  "subject": "Phase 3: Resilience — Build fallback_router.py",
+  "description": "Implement fallback router that maps every gate failure to an actionable response.",
+  "status": "completed",
+  "blocks": [],
+  "blockedBy": []
+}

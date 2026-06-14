@@ -1,0 +1,108 @@
+//! Serialize/deserialize decision intelligence types between core domain
+//! types and protobuf-generated types.
+
+use ans_core::decision::DecisionRecord;
+use ans_core::session::{Action, ActionType};
+
+/// Convert a proto StoreScoreRequest into a core DecisionRecord.
+pub fn proto_to_decision_record(req: &ans_proto::ans::StoreScoreRequest) -> Option<DecisionRecord> {
+    let proto_action = req.action.as_ref()?;
+    let action = proto_to_action(proto_action);
+    let now = chrono::Utc::now();
+
+    Some(DecisionRecord {
+        id: uuid::Uuid::new_v4(),
+        session_id: uuid::Uuid::parse_str(&req.session_id).ok()?,
+        goal_id: uuid::Uuid::parse_str(&req.goal_id).unwrap_or_else(|_| uuid::Uuid::nil()),
+        action,
+        tool: req.tool.clone(),
+        context_type: req.context_type.clone(),
+        context_embedding: req.context_embedding.clone(),
+        business_outcome: ans_core::decision::BusinessOutcome::new_immediate(
+            req.outcome_score > 0.5,
+            if req.error_message.is_empty() {
+                None
+            } else {
+                Some(req.error_message.clone())
+            },
+        ),
+        outcome_success: req.outcome_score > 0.5,
+        results_summary: format!("score={:.2}", req.result_score),
+        error_message: if req.error_message.is_empty() {
+            None
+        } else {
+            Some(req.error_message.clone())
+        },
+        composite_score: req.business_outcome,
+        use_count: 1,
+        created_at: now,
+        updated_at: now,
+    })
+}
+
+/// Convert a stored DecisionRecord to a proto ScoredAction for query responses.
+pub fn decision_to_scored_action(
+    record: &DecisionRecord,
+    _similarity: f32,
+) -> ans_proto::ans::ScoredAction {
+    ans_proto::ans::ScoredAction {
+        action: Some(core_action_to_proto(&record.action)),
+        tool: record.tool.clone(),
+        composite_score: record.composite_score,
+        outcome_score: if record.outcome_success { 1.0 } else { 0.0 },
+        result_score: 0.5, // derived from composite
+        error_penalty: record.error_message.as_ref().map_or(0.0, |_| 0.2),
+        business_outcome: record.business_outcome.composite_score(),
+        use_count: record.use_count,
+        last_used_at: record.updated_at.timestamp_millis(),
+    }
+}
+
+fn proto_to_action(proto: &ans_proto::ans::Action) -> Action {
+    Action {
+        action_type: match proto.action_type.as_str() {
+            "click" => ActionType::Click,
+            "type" => ActionType::Type,
+            "scroll" => ActionType::Scroll,
+            "select" => ActionType::Select,
+            "navigate" => ActionType::Navigate,
+            "wait" => ActionType::Wait,
+            "submit" => ActionType::Submit,
+            "screenshot" => ActionType::Screenshot,
+            _ => ActionType::Click,
+        },
+        selector: if proto.selector.is_empty() {
+            None
+        } else {
+            Some(proto.selector.clone())
+        },
+        value: if proto.value.is_empty() {
+            None
+        } else {
+            Some(proto.value.clone())
+        },
+        params: proto.params.clone(),
+    }
+}
+
+fn core_action_to_proto(action: &Action) -> ans_proto::ans::Action {
+    ans_proto::ans::Action {
+        action_type: action_type_to_str(&action.action_type).into(),
+        selector: action.selector.clone().unwrap_or_default(),
+        value: action.value.clone().unwrap_or_default(),
+        params: action.params.clone(),
+    }
+}
+
+fn action_type_to_str(at: &ActionType) -> &'static str {
+    match at {
+        ActionType::Click => "click",
+        ActionType::Type => "type",
+        ActionType::Scroll => "scroll",
+        ActionType::Select => "select",
+        ActionType::Navigate => "navigate",
+        ActionType::Wait => "wait",
+        ActionType::Submit => "submit",
+        ActionType::Screenshot => "screenshot",
+    }
+}

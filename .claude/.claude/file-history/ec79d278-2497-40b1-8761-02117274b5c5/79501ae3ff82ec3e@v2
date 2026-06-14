@@ -1,0 +1,171 @@
+from __future__ import annotations
+
+import json
+import time
+from typing import Any, Dict, List, Optional
+
+from .models import EquationFit
+
+
+class ValkeyCache:
+    """Redis/Valkey-compatible cache for equation results.
+
+    Degrades gracefully to an in-memory LRU dict if Valkey/Redis is unavailable.
+    """
+
+    def __init__(
+        self,
+        url: str = "redis://localhost:6379",
+        ttl: int = 3600,
+        max_memory_items: int = 500,
+    ):
+        self._ttl = ttl
+        self._client = None
+        self._fallback: Dict[str, Dict[str, Any]] = {}
+        self._max_memory = max_memory_items
+        try:
+            import redis
+            self._client = redis.Redis.from_url(url, decode_responses=True)
+            self._client.ping()
+        except Exception:
+            self._client = None
+
+    @property
+    def available(self) -> bool:
+        return self._client is not None
+
+    def get_equation(self, var_hash: str, domain: str) -> Optional[EquationFit]:
+        key = _cache_key(var_hash, domain)
+        raw = self._get(key)
+        if raw is None:
+            return None
+        try:
+            from .models import FitStats
+            stats_raw = raw["stats"]
+            stats = FitStats(
+                r2_adj=stats_raw["r2_adj"],
+                holdout_mape=stats_raw["holdout_mape"],
+                aic=stats_raw["aic"],
+                residual_random=stats_raw["residual_random"],
+                n_obs=stats_raw["n_obs"],
+            )
+            return EquationFit(
+                family=raw["family"],
+                parameters=raw["parameters"],
+                stats=stats,
+                sympy_expr=raw["sympy_expr"],
+            )
+        except (KeyError, TypeError):
+            return None
+
+    def set_equation(
+        self,
+        var_hash: str,
+        domain: str,
+        equation: EquationFit,
+    ) -> None:
+        value = {
+            "family": equation.family,
+            "parameters": equation.parameters,
+            "sympy_expr": equation.sympy_expr,
+            "stats": {
+                "r2_adj": equation.stats.r2_adj,
+                "holdout_mape": equation.stats.holdout_mape,
+                "aic": equation.stats.aic,
+                "residual_random": equation.stats.residual_random,
+                "n_obs": equation.stats.n_obs,
+            },
+        }
+        self._set(_cache_key(var_hash, domain), value, self._ttl)
+
+    def invalidate(self, var_hash: str, domain: str) -> None:
+        key = _cache_key(var_hash, domain)
+        if self._client:
+            self._client.delete(key)
+        else:
+            self._fallback.pop(key, None)
+
+    def _get(self, key: str) -> Optional[Dict[str, Any]]:
+        if self._client:
+            raw = self._client.get(key)
+            if raw:
+                return json.loads(raw)
+            return None
+        entry = self._fallback.get(key)
+        if entry is None:
+            return None
+        if entry["expires_at"] < time.time():
+            del self._fallback[key]
+            return None
+        return entry["value"]
+
+    def _set(self, key: str, value: Dict[str, Any], ttl: int) -> None:
+        if self._client:
+            self._client.setex(key, ttl, json.dumps(value))
+            return
+        if len(self._fallback) >= self._max_memory:
+            expired = [k for k, v in self._fallback.items() if v["expires_at"] < time.time()]
+            for k in expired:
+                del self._fallback[k]
+            if len(self._fallback) >= self._max_memory:
+                oldest = min(self._fallback, key=lambda k: self._fallback[k]["expires_at"])
+                del self._fallback[oldest]
+        self._fallback[key] = {"value": value, "expires_at": time.time() + ttl}
+
+
+class ValkeyQueue:
+    """Redis/Valkey-compatible job queue for async refit and ingestion.
+
+    Degrades to in-memory list if Valkey/Redis unavailable.
+    """
+
+    def __init__(self, url: str = "redis://localhost:6379"):
+        self._client = None
+        self._fallback_refit: List[str] = []
+        self._fallback_ingestion: List[str] = []
+        try:
+            import redis
+            self._client = redis.Redis.from_url(url, decode_responses=True)
+            self._client.ping()
+        except Exception:
+            self._client = None
+
+    def enqueue_refit(self, equation_id: int) -> None:
+        payload = json.dumps({"type": "refit", "equation_id": equation_id})
+        if self._client:
+            self._client.rpush("queue:refit", payload)
+        else:
+            self._fallback_refit.append(payload)
+
+    def enqueue_ingestion(self, file_id: int) -> None:
+        payload = json.dumps({"type": "ingestion", "file_id": file_id})
+        if self._client:
+            self._client.rpush("queue:ingestion", payload)
+        else:
+            self._fallback_ingestion.append(payload)
+
+    def dequeue(self, worker_id: str, timeout: int = 5) -> Optional[Dict[str, Any]]:
+        queues = ("queue:refit", "queue:ingestion")
+        if self._client:
+            result = self._client.blpop(queues, timeout=timeout)
+            if result:
+                return json.loads(result[1])
+        else:
+            if self._fallback_refit:
+                return json.loads(self._fallback_refit.pop(0))
+            if self._fallback_ingestion:
+                return json.loads(self._fallback_ingestion.pop(0))
+        return None
+
+    def queue_length(self, queue_name: str) -> int:
+        if self._client:
+            return self._client.llen(f"queue:{queue_name}")
+        if queue_name == "refit":
+            return len(self._fallback_refit)
+        if queue_name == "ingestion":
+            return len(self._fallback_ingestion)
+        return 0
+
+
+def _cache_key(var_hash: str, domain: str) -> str:
+    return f"el:equation:{domain}:{var_hash}"

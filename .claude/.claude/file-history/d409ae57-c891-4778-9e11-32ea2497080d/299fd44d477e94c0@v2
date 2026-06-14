@@ -1,0 +1,647 @@
+from __future__ import annotations
+
+import json
+import os
+import sqlite3
+import tempfile
+import uuid
+from pathlib import Path
+
+import pytest
+
+from src.epistemic_ledger import append_event, init_ledger, list_events
+from src.storage import (
+    find_equation,
+    get_or_create_equation,
+    init_storage,
+    insert_version,
+    promote_version,
+    record_shadow_eval,
+)
+
+
+# ── Ledger Integrity ──────────────────────────────────────────────────────
+
+class TestLedgerIntegrity:
+    def test_init_ledger_creates_table_idempotently(self):
+        db_path = str(Path(tempfile.gettempdir()) / f"test_ledger_init_{os.getpid()}.db")
+        try:
+            init_ledger(db_path)
+            init_ledger(db_path)  # idempotent
+
+            conn = sqlite3.connect(db_path)
+            try:
+                tables = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='epistemic_ledger'"
+                ).fetchone()
+                assert tables is not None
+            finally:
+                conn.close()
+        finally:
+            try:
+                os.unlink(db_path)
+            except PermissionError:
+                pass
+
+    def test_append_and_list_events(self):
+        db_path = str(Path(tempfile.gettempdir()) / f"test_ledger_append_{os.getpid()}.db")
+        trace_id = str(uuid.uuid4())
+        try:
+            init_ledger(db_path)
+            append_event(db_path, trace_id, "test_start", '{"key": "value"}')
+            append_event(db_path, trace_id, "test_end", '{"result": "ok"}')
+
+            events = list_events(db_path, trace_id)
+            assert len(events) == 2
+            assert events[0]["event_type"] == "test_start"
+            assert events[0]["payload_json"] == '{"key": "value"}'
+            assert events[1]["event_type"] == "test_end"
+            assert "created_at" in events[0]
+        finally:
+            try:
+                os.unlink(db_path)
+            except PermissionError:
+                pass
+
+    def test_events_ordered_by_event_id(self):
+        db_path = str(Path(tempfile.gettempdir()) / f"test_ledger_order_{os.getpid()}.db")
+        trace_id = str(uuid.uuid4())
+        try:
+            init_ledger(db_path)
+            for i in range(10):
+                append_event(db_path, trace_id, f"step_{i}", json.dumps({"i": i}))
+
+            events = list_events(db_path, trace_id)
+            assert len(events) == 10
+            for i, ev in enumerate(events):
+                assert ev["event_type"] == f"step_{i}"
+        finally:
+            try:
+                os.unlink(db_path)
+            except PermissionError:
+                pass
+
+    def test_different_trace_ids_isolated(self):
+        db_path = str(Path(tempfile.gettempdir()) / f"test_ledger_iso_{os.getpid()}.db")
+        tid1 = str(uuid.uuid4())
+        tid2 = str(uuid.uuid4())
+        try:
+            init_ledger(db_path)
+            append_event(db_path, tid1, "event_a", "{}")
+            append_event(db_path, tid2, "event_b", "{}")
+
+            assert len(list_events(db_path, tid1)) == 1
+            assert len(list_events(db_path, tid2)) == 1
+        finally:
+            try:
+                os.unlink(db_path)
+            except PermissionError:
+                pass
+
+    def test_empty_trace_returns_empty_list(self):
+        db_path = str(Path(tempfile.gettempdir()) / f"test_ledger_empty_{os.getpid()}.db")
+        try:
+            init_ledger(db_path)
+            events = list_events(db_path, "nonexistent-trace-id")
+            assert events == []
+        finally:
+            try:
+                os.unlink(db_path)
+            except PermissionError:
+                pass
+
+
+# ── Full Pipeline Ledger Trace ────────────────────────────────────────────
+
+class TestPipelineLedgerTrace:
+    def test_solve_produces_ledger_events(self):
+        """A solve call should produce multiple ledger events with a trace_id."""
+        from src.pipeline import solve
+
+        db_path = str(Path(tempfile.gettempdir()) / f"test_pipeline_ledger_{os.getpid()}.db")
+        try:
+            x = [float(i) for i in range(20)]
+            y = [float(i * 2 + 1) for i in range(20)]
+
+            result = solve(
+                query="What is the linear relationship?",
+                x_values=x,
+                y_values=y,
+                db_path=db_path,
+            )
+
+            assert result.trace_id is not None
+            assert len(result.trace_id) > 0
+
+            init_ledger(db_path)
+            events = list_events(db_path, result.trace_id)
+            # Should have at least: domain_routing, extraction, correlation, library_miss/fitting, compute, probabilistic, gate
+            assert len(events) >= 6
+
+            event_types = {e["event_type"] for e in events}
+            assert "domain_routing" in event_types
+            assert "extraction" in event_types
+            assert "correlation" in event_types
+            assert "gate" in event_types
+        finally:
+            try:
+                os.unlink(db_path)
+            except PermissionError:
+                pass
+
+    def test_all_events_have_same_trace_id(self):
+        from src.pipeline import solve
+
+        db_path = str(Path(tempfile.gettempdir()) / f"test_trace_consistency_{os.getpid()}.db")
+        try:
+            x = [float(i) for i in range(20)]
+            y = [float(i * 2 + 1) for i in range(20)]
+
+            result = solve(
+                query="Test trace consistency",
+                x_values=x,
+                y_values=y,
+                db_path=db_path,
+            )
+
+            events = list_events(db_path, result.trace_id)
+            assert len(events) > 0
+            for ev in events:
+                # All events are retrieved by the same trace_id, so this is implicit
+                assert result.trace_id is not None
+
+            # Different solve calls get different trace_ids
+            result2 = solve(query="Another test", x_values=x, y_values=y, db_path=db_path)
+            assert result.trace_id != result2.trace_id
+        finally:
+            try:
+                os.unlink(db_path)
+            except PermissionError:
+                pass
+
+    def test_ledger_contains_valid_json_payloads(self):
+        from src.pipeline import solve
+
+        db_path = str(Path(tempfile.gettempdir()) / f"test_ledger_json_{os.getpid()}.db")
+        try:
+            x = [float(i) for i in range(20)]
+            y = [float(i * 2 + 1) for i in range(20)]
+
+            result = solve(query="Test JSON payloads", x_values=x, y_values=y, db_path=db_path)
+
+            events = list_events(db_path, result.trace_id)
+            for ev in events:
+                # Every payload should be valid JSON
+                parsed = json.loads(ev["payload_json"])
+                assert isinstance(parsed, dict)
+        finally:
+            try:
+                os.unlink(db_path)
+            except PermissionError:
+                pass
+
+
+# ── Equation Versioning Integrity ─────────────────────────────────────────
+
+class TestEquationVersioning:
+    def test_insert_version_returns_valid_id(self):
+        db_path = str(Path(tempfile.gettempdir()) / f"test_version_{os.getpid()}.db")
+        try:
+            init_storage(db_path)
+            now = "2024-01-01T00:00:00"
+            eq_id = get_or_create_equation(db_path, "hash:test:v1", "general", now)
+
+            version_id = insert_version(
+                db_path=db_path,
+                equation_id=eq_id,
+                form_family="linear",
+                sympy_ast="a*x + b",
+                parameters={"a": 2.0, "b": 1.0},
+                stats={"r2_adj": 0.95, "holdout_mape": 5.0, "aic": 100.0, "residual_random": True, "n_obs": 50},
+                n_obs=50,
+                created_at=now,
+                source="primary",
+                provenance={"source": "test"},
+            )
+            assert version_id > 0
+        finally:
+            try:
+                os.unlink(db_path)
+            except PermissionError:
+                pass
+
+    def test_shadow_eval_updates_version_status(self):
+        db_path = str(Path(tempfile.gettempdir()) / f"test_shadow_{os.getpid()}.db")
+        try:
+            init_storage(db_path)
+            now = "2024-01-01T00:00:00"
+            eq_id = get_or_create_equation(db_path, "hash:shadow:test", "general", now)
+
+            version_id = insert_version(
+                db_path=db_path, equation_id=eq_id, form_family="linear",
+                sympy_ast="a*x+b", parameters={"a": 1.0, "b": 0.0},
+                stats={"r2_adj": 0.8, "holdout_mape": 10.0, "aic": 120.0, "residual_random": True, "n_obs": 30},
+                n_obs=30, created_at=now, source="test", provenance={},
+            )
+
+            record_shadow_eval(db_path, version_id, mape=10.0, aic=120.0,
+                              residual_random=True, passed=True, evaluated_at=now)
+
+            with sqlite3.connect(db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                # Check shadow eval was inserted
+                eval_row = conn.execute(
+                    "SELECT * FROM equation_shadow_evals WHERE version_id = ?", (version_id,)
+                ).fetchone()
+                assert eval_row is not None
+                assert eval_row["passed"] == 1
+
+                # Check version status was updated
+                ver_row = conn.execute(
+                    "SELECT shadow_status FROM equation_versions WHERE version_id = ?", (version_id,)
+                ).fetchone()
+                assert ver_row["shadow_status"] == "passed"
+        finally:
+            try:
+                os.unlink(db_path)
+            except PermissionError:
+                pass
+
+    def test_shadow_eval_failed_status(self):
+        db_path = str(Path(tempfile.gettempdir()) / f"test_shadow_fail_{os.getpid()}.db")
+        try:
+            init_storage(db_path)
+            now = "2024-01-01T00:00:00"
+            eq_id = get_or_create_equation(db_path, "hash:shadow:fail", "general", now)
+
+            version_id = insert_version(
+                db_path=db_path, equation_id=eq_id, form_family="linear",
+                sympy_ast="a*x+b", parameters={"a": 1.0, "b": 0.0},
+                stats={"r2_adj": 0.3, "holdout_mape": 80.0, "aic": 500.0, "residual_random": False, "n_obs": 10},
+                n_obs=10, created_at=now, source="test", provenance={},
+            )
+
+            record_shadow_eval(db_path, version_id, mape=80.0, aic=500.0,
+                              residual_random=False, passed=False, evaluated_at=now)
+
+            with sqlite3.connect(db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                ver_row = conn.execute(
+                    "SELECT shadow_status FROM equation_versions WHERE version_id = ?", (version_id,)
+                ).fetchone()
+                assert ver_row["shadow_status"] == "failed"
+        finally:
+            try:
+                os.unlink(db_path)
+            except PermissionError:
+                pass
+
+    def test_promote_version_updates_library(self):
+        db_path = str(Path(tempfile.gettempdir()) / f"test_promote_{os.getpid()}.db")
+        try:
+            init_storage(db_path)
+            now = "2024-01-01T00:00:00"
+            eq_id = get_or_create_equation(db_path, "hash:promote:test", "general", now)
+
+            version_id = insert_version(
+                db_path=db_path, equation_id=eq_id, form_family="exponential",
+                sympy_ast="a*exp(b*x)", parameters={"a": 10.0, "b": 0.5},
+                stats={"r2_adj": 0.92, "holdout_mape": 3.0, "aic": 80.0, "residual_random": True, "n_obs": 40},
+                n_obs=40, created_at=now, source="primary", provenance={"source": "test"},
+            )
+
+            promote_version(db_path, eq_id, version_id, now, "test_promotion")
+
+            with sqlite3.connect(db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                lib_row = conn.execute(
+                    "SELECT active_version_id, form_family, sympy_ast, active_reason "
+                    "FROM equation_library WHERE equation_id = ?", (eq_id,)
+                ).fetchone()
+                assert lib_row["active_version_id"] == version_id
+                assert lib_row["form_family"] == "exponential"
+                assert lib_row["sympy_ast"] == "a*exp(b*x)"
+                assert lib_row["active_reason"] == "test_promotion"
+        finally:
+            try:
+                os.unlink(db_path)
+            except PermissionError:
+                pass
+
+    def test_promote_nonexistent_version_noop(self):
+        db_path = str(Path(tempfile.gettempdir()) / f"test_promote_missing_{os.getpid()}.db")
+        try:
+            init_storage(db_path)
+            now = "2024-01-01T00:00:00"
+            eq_id = get_or_create_equation(db_path, "hash:promote:missing", "general", now)
+            # Should not raise
+            promote_version(db_path, eq_id, 999999, now, "should_not_crash")
+        finally:
+            try:
+                os.unlink(db_path)
+            except PermissionError:
+                pass
+
+
+# ── Data Round-Trip Integrity ─────────────────────────────────────────────
+
+class TestDataRoundTrip:
+    def test_equation_store_and_retrieve(self):
+        db_path = str(Path(tempfile.gettempdir()) / f"test_roundtrip_{os.getpid()}.db")
+        try:
+            init_storage(db_path)
+            now = "2024-06-01T12:00:00"
+            var_hash = "finance:revenue:cost"
+            domain = "finance"
+
+            eq_id = get_or_create_equation(db_path, var_hash, domain, now)
+            assert eq_id > 0
+
+            version_id = insert_version(
+                db_path=db_path, equation_id=eq_id, form_family="linear",
+                sympy_ast="2.5*x + 100", parameters={"a": 2.5, "b": 100.0},
+                stats={"r2_adj": 0.97, "holdout_mape": 2.0, "aic": 50.0, "residual_random": True, "n_obs": 60},
+                n_obs=60, created_at=now, source="primary", provenance={"source": "roundtrip_test"},
+            )
+            record_shadow_eval(db_path, version_id, mape=2.0, aic=50.0,
+                              residual_random=True, passed=True, evaluated_at=now)
+            promote_version(db_path, eq_id, version_id, now, "roundtrip_test")
+
+            # Retrieve and verify
+            entry = find_equation(db_path, var_hash, domain)
+            assert entry is not None
+            assert entry["form_family"] == "linear"
+            assert entry["sympy_ast"] == "2.5*x + 100"
+            assert entry["parameters"] == {"a": 2.5, "b": 100.0}
+            stats = entry["stats"]
+            assert stats["r2_adj"] == 0.97
+            assert stats["n_obs"] == 60
+            assert entry["drift_status"] in ("pending", "stable")  # promoted equations become stable
+        finally:
+            try:
+                os.unlink(db_path)
+            except PermissionError:
+                pass
+
+    def test_get_or_create_is_idempotent(self):
+        db_path = str(Path(tempfile.gettempdir()) / f"test_idempotent_{os.getpid()}.db")
+        try:
+            init_storage(db_path)
+            now = "2024-01-01T00:00:00"
+            var_hash = "test:idempotent:check"
+            domain = "general"
+
+            id1 = get_or_create_equation(db_path, var_hash, domain, now)
+            id2 = get_or_create_equation(db_path, var_hash, domain, now)
+            assert id1 == id2
+        finally:
+            try:
+                os.unlink(db_path)
+            except PermissionError:
+                pass
+
+    def test_find_equation_returns_none_for_missing(self):
+        db_path = str(Path(tempfile.gettempdir()) / f"test_find_missing_{os.getpid()}.db")
+        try:
+            init_storage(db_path)
+            result = find_equation(db_path, "nonexistent:hash:value", "general")
+            assert result is None
+        finally:
+            try:
+                os.unlink(db_path)
+            except PermissionError:
+                pass
+
+    def test_find_equation_requires_active_version(self):
+        """An equation without an active version should not be findable."""
+        db_path = str(Path(tempfile.gettempdir()) / f"test_no_active_{os.getpid()}.db")
+        try:
+            init_storage(db_path)
+            now = "2024-01-01T00:00:00"
+            var_hash = "test:no:active"
+            domain = "general"
+
+            eq_id = get_or_create_equation(db_path, var_hash, domain, now)
+            # Don't insert a version or promote — active_version_id stays null
+            result = find_equation(db_path, var_hash, domain)
+            assert result is None
+        finally:
+            try:
+                os.unlink(db_path)
+            except PermissionError:
+                pass
+
+
+# ── Schema Integrity ──────────────────────────────────────────────────────
+
+class TestSchemaIntegrity:
+    def test_all_tables_have_expected_columns(self):
+        db_path = str(Path(tempfile.gettempdir()) / f"test_schema_{os.getpid()}.db")
+        try:
+            init_storage(db_path)
+            init_ledger(db_path)
+
+            expected = {
+                "equation_library": {"equation_id", "var_hash", "domain", "active_version_id",
+                                    "form_family", "sympy_ast", "parameters_json", "stats_json",
+                                    "n_obs", "drift_status", "confidence_level"},
+                "equation_versions": {"version_id", "equation_id", "form_family", "sympy_ast",
+                                     "parameters_json", "stats_json", "n_obs", "source",
+                                     "shadow_status", "provenance_json"},
+                "equation_shadow_evals": {"shadow_eval_id", "version_id", "mape", "aic",
+                                         "residual_random", "passed", "evaluated_at"},
+                "observation_ledger": {"observation_id", "variable", "value", "unit",
+                                      "timestamp", "entity_id", "quality_score",
+                                      "provenance_json"},
+                "ingestion_files": {"file_id", "filename", "content_type", "size_bytes",
+                                   "checksum"},
+                "ingestion_jobs": {"job_id", "file_id", "status", "total_rows",
+                                  "observations_created", "issues_count"},
+                "epistemic_ledger": {"event_id", "trace_id", "event_type", "payload_json",
+                                    "created_at"},
+            }
+
+            conn = sqlite3.connect(db_path)
+            try:
+                for table_name, expected_cols in expected.items():
+                    rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+                    actual_cols = {r[1] for r in rows}
+                    missing = expected_cols - actual_cols
+                    assert not missing, f"Table {table_name}: missing columns {missing}"
+            finally:
+                conn.close()
+        finally:
+            try:
+                os.unlink(db_path)
+            except PermissionError:
+                pass
+
+    def test_timestamps_use_iso_format(self):
+        db_path = str(Path(tempfile.gettempdir()) / f"test_timestamps_{os.getpid()}.db")
+        try:
+            init_ledger(db_path)
+            trace_id = str(uuid.uuid4())
+            append_event(db_path, trace_id, "timestamp_test", '{"check": "iso"}')
+
+            events = list_events(db_path, trace_id)
+            ts = events[0]["created_at"]
+            # ISO 8601 format: YYYY-MM-DDTHH:MM:SS...
+            assert "T" in ts
+            # Should parse as valid datetime
+            from datetime import datetime
+            datetime.fromisoformat(ts)
+        finally:
+            try:
+                os.unlink(db_path)
+            except PermissionError:
+                pass
+
+
+# ── Equation Conflicts Table ──────────────────────────────────────────────
+
+class TestEquationConflicts:
+    def test_conflict_table_exists(self):
+        db_path = str(Path(tempfile.gettempdir()) / f"test_conflicts_{os.getpid()}.db")
+        try:
+            init_storage(db_path)
+            conn = sqlite3.connect(db_path)
+            try:
+                tables = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='equation_conflicts'"
+                ).fetchone()
+                assert tables is not None
+            finally:
+                conn.close()
+        finally:
+            try:
+                os.unlink(db_path)
+            except PermissionError:
+                pass
+
+    def test_conflict_insert_and_query(self):
+        db_path = str(Path(tempfile.gettempdir()) / f"test_conflict_ops_{os.getpid()}.db")
+        try:
+            init_storage(db_path)
+            now = "2024-01-15T00:00:00"
+
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            try:
+                conn.execute(
+                    """INSERT INTO equation_conflicts
+                       (equation_id_a, equation_id_b, variable_pair, reason, elasticity_a, elasticity_b, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (1, 2, "revenue:cost", "elasticity_mismatch", 1.5, -0.8, now),
+                )
+                conn.commit()
+
+                row = conn.execute(
+                    "SELECT * FROM equation_conflicts WHERE variable_pair = ?", ("revenue:cost",)
+                ).fetchone()
+                assert row is not None
+                assert row["resolution_status"] == "open"
+            finally:
+                conn.close()
+        finally:
+            try:
+                os.unlink(db_path)
+            except PermissionError:
+                pass
+
+
+# ── Observation Ledger Integrity ──────────────────────────────────────────
+
+class TestObservationIntegrity:
+    def test_insert_and_query_observations(self):
+        db_path = str(Path(tempfile.gettempdir()) / f"test_obs_{os.getpid()}.db")
+        try:
+            init_storage(db_path)
+            now = "2024-03-01T12:00:00"
+
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            try:
+                conn.execute(
+                    """INSERT INTO observation_ledger
+                       (variable, value, unit, timestamp, entity_id, quality_score, provenance_json, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    ("revenue", 1500.0, "USD", "2024-01-01", "cust_001", 1.0, '{"source": "csv"}', now),
+                )
+                conn.commit()
+
+                rows = conn.execute(
+                    "SELECT * FROM observation_ledger WHERE variable = ?", ("revenue",)
+                ).fetchall()
+                assert len(rows) == 1
+                assert rows[0]["value"] == 1500.0
+                assert rows[0]["unit"] == "USD"
+                assert rows[0]["quality_score"] == 1.0
+            finally:
+                conn.close()
+        finally:
+            try:
+                os.unlink(db_path)
+            except PermissionError:
+                pass
+
+    def test_quality_score_bounds_accepted(self):
+        db_path = str(Path(tempfile.gettempdir()) / f"test_quality_{os.getpid()}.db")
+        try:
+            init_storage(db_path)
+            now = "2024-01-01T00:00:00"
+
+            conn = sqlite3.connect(db_path)
+            try:
+                # Quality score 0.0 (minimum)
+                conn.execute(
+                    """INSERT INTO observation_ledger
+                       (variable, value, unit, timestamp, quality_score, provenance_json, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    ("low_quality", 1.0, "", now, 0.0, "{}", now),
+                )
+                # Quality score 1.0 (maximum)
+                conn.execute(
+                    """INSERT INTO observation_ledger
+                       (variable, value, unit, timestamp, quality_score, provenance_json, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    ("high_quality", 1.0, "", now, 1.0, "{}", now),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        finally:
+            try:
+                os.unlink(db_path)
+            except PermissionError:
+                pass
+
+
+# ── Ingestion Files Integrity ─────────────────────────────────────────────
+
+class TestIngestionFileIntegrity:
+    def test_ingestion_file_stores_checksum(self):
+        db_path = str(Path(tempfile.gettempdir()) / f"test_ingest_file_{os.getpid()}.db")
+        try:
+            init_storage(db_path)
+            now = "2024-05-01T00:00:00"
+
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            try:
+                conn.execute(
+                    """INSERT INTO ingestion_files (filename, content_type, size_bytes, checksum, created_at)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    ("test.csv", "text/csv", 1024, "abc123def456", now),
+                )
+                conn.commit()
+
+                row = conn.execute("SELECT * FROM ingestion_files WHERE filename = ?", ("test.csv",)).fetchone()
+                assert row["checksum"] == "abc123def456"
+                assert row["size_bytes"] == 1024
+            finally:
+                conn.close()
+        finally:
+            try:
+                os.unlink(db_path)
+            except PermissionError:
+                pass

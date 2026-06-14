@@ -1,0 +1,8 @@
+{
+  "id": "5",
+  "subject": "Phase 5: Ingestion Enhancement — Fix bugs, add Excel/Parquet, number parsing",
+  "description": "Fix null observation bug, add $1,234.56 and 12.5% parsing, Excel/Parquet support, deduplication.",
+  "status": "pending",
+  "blocks": [],
+  "blockedBy": []
+}

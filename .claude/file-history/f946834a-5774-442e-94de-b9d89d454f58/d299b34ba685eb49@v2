@@ -1,0 +1,80 @@
+from __future__ import annotations
+
+import time
+import pytest
+from unittest.mock import MagicMock, patch
+
+from src.rate_limit import TokenBucket, rate_limit, _client_key, RATE_LIMIT_REQUESTS
+
+
+class TestTokenBucket:
+    def test_initial_consume_succeeds(self):
+        b = TokenBucket(10, 60)
+        assert b.consume("a") is True
+
+    def test_exhaustion(self):
+        b = TokenBucket(3, 60)
+        for _ in range(3):
+            assert b.consume("a") is True
+        assert b.consume("a") is False
+
+    def test_different_keys_independent(self):
+        b = TokenBucket(1, 60)
+        assert b.consume("a") is True
+        assert b.consume("b") is True
+        assert b.consume("a") is False
+
+    def test_remaining_decreases(self):
+        b = TokenBucket(5, 60)
+        b.consume("a")
+        assert b.remaining("a") <= 4.1  # allow small refill from timing
+
+
+class TestRateLimitMiddleware:
+    @pytest.mark.asyncio
+    async def test_health_skipped(self):
+        request = MagicMock()
+        request.url.path = "/v1/health"
+        await rate_limit(request)
+
+    @pytest.mark.asyncio
+    async def test_metrics_skipped(self):
+        request = MagicMock()
+        request.url.path = "/metrics"
+        await rate_limit(request)
+
+    @pytest.mark.asyncio
+    async def test_non_api_path_skipped(self):
+        request = MagicMock()
+        request.url.path = "/docs"
+        await rate_limit(request)
+
+    @pytest.mark.asyncio
+    async def test_v1_path_enforced(self):
+        request = MagicMock()
+        request.url.path = "/v1/solve"
+        request.headers = {}
+        request.client.host = "127.0.0.1"
+        request.state.api_client = None
+        with patch("src.rate_limit._bucket", TokenBucket(2, 60)):
+            for _ in range(2):
+                await rate_limit(request)
+            import fastapi
+            with pytest.raises(fastapi.HTTPException) as exc:
+                await rate_limit(request)
+            assert exc.value.status_code == 429
+
+
+class TestClientKey:
+    def test_uses_api_client_if_set(self):
+        request = MagicMock()
+        request.state.api_client = "my-key"
+        request.headers = {}
+        assert _client_key(request) == "my-key"
+
+    def test_falls_back_to_ip(self):
+        request = MagicMock()
+        request.state.api_client = None
+        request.headers = {}
+        request.client.host = "10.0.0.1"
+        assert _client_key(request) == "10.0.0.1"

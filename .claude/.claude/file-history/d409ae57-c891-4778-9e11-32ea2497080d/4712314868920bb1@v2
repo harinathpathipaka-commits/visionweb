@@ -1,0 +1,134 @@
+from __future__ import annotations
+
+import pytest
+from unittest.mock import MagicMock
+
+from src.auto_mapper import auto_map_columns
+from src.models import ColumnProfile, SchemaMapping
+
+
+def _make_profiles(*names_and_types: tuple) -> list[ColumnProfile]:
+    profiles: list[ColumnProfile] = []
+    for name, infer_type, samples in names_and_types:
+        profiles.append(
+            ColumnProfile(
+                column_name=name,
+                inferred_type=infer_type,
+                null_pct=0.0,
+                unique_pct=0.5,
+                sample_values=list(samples),
+            )
+        )
+    return profiles
+
+
+class TestAutoMapRuleBased:
+    def test_empty_profiles(self):
+        assert auto_map_columns([]) == []
+
+    def test_detects_time_column_by_name(self):
+        profiles = _make_profiles(
+            ("report_date", "date", ("2024-01-01", "2024-01-02")),
+            ("revenue", "number", ("100", "200")),
+        )
+        mappings = auto_map_columns(profiles)
+        assert len(mappings) == 2
+        time_col = next(m for m in mappings if m.column_name == "report_date")
+        assert time_col.time_column is True
+        assert time_col.confidence == 0.9
+
+    def test_maps_string_columns_as_categorical(self):
+        profiles = _make_profiles(
+            ("product_name", "string", ("Widget A", "Widget B")),
+            ("units_sold", "number", ("10", "20")),
+        )
+        mappings = auto_map_columns(profiles)
+        col_names = {m.column_name for m in mappings}
+        assert "product_name" in col_names  # Now mapped as categorical, not skipped
+        assert "units_sold" in col_names
+
+    def test_ontology_match(self):
+        profiles = _make_profiles(
+            ("cac", "number", ("50", "60")),
+        )
+        mappings = auto_map_columns(profiles, domain="finance.saas.smb")
+        assert len(mappings) == 1
+        assert mappings[0].confidence >= 0.85
+
+    def test_numeric_no_ontology_becomes_variable(self):
+        profiles = _make_profiles(
+            ("widgets_produced", "number", ("1200", "3400")),
+        )
+        mappings = auto_map_columns(profiles, domain="general")
+        assert len(mappings) == 1
+        assert mappings[0].variable == "widgets_produced"
+        assert mappings[0].confidence == 0.3
+
+    def test_mixed_columns(self):
+        profiles = _make_profiles(
+            ("created_at", "date", ("2024-01-01",)),
+            ("category", "string", ("A", "B")),
+            ("sales", "number", ("500", "600")),
+            ("customers", "number", ("100", "110")),
+        )
+        mappings = auto_map_columns(profiles)
+        assert len(mappings) == 4  # String columns now mapped as categorical
+        time_cols = [m for m in mappings if m.time_column]
+        assert len(time_cols) == 1
+
+
+class TestAutoMapWithLLM:
+    def test_llm_path_invoked(self):
+        """When an LLM client is provided, it should be called and its result used."""
+        profiles = _make_profiles(
+            ("revenue", "number", ("1000", "2000")),
+            ("cost", "number", ("500", "600")),
+            ("report_date", "date", ("2024-01-01", "2024-01-02")),
+        )
+
+        llm_mock = MagicMock()
+        llm_mock.messages.create.return_value = MagicMock(
+            content=[
+                MagicMock(
+                    text='[{"column_name": "revenue", "variable": "revenue", "unit": "USD", "confidence": 0.9, "time_column": false, "entity_key": null}, {"column_name": "cost", "variable": "cost", "unit": "USD", "confidence": 0.85, "time_column": false, "entity_key": null}, {"column_name": "report_date", "variable": "report_date", "unit": "", "confidence": 0.95, "time_column": true, "entity_key": null}]'
+                )
+            ]
+        )
+
+        mappings = auto_map_columns(profiles, domain="general", llm_client=llm_mock)
+        assert len(mappings) == 3
+        assert llm_mock.messages.create.called
+
+    def test_llm_failure_falls_back_to_rules(self):
+        profiles = _make_profiles(
+            ("revenue", "number", ("100", "200")),
+        )
+        llm_mock = MagicMock()
+        llm_mock.messages.create.side_effect = RuntimeError("API error")
+
+        mappings = auto_map_columns(profiles, domain="general", llm_client=llm_mock)
+        assert len(mappings) == 1
+        assert mappings[0].variable == "revenue"
+
+    def test_no_llm_attributes_falls_back(self):
+        profiles = _make_profiles(
+            ("sales", "number", ("100", "200")),
+        )
+        fake_client = object()  # no .messages attribute
+        mappings = auto_map_columns(profiles, domain="general", llm_client=fake_client)
+        assert len(mappings) == 1
+        assert mappings[0].variable == "sales"
+
+
+class TestSchemaMappingOutput:
+    def test_all_mappings_have_required_fields(self):
+        profiles = _make_profiles(
+            ("revenue", "number", ("100", "200")),
+            ("created", "date", ("2024-01-01",)),
+        )
+        for mapping in auto_map_columns(profiles):
+            assert isinstance(mapping, SchemaMapping)
+            assert mapping.column_name
+            assert isinstance(mapping.variable, str)
+            assert 0.0 <= mapping.confidence <= 1.0
+            assert isinstance(mapping.time_column, bool)

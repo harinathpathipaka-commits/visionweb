@@ -1,0 +1,174 @@
+"""Tests for Phase 4: Composition, Decomposition, and Explain."""
+from __future__ import annotations
+
+import pytest
+from fastapi.testclient import TestClient
+
+from src.api import app
+from src.composition import FormulaRegistry, get_registry, BUILTIN_FORMULAS
+
+
+@pytest.fixture
+def client():
+    return TestClient(app)
+
+
+@pytest.fixture
+def reg():
+    return FormulaRegistry()
+
+
+# ── Formula Registry ─────────────────────────────────────────────────────────
+
+
+class TestFormulaRegistry:
+    def test_builtin_formulas_exist(self, reg):
+        assert reg.has("arr")
+        assert reg.has("ltv")
+        assert reg.has("revenue")
+        assert reg.has("profit")
+
+    def test_evaluate_arr(self, reg):
+        result = reg.evaluate("arr", {"mrr": 100_000})
+        assert result == pytest.approx(1_200_000)
+
+    def test_evaluate_revenue(self, reg):
+        result = reg.evaluate("revenue", {"customers": 500, "arpu": 200})
+        assert result == pytest.approx(100_000)
+
+    def test_evaluate_ltv(self, reg):
+        result = reg.evaluate("ltv", {"arpu": 100, "churn_rate": 0.05})
+        assert result == pytest.approx(2000)
+
+    def test_evaluate_profit(self, reg):
+        result = reg.evaluate("profit", {"revenue": 1000, "cost": 600})
+        assert result == pytest.approx(400)
+
+    def test_evaluate_nrr(self, reg):
+        result = reg.evaluate("net_revenue_retention", {
+            "starting_arr": 1_000_000, "expansion": 100_000,
+            "contraction": 50_000, "churned": 80_000,
+        })
+        # (1M + 100K - 50K - 80K) / 1M = 0.97
+        assert result == pytest.approx(0.97)
+
+    def test_evaluate_missing_variable(self, reg):
+        result = reg.evaluate("arr", {"unknown": 100})
+        assert result is None
+
+    def test_division_by_zero(self, reg):
+        result = reg.evaluate("ltv", {"arpu": 100, "churn_rate": 0.0})
+        assert result is None
+
+    def test_drivers_of(self, reg):
+        drivers = reg.drivers_of("ltv")
+        assert "arpu" in drivers
+        assert "churn_rate" in drivers
+
+    def test_register_custom_formula(self, reg):
+        reg.register("acos", "cac / arpu", "CAC / ARPU ratio", ["cac", "arpu"])
+        assert reg.has("acos")
+        result = reg.evaluate("acos", {"cac": 500, "arpu": 100})
+        assert result == pytest.approx(5.0)
+
+
+# ── Decomposition ────────────────────────────────────────────────────────────
+
+
+class TestDecomposition:
+    def test_decompose_arr(self, reg):
+        result = reg.decompose("arr", {"mrr": 100_000})
+        assert result is not None
+        assert result["total"] == pytest.approx(1_200_000)
+        assert "mrr" in result["components"]
+        assert result["components"]["mrr"]["value"] == pytest.approx(100_000)
+
+    def test_decompose_revenue(self, reg):
+        result = reg.decompose("revenue", {"customers": 100, "arpu": 50})
+        assert result["total"] == pytest.approx(5000)
+        assert "customers" in result["components"]
+        assert "arpu" in result["components"]
+
+    def test_decompose_unknown_metric(self, reg):
+        result = reg.decompose("nonexistent", {"x": 1})
+        assert result is None
+
+
+# ── Explain Change ───────────────────────────────────────────────────────────
+
+
+class TestExplainChange:
+    def test_explain_simple_change(self, reg):
+        before = {"mrr": 100_000}
+        after = {"mrr": 120_000}
+        result = reg.explain_change("arr", before, after)
+        assert result is not None
+        assert result["before"] == pytest.approx(1_200_000)
+        assert result["after"] == pytest.approx(1_440_000)
+        assert result["delta"] == pytest.approx(240_000)
+        assert len(result["drivers"]) == 1
+        assert result["drivers"][0]["driver"] == "mrr"
+
+    def test_explain_multi_driver_change(self, reg):
+        before = {"customers": 100, "arpu": 50}
+        after = {"customers": 120, "arpu": 55}
+        result = reg.explain_change("revenue", before, after)
+        assert result is not None
+        assert result["before"] == pytest.approx(5000)
+        assert result["after"] == pytest.approx(6600)
+        # Both drivers should be listed
+        drivers = {d["driver"] for d in result["drivers"]}
+        assert "customers" in drivers
+        assert "arpu" in drivers
+
+
+# ── API Endpoints ────────────────────────────────────────────────────────────
+
+
+class TestDecomposeAPI:
+    def test_decompose_endpoint(self, client):
+        resp = client.post("/v2/decompose", json={
+            "metric": "arr",
+            "values": {"mrr": 100_000},
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == pytest.approx(1_200_000)
+        assert "mrr" in data["components"]
+
+    def test_decompose_unknown_metric(self, client):
+        resp = client.post("/v2/decompose", json={
+            "metric": "nonexistent_xyz",
+            "values": {},
+        })
+        assert resp.status_code == 404
+
+
+class TestExplainAPI:
+    def test_explain_endpoint(self, client):
+        resp = client.post("/v2/explain", json={
+            "metric": "profit",
+            "before": {"revenue": 1000, "cost": 800},
+            "after": {"revenue": 1200, "cost": 900},
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["before"] == pytest.approx(200)
+        assert data["after"] == pytest.approx(300)
+        assert data["delta"] == pytest.approx(100)
+        assert len(data["drivers"]) == 2
+        # Revenue went up, cost went up — both contributed
+        assert data["delta_pct"] == pytest.approx(50.0)
+
+
+class TestFormulasAPI:
+    def test_list_formulas(self, client):
+        resp = client.get("/v2/formulas")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        assert len(data) >= 10
+        names = {f["name"] for f in data}
+        assert "arr" in names
+        assert "ltv" in names
+        assert "net_revenue_retention" in names

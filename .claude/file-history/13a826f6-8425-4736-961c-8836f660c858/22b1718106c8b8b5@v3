@@ -1,0 +1,52 @@
+//! Serialize/deserialize budget types between core domain types
+//! and protobuf-generated types.
+
+use ans_core::budget::BudgetMode;
+
+/// Convert a BudgetStatus snapshot to the proto message.
+pub fn budget_status_to_proto(
+    status: &crate::tracker::BudgetStatus,
+    _goal_id: &str,
+) -> ans_proto::ans::BudgetStatus {
+    ans_proto::ans::BudgetStatus {
+        mode: budget_mode_to_str(&status.mode).into(),
+        budget_cents: status.budget_cents as i32,
+        spent_cents: status.spent_cents as i32,
+        remaining_pct: status.remaining_pct,
+        daily_spend_limit_cents: status.daily_spend_limit_cents as i32,
+        daily_spent_cents: status.daily_spent_cents as i32,
+    }
+}
+
+/// Convert a proto BudgetConfigRequest to internal BudgetConfig.
+pub fn proto_to_budget_config(
+    req: &ans_proto::ans::BudgetConfigRequest,
+) -> crate::tracker::BudgetConfig {
+    crate::tracker::BudgetConfig {
+        default_per_goal_cents: req.default_per_goal_cents.max(0) as u32,
+        daily_spend_limit_cents: req.daily_api_key_spend_limit_cents.max(0) as u32,
+        normal_threshold_pct: req.normal_threshold_pct.max(0.0),
+        conservative_threshold_pct: req.conservative_threshold_pct.max(0.0),
+        critical_threshold_pct: req.critical_threshold_pct.max(0.0),
+    }
+}
+
+/// Convert internal BudgetConfig to proto.
+pub fn budget_config_to_proto(config: &crate::tracker::BudgetConfig) -> ans_proto::ans::BudgetConfig {
+    ans_proto::ans::BudgetConfig {
+        default_per_goal_cents: config.default_per_goal_cents as i32,
+        daily_api_key_spend_limit_cents: config.daily_spend_limit_cents as i32,
+        normal_threshold_pct: config.normal_threshold_pct,
+        conservative_threshold_pct: config.conservative_threshold_pct,
+        critical_threshold_pct: config.critical_threshold_pct,
+    }
+}
+
+fn budget_mode_to_str(mode: &BudgetMode) -> &'static str {
+    match mode {
+        BudgetMode::Normal => "normal",
+        BudgetMode::Conservative => "conservative",
+        BudgetMode::Critical => "critical",
+        BudgetMode::Emergency => "emergency",
+    }
+}

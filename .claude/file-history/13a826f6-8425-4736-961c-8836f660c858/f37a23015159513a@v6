@@ -1,0 +1,513 @@
+//! Model Context Protocol (MCP) server — JSON-RPC over HTTP.
+//!
+//! Exposes the Agent Nervous System as MCP tools for Claude, ChatGPT,
+//! and other MCP-compatible AI agents.
+//!
+//! Specification: https://spec.modelcontextprotocol.io
+
+use serde_json::{json, Value};
+
+use crate::client::InternalClient;
+
+const MCP_VERSION: &str = "2024-11-05";
+
+/// MCP server state shared across requests.
+#[derive(Clone)]
+pub struct McpServer {
+    client: InternalClient,
+}
+
+impl McpServer {
+    pub fn new(client: InternalClient) -> Self {
+        Self { client }
+    }
+
+    /// Handle an incoming JSON-RPC request. Returns the JSON-RPC response.
+    pub async fn handle_request(&self, body: Value) -> Value {
+        let id = body.get("id").cloned();
+        let method = body.get("method").and_then(|m| m.as_str()).unwrap_or("");
+
+        match method {
+            "initialize" => self.handle_initialize(id),
+            "tools/list" => self.handle_tools_list(id),
+            "tools/call" => self.handle_tools_call(id, &body).await,
+            _ => json_rpc_error(id, -32601, &format!("Method not found: {}", method)),
+        }
+    }
+
+    fn handle_initialize(&self, id: Option<Value>) -> Value {
+        json_rpc_result(
+            id,
+            json!({
+                "protocolVersion": MCP_VERSION,
+                "serverInfo": {
+                    "name": "agent-nervous-system",
+                    "version": env!("CARGO_PKG_VERSION")
+                },
+                "capabilities": {
+                    "tools": {}
+                }
+            }),
+        )
+    }
+
+    fn handle_tools_list(&self, id: Option<Value>) -> Value {
+        json_rpc_result(
+            id,
+            json!({
+                "tools": [
+                    {
+                        "name": "create_session",
+                        "description": "Create a new browser session for an agent goal",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "goal_id": { "type": "string", "description": "Goal ID this session belongs to" },
+                                "start_url": { "type": "string", "description": "Initial URL to load (default: about:blank)" }
+                            },
+                            "required": ["goal_id"]
+                        }
+                    },
+                    {
+                        "name": "navigate",
+                        "description": "Navigate the browser to a URL",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "url": { "type": "string", "description": "The URL to navigate to" },
+                                "session_id": { "type": "string", "description": "Browser session ID" }
+                            },
+                            "required": ["url", "session_id"]
+                        }
+                    },
+                    {
+                        "name": "click",
+                        "description": "Click an element on the page",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "selector": { "type": "string", "description": "CSS selector for the element" },
+                                "session_id": { "type": "string", "description": "Browser session ID" }
+                            },
+                            "required": ["selector", "session_id"]
+                        }
+                    },
+                    {
+                        "name": "type_text",
+                        "description": "Type text into an input element",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "selector": { "type": "string", "description": "CSS selector for the input" },
+                                "value": { "type": "string", "description": "Text to type" },
+                                "session_id": { "type": "string", "description": "Browser session ID" }
+                            },
+                            "required": ["selector", "value", "session_id"]
+                        }
+                    },
+                    {
+                        "name": "scroll",
+                        "description": "Scroll the page",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "session_id": { "type": "string", "description": "Browser session ID" },
+                                "value": { "type": "string", "description": "Scroll amount or direction (e.g. 'down', 'up', '100')" }
+                            },
+                            "required": ["session_id"]
+                        }
+                    },
+                    {
+                        "name": "screenshot",
+                        "description": "Capture a screenshot of the current page",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "session_id": { "type": "string", "description": "Browser session ID" },
+                                "full_page": { "type": "boolean", "description": "Capture full scrollable page" }
+                            },
+                            "required": ["session_id"]
+                        }
+                    },
+                    {
+                        "name": "get_dom",
+                        "description": "Get the distilled DOM of the current page",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "session_id": { "type": "string", "description": "Browser session ID" },
+                                "mode": {
+                                    "type": "string",
+                                    "description": "Distillation mode: text_only (reading), input_fields (forms), all_fields (debug)"
+                                }
+                            },
+                            "required": ["session_id"]
+                        }
+                    },
+                    {
+                        "name": "execute_action",
+                        "description": "Execute any browser action (click, type, scroll, select, submit, wait, navigate, screenshot)",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "session_id": { "type": "string", "description": "Browser session ID" },
+                                "action_type": { "type": "string", "description": "Action type: click, type, scroll, select, navigate, submit, wait, screenshot" },
+                                "selector": { "type": "string", "description": "CSS selector for the target element" },
+                                "value": { "type": "string", "description": "Value for type/select/scroll actions" }
+                            },
+                            "required": ["session_id", "action_type"]
+                        }
+                    },
+                    {
+                        "name": "check_goal",
+                        "description": "Check the progress of a goal",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "goal_id": { "type": "string", "description": "Goal ID to check" }
+                            },
+                            "required": ["goal_id"]
+                        }
+                    },
+                    {
+                        "name": "create_goal",
+                        "description": "Create a new goal for the agent to pursue",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "description": { "type": "string", "description": "What the agent needs to accomplish" },
+                                "context": { "type": "string", "description": "Additional context for the goal" },
+                                "max_steps": { "type": "integer", "description": "Maximum action steps allowed" }
+                            },
+                            "required": ["description"]
+                        }
+                    }
+                ]
+            }),
+        )
+    }
+
+    async fn handle_tools_call(&self, id: Option<Value>, body: &Value) -> Value {
+        let params = body.get("params");
+        let tool_name = match params.and_then(|p| p.get("name")).and_then(|n| n.as_str()) {
+            Some(name) => name,
+            None => return json_rpc_error(id, -32602, "Missing params.name"),
+        };
+
+        let args = params
+            .and_then(|p| p.get("arguments"))
+            .cloned()
+            .unwrap_or(json!({}));
+
+        let result = match tool_name {
+            "create_session" => self.tool_create_session(&args).await,
+            "navigate" => self.tool_navigate(&args).await,
+            "click" => self.tool_click(&args).await,
+            "type_text" => self.tool_type_text(&args).await,
+            "scroll" => self.tool_scroll(&args).await,
+            "screenshot" => self.tool_screenshot(&args).await,
+            "get_dom" => self.tool_get_dom(&args).await,
+            "execute_action" => self.tool_execute_action(&args).await,
+            "check_goal" => self.tool_check_goal(&args).await,
+            "create_goal" => self.tool_create_goal(&args).await,
+            other => return json_rpc_error(id, -32602, &format!("Unknown tool: {}", other)),
+        };
+
+        match result {
+            Ok(content) => json_rpc_result(
+                id,
+                json!({ "content": [{ "type": "text", "text": content }] }),
+            ),
+            Err(e) => json_rpc_error(id, -32000, &e),
+        }
+    }
+
+    // ── Tool implementations ──────────────────────────────────────────
+
+    fn str_arg<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
+        args.get(key).and_then(|v| v.as_str())
+    }
+
+    async fn tool_create_session(&self, args: &Value) -> Result<String, String> {
+        let goal_id = Self::str_arg(args, "goal_id").unwrap_or("");
+        let start_url = Self::str_arg(args, "start_url").unwrap_or("about:blank");
+
+        let mut client = self.client.clone_client();
+        let req = tonic::Request::new(ans_proto::ans::CreateSessionRequest {
+            goal_id: goal_id.into(),
+            start_url: start_url.into(),
+            headers: std::collections::HashMap::new(),
+        });
+
+        let resp = client
+            .create_session(req)
+            .await
+            .map_err(|e| format!("gRPC error: {}", e))?
+            .into_inner();
+
+        Ok(serde_json::to_string_pretty(&json!({
+            "session_id": resp.session_id,
+            "goal_id": resp.goal_id,
+            "status": resp.status,
+            "created_at": resp.created_at,
+        }))
+        .unwrap_or_else(|e| format!("serialization error: {e}")))
+    }
+
+    async fn tool_navigate(&self, args: &Value) -> Result<String, String> {
+        let session_id = Self::str_arg(args, "session_id").ok_or("session_id required")?;
+        let url = Self::str_arg(args, "url").ok_or("url required")?;
+
+        let mut client = self.client.clone_client();
+        let req = tonic::Request::new(ans_proto::ans::NavigateRequest {
+            session_id: session_id.into(),
+            url: url.into(),
+            timeout_ms: 30000,
+        });
+
+        let resp = client
+            .navigate(req)
+            .await
+            .map_err(|e| format!("gRPC error: {}", e))?
+            .into_inner();
+
+        Ok(serde_json::to_string_pretty(&json!({
+            "url": resp.url,
+            "title": resp.title,
+            "loaded": resp.loaded,
+            "dom_node_count": resp.dom_node_count,
+        }))
+        .unwrap_or_else(|e| format!("serialization error: {e}")))
+    }
+
+    async fn tool_execute_action(&self, args: &Value) -> Result<String, String> {
+        let session_id = Self::str_arg(args, "session_id").ok_or("session_id required")?;
+        let action_type = Self::str_arg(args, "action_type").ok_or("action_type required")?;
+        let selector = Self::str_arg(args, "selector").unwrap_or("");
+        let value = Self::str_arg(args, "value").unwrap_or("");
+
+        let mut client = self.client.clone_client();
+        let req = tonic::Request::new(ans_proto::ans::ExecuteActionRequest {
+            session_id: session_id.into(),
+            action: Some(ans_proto::ans::Action {
+                action_type: action_type.into(),
+                selector: selector.into(),
+                value: value.into(),
+                params: std::collections::HashMap::new(),
+            }),
+        });
+
+        let resp = client
+            .execute_action(req)
+            .await
+            .map_err(|e| format!("gRPC error: {}", e))?
+            .into_inner();
+
+        Ok(serde_json::to_string_pretty(&json!({
+            "success": resp.success,
+            "error_message": resp.error_message,
+            "execution_time_ms": resp.execution_time_ms,
+        }))
+        .unwrap_or_else(|e| format!("serialization error: {e}")))
+    }
+
+    async fn tool_click(&self, args: &Value) -> Result<String, String> {
+        let session_id = Self::str_arg(args, "session_id").ok_or("session_id required")?;
+        let selector = Self::str_arg(args, "selector").ok_or("selector required")?;
+
+        let action_args = json!({
+            "session_id": session_id,
+            "action_type": "click",
+            "selector": selector,
+            "value": ""
+        });
+        self.tool_execute_action(&action_args).await
+    }
+
+    async fn tool_type_text(&self, args: &Value) -> Result<String, String> {
+        let session_id = Self::str_arg(args, "session_id").ok_or("session_id required")?;
+        let selector = Self::str_arg(args, "selector").ok_or("selector required")?;
+        let value = Self::str_arg(args, "value").ok_or("value required")?;
+
+        let action_args = json!({
+            "session_id": session_id,
+            "action_type": "type",
+            "selector": selector,
+            "value": value
+        });
+        self.tool_execute_action(&action_args).await
+    }
+
+    async fn tool_scroll(&self, args: &Value) -> Result<String, String> {
+        let session_id = Self::str_arg(args, "session_id").ok_or("session_id required")?;
+        let value = Self::str_arg(args, "value").unwrap_or("down");
+
+        let action_args = json!({
+            "session_id": session_id,
+            "action_type": "scroll",
+            "selector": "",
+            "value": value
+        });
+        self.tool_execute_action(&action_args).await
+    }
+
+    async fn tool_screenshot(&self, args: &Value) -> Result<String, String> {
+        let session_id = Self::str_arg(args, "session_id").ok_or("session_id required")?;
+        let full_page = args
+            .get("full_page")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        let mut client = self.client.clone_client();
+        let req = tonic::Request::new(ans_proto::ans::ScreenshotRequest {
+            session_id: session_id.into(),
+            format: "png".into(),
+            quality: 80,
+            full_page,
+            arrow_shm_key: String::new(),
+        });
+
+        let resp = client
+            .capture_screenshot(req)
+            .await
+            .map_err(|e| format!("gRPC error: {}", e))?
+            .into_inner();
+
+        Ok(serde_json::to_string_pretty(&json!({
+            "success": resp.success,
+            "size_bytes": resp.size_bytes,
+            "format": resp.format,
+            "data_base64_len": resp.data.len(),
+        }))
+        .unwrap_or_else(|e| format!("serialization error: {e}")))
+    }
+
+    async fn tool_get_dom(&self, args: &Value) -> Result<String, String> {
+        let session_id = Self::str_arg(args, "session_id").ok_or("session_id required")?;
+        let mode = Self::str_arg(args, "mode").unwrap_or("input_fields");
+
+        let mut client = self.client.clone_client();
+        let req = tonic::Request::new(ans_proto::ans::DomRequest {
+            session_id: session_id.into(),
+            mode: mode.into(),
+        });
+
+        let resp = client
+            .get_distilled_dom(req)
+            .await
+            .map_err(|e| format!("gRPC error: {}", e))?
+            .into_inner();
+
+        Ok(serde_json::to_string_pretty(&json!({
+            "mode": resp.mode,
+            "url": resp.url,
+            "title": resp.title,
+            "element_count": resp.elements.len(),
+            "interactive_count": resp.interactive.len(),
+        }))
+        .unwrap_or_else(|e| format!("serialization error: {e}")))
+    }
+
+    async fn tool_check_goal(&self, args: &Value) -> Result<String, String> {
+        let goal_id = Self::str_arg(args, "goal_id").ok_or("goal_id required")?;
+
+        let mut client = self.client.clone_client();
+        let req = tonic::Request::new(ans_proto::ans::GoalStateRequest {
+            goal_id: goal_id.into(),
+        });
+
+        let resp = client
+            .get_goal_state(req)
+            .await
+            .map_err(|e| format!("gRPC error: {}", e))?
+            .into_inner();
+
+        Ok(serde_json::to_string_pretty(&json!({
+            "goal_id": resp.goal_id,
+            "description": resp.description,
+            "status": resp.status,
+            "progress": resp.progress,
+            "sub_goals": resp.sub_goals.len(),
+            "created_at": resp.created_at,
+        }))
+        .unwrap_or_else(|e| format!("serialization error: {e}")))
+    }
+
+    async fn tool_create_goal(&self, args: &Value) -> Result<String, String> {
+        let description = Self::str_arg(args, "description").ok_or("description required")?;
+        let context_str = Self::str_arg(args, "context").unwrap_or("");
+        let max_steps = args
+            .get("max_steps")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(100) as i32;
+
+        let mut context = std::collections::HashMap::new();
+        if !context_str.is_empty() {
+            context.insert("context".into(), context_str.into());
+        }
+
+        let mut client = self.client.clone_client();
+        let req = tonic::Request::new(ans_proto::ans::CreateGoalRequest {
+            description: description.into(),
+            context,
+            max_budget_cents: 500,
+            max_steps,
+        });
+
+        let resp = client
+            .create_goal(req)
+            .await
+            .map_err(|e| format!("gRPC error: {}", e))?
+            .into_inner();
+
+        Ok(serde_json::to_string_pretty(&json!({
+            "goal_id": resp.goal_id,
+            "description": resp.description,
+            "status": resp.status,
+            "progress": resp.progress,
+        }))
+        .unwrap_or_else(|e| format!("serialization error: {e}")))
+    }
+}
+
+// ── JSON-RPC helpers ──────────────────────────────────────────────
+
+fn json_rpc_result(id: Option<Value>, result: Value) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id.unwrap_or(Value::Null),
+        "result": result
+    })
+}
+
+fn json_rpc_error(id: Option<Value>, code: i32, message: &str) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id.unwrap_or(Value::Null),
+        "error": {
+            "code": code,
+            "message": message
+        }
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_json_rpc_result_format() {
+        let result = json_rpc_result(Some(json!(1)), json!({"ok": true}));
+        assert_eq!(result["jsonrpc"], "2.0");
+        assert_eq!(result["id"], 1);
+        assert_eq!(result["result"]["ok"], true);
+    }
+
+    #[test]
+    fn test_json_rpc_error_format() {
+        let error = json_rpc_error(Some(json!(2)), -32601, "Not found");
+        assert_eq!(error["jsonrpc"], "2.0");
+        assert_eq!(error["id"], 2);
+        assert_eq!(error["error"]["code"], -32601);
+    }
+}

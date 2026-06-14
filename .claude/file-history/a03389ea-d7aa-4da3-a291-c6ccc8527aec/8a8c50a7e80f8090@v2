@@ -1,0 +1,462 @@
+"""Smoke test: Full ANS pipeline analysis of browser-use GitHub repo.
+
+Exercises: Decomposer -&gt; Planner -&gt; Vision/Verifier/Error eyes -&gt; Coordinator -&gt; Scoring.
+
+No browser required — uses static analysis of the known repo structure.
+"""
+
+import asyncio
+import json
+import os
+import sys
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+
+def _load_dotenv() -> None:
+    """Load .env file into os.environ."""
+    env_path = Path(__file__).resolve().parent / ".env"
+    if not env_path.exists():
+        return
+    with open(env_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip("\"'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
+_load_dotenv()
+
+from ans_nerves.llm.client import get_llm_client
+from ans_nerves.llm.prompts import (
+    COORDINATOR_JSON_SCHEMA,
+    COORDINATOR_SYSTEM,
+    DECOMPOSER_JSON_SCHEMA,
+    DECOMPOSER_SYSTEM,
+    DIFF_JSON_SCHEMA,
+    DIFF_SYSTEM,
+    ERROR_DETECTOR_SYSTEM,
+    ERROR_JSON_SCHEMA,
+    VERIFIER_JSON_SCHEMA,
+    VERIFIER_SYSTEM,
+    VISION_JSON_SCHEMA,
+    VISION_SYSTEM,
+    build_coordinator_user_prompt,
+    build_decomposer_user_prompt,
+    build_error_detector_user_prompt,
+    build_verifier_user_prompt,
+    build_vision_user_prompt,
+)
+from ans_nerves.config import get_config
+from ans_nerves.logging import get_logger
+
+logger = get_logger(__name__)
+
+# ── Known facts about browser-use (gathered from WebFetch) ──────────────
+
+BROWSER_USE_KNOWN_FACTS = {
+    "repo": "browser-use/browser-use",
+    "language": "Python (98.2%), Shell (1.3%)",
+    "license": "MIT",
+    "architecture": {
+        "agent": "Single Agent class that orchestrates LLM-driven browser tasks",
+        "browser": "Wraps Playwright for browser automation (local + cloud)",
+        "llm": "Pluggable: ChatBrowserUse (proprietary), ChatGoogle, ChatAnthropic, OpenAI, Ollama",
+        "tools": "Decorator-based @tools.action() for custom function registration",
+        "cli": "Interactive CLI: open, click, type, screenshot, state, close",
+        "cloud": "Managed stealth browsers with proxy rotation and CAPTCHA handling",
+        "skills": "Claude Code skill integration for AI-assisted browser control",
+        "templates": "uvx browser-use init --template default|advanced|tools",
+    },
+    "integrations": "1000+ (Gmail, Slack, Notion) via cloud",
+    "benchmarks": "BU Bench v1 — 100 real-world tasks",
+    "directories": [
+        ".github", "bin", "browser_use", "docker", "examples",
+        "skills", "static", "tests",
+    ],
+    "key_files": [
+        "pyproject.toml", "Dockerfile", "Dockerfile.fast",
+        "AGENTS.md", "CLAUDE.md", "CLOUD.md", "README.md",
+        ".env.example", ".pre-commit-config.yaml",
+    ],
+    "docs_url": "https://docs.browser-use.com",
+    "pypi": "browser-use-sdk (v3)",
+}
+
+ANS_KNOWN_STRENGTHS = [
+    "5 specialized Eyes vs single perception",
+    "Dedicated Goal Verifier Eye for per-sub-goal verification",
+    "Dedicated Error Detector Eye for silent failure classification",
+    "5-level contradiction resolution hierarchy",
+    "LanceDB vector store with 6-dimension composite scoring",
+    "Feedback loop: Decision Intelligence scores actions per context",
+    "Budget control with circuit breaker (ans-budget)",
+    "Injection defense (ans-immune)",
+    "Rust daemon for performance-critical browser control via CDP",
+    "Multi-interface: gRPC + MCP (10 tools) + REST (8 endpoints) + WebSocket",
+]
+
+ANS_KNOWN_WEAKNESSES = [
+    "No cloud deployment yet (self-hosted only)",
+    "No proprietary optimized LLM model (relies on 3rd party APIs)",
+    "No proxy rotation or CAPTCHA solving",
+    "Smaller community / no published benchmarks yet",
+    "More complex setup (Rust + Python vs Python-only)",
+    "No pre-built integrations with SaaS tools (Gmail, Slack, etc.)",
+]
+
+
+@dataclass
+class SmokeTestResults:
+    component: str
+    success: bool
+    latency_ms: float
+    output: dict[str, Any] | None = None
+    error: str | None = None
+    tokens_used: int = 0
+    cost_cents: float = 0.0
+
+
+@dataclass
+class FullPipelineResult:
+    results: list[SmokeTestResults] = field(default_factory=list)
+    overall_success: bool = False
+    total_latency_ms: float = 0.0
+    total_tokens: int = 0
+    total_cost_cents: float = 0.0
+
+    def add(self, r: SmokeTestResults) -> None:
+        self.results.append(r)
+        self.total_latency_ms += r.latency_ms
+        self.total_tokens += r.tokens_used
+        self.total_cost_cents += r.cost_cents
+
+
+async def test_decomposer() -> SmokeTestResults:
+    """Test 1: Goal Decomposer — breaks down the analysis task."""
+    t0 = time.monotonic()
+    try:
+        client = get_llm_client()
+        response = await client.complete_structured(
+            system_prompt=DECOMPOSER_SYSTEM,
+            user_prompt="Goal: Analyze the browser-use GitHub repository (github.com/browser-use/browser-use). "
+            "Identify architecture components, key features, strengths vs ANS, and weaknesses to exploit.",
+            json_schema=DECOMPOSER_JSON_SCHEMA,
+        )
+        if response.parsed is None:
+            return SmokeTestResults("Decomposer", False, (time.monotonic() - t0) * 1000,
+                                    error=f"Parse failure. Raw: {response.content[:200]}")
+        return SmokeTestResults(
+            "Decomposer", True, response.latency_ms,
+            output=response.parsed,
+            tokens_used=response.usage.total_tokens,
+            cost_cents=response.usage.cost_cents,
+        )
+    except Exception as e:
+        return SmokeTestResults("Decomposer", False, (time.monotonic() - t0) * 1000, error=str(e))
+
+
+async def test_vision_eye() -> SmokeTestResults:
+    """Test 2: Vision Eye — interprets the repo's README structure (simulated)."""
+    t0 = time.monotonic()
+    try:
+        dom_data = json.dumps({
+            "title": "GitHub - browser-use/browser-use",
+            "headings": ["browser-use", "Architecture", "Features", "Quick Start", "Cloud", "Examples"],
+            "links": ["docs.browser-use.com", "pypi.org/project/browser-use-sdk"],
+            "sections": ["Agent", "Browser", "LLM Providers", "Tools", "CLI", "Cloud"],
+        })
+        client = get_llm_client()
+        response = await client.complete_structured(
+            system_prompt=VISION_SYSTEM,
+            user_prompt=(
+                "<goal>\nAnalyze browser-use repo architecture and features\n</goal>\n\n"
+                "<distilled_dom>\n"
+                + dom_data +
+                "\n</distilled_dom>"
+            ),
+            json_schema=VISION_JSON_SCHEMA,
+        )
+        if response.parsed is None:
+            return SmokeTestResults("Vision Eye", False, (time.monotonic() - t0) * 1000,
+                                    error=f"Parse failure. Raw: {response.content[:300]}")
+        return SmokeTestResults(
+            "Vision Eye", True, response.latency_ms,
+            output=response.parsed,
+            tokens_used=response.usage.total_tokens,
+            cost_cents=response.usage.cost_cents,
+        )
+    except Exception as e:
+        return SmokeTestResults("Vision Eye", False, (time.monotonic() - t0) * 1000, error=str(e))
+
+
+async def test_verifier_eye() -> SmokeTestResults:
+    """Test 3: Goal Verifier — checks if key info was found."""
+    t0 = time.monotonic()
+    try:
+        client = get_llm_client()
+        response = await client.complete_structured(
+            system_prompt=VERIFIER_SYSTEM,
+            user_prompt=build_verifier_user_prompt(
+                sub_goal_description="Extract architecture components from browser-use README",
+                success_criteria=[
+                    "Identified Agent component",
+                    "Identified Browser component",
+                    "Identified LLM provider system",
+                    "Identified Tools system",
+                    "Identified Cloud offering",
+                ],
+                page_url="https://github.com/browser-use/browser-use",
+                page_title="browser-use",
+                visible_text=[
+                    "Agent: orchestrator for LLM-driven browser tasks",
+                    "Browser: Playwright wrapper",
+                    "LLM: ChatBrowserUse, ChatGoogle, ChatAnthropic",
+                    "Tools: @tools.action() decorator",
+                    "Cloud: stealth browsers, proxy rotation, CAPTCHA",
+                ],
+            ),
+            json_schema=VERIFIER_JSON_SCHEMA,
+        )
+        if response.parsed is None:
+            return SmokeTestResults("Goal Verifier", False, (time.monotonic() - t0) * 1000,
+                                    error=f"Parse failure. Raw: {response.content[:200]}")
+        return SmokeTestResults(
+            "Goal Verifier", True, response.latency_ms,
+            output=response.parsed,
+            tokens_used=response.usage.total_tokens,
+            cost_cents=response.usage.cost_cents,
+        )
+    except Exception as e:
+        return SmokeTestResults("Goal Verifier", False, (time.monotonic() - t0) * 1000, error=str(e))
+
+
+async def test_error_detector() -> SmokeTestResults:
+    """Test 4: Error Detector — classifies a simulated failure scenario."""
+    t0 = time.monotonic()
+    try:
+        client = get_llm_client()
+        response = await client.complete_structured(
+            system_prompt=ERROR_DETECTOR_SYSTEM,
+            user_prompt=build_error_detector_user_prompt(
+                action_description="Navigate to browser-use GitHub README and extract comparison with ANS",
+                error_message="No comparison section found — README does not mention ANS",
+                page_url="https://github.com/browser-use/browser-use",
+                page_title="browser-use",
+                visible_text=["No results for 'ANS'", "README has no comparison section"],
+            ),
+            json_schema=ERROR_JSON_SCHEMA,
+        )
+        if response.parsed is None:
+            return SmokeTestResults("Error Detector", False, (time.monotonic() - t0) * 1000,
+                                    error=f"Parse failure. Raw: {response.content[:200]}")
+        return SmokeTestResults(
+            "Error Detector", True, response.latency_ms,
+            output=response.parsed,
+            tokens_used=response.usage.total_tokens,
+            cost_cents=response.usage.cost_cents,
+        )
+    except Exception as e:
+        return SmokeTestResults("Error Detector", False, (time.monotonic() - t0) * 1000, error=str(e))
+
+
+async def test_coordinator() -> SmokeTestResults:
+    """Test 5: Cross-Eye Coordinator — synthesizes multi-source analysis."""
+    t0 = time.monotonic()
+    try:
+        eyes_data = [
+            {"eye_name": "dom_reader", "content": {"page_type": "github_repo", "visible_elements": 120, "headings": 8}},
+            {"eye_name": "vision", "content": {"page_type": "repository_readme", "visible_elements": 85, "overlays": [], "anomalies": []}},
+            {"eye_name": "goal_verifier", "content": {"criteria_met": False, "confidence": 0.7, "reasoning": "Architecture info found but no ANS comparison"}},
+            {"eye_name": "error_detector", "content": {"failure_type": "silent_fail", "description": "ANS comparison not found", "should_retry": False}},
+        ]
+        client = get_llm_client()
+        response = await client.complete_structured(
+            system_prompt=COORDINATOR_SYSTEM,
+            user_prompt=build_coordinator_user_prompt(
+                json.dumps(eyes_data),
+                goal_context="Analyze browser-use repo vs ANS",
+            ),
+            json_schema=COORDINATOR_JSON_SCHEMA,
+        )
+        if response.parsed is None:
+            return SmokeTestResults("Coordinator", False, (time.monotonic() - t0) * 1000,
+                                    error=f"Parse failure. Raw: {response.content[:200]}")
+        return SmokeTestResults(
+            "Coordinator", True, response.latency_ms,
+            output=response.parsed,
+            tokens_used=response.usage.total_tokens,
+            cost_cents=response.usage.cost_cents,
+        )
+    except Exception as e:
+        return SmokeTestResults("Coordinator", False, (time.monotonic() - t0) * 1000, error=str(e))
+
+
+async def test_scoring() -> SmokeTestResults:
+    """Test 6: Decision Intelligence — scoring and memory store."""
+    t0 = time.monotonic()
+    try:
+        from ans_nerves.scoring.intelligence import ActionRecord, DecisionIntelligence
+
+        intelligence = DecisionIntelligence()
+
+        record = ActionRecord(
+            session_id="smoke-test-001",
+            goal_id="browser-use-analysis",
+            action_type="click",
+            selector="a[href*='architecture']",
+            tool="browser",
+            context_type="github_repo",
+            goal_description="Identify browser-use architecture components",
+            page_type="github_repo",
+            action_succeeded=True,
+            results_produced="Architecture section found",
+            goal_advanced=True,
+            sub_goal_completed=True,
+        )
+        record_id = intelligence.record_action(record)
+
+        # Query back
+        best = intelligence.query_best_actions(
+            action_type="click",
+            goal_description="Identify browser-use architecture components",
+            page_type="github_repo",
+            k=3,
+        )
+
+        return SmokeTestResults(
+            "Decision Intelligence", True, (time.monotonic() - t0) * 1000,
+            output={
+                "record_id": record_id,
+                "total_records": intelligence.total_records,
+                "best_actions": [
+                    {"action": ba.action_type, "selector": ba.selector,
+                     "composite_score": round(ba.composite_score, 4),
+                     "distance": round(ba.distance, 4)}
+                    for ba in best
+                ],
+            },
+        )
+    except Exception as e:
+        return SmokeTestResults("Decision Intelligence", False, (time.monotonic() - t0) * 1000, error=str(e))
+
+
+async def run_full_pipeline() -> FullPipelineResult:
+    """Run the full ANS pipeline: Decompose -&gt; Eyes -&gt; Coordinate -&gt; Score."""
+    result = FullPipelineResult()
+
+    print("=" * 70)
+    print("ANS SMOKE TEST: browser-use Repository Analysis")
+    print(f"LLM: {get_config().llm.model} @ {get_config().llm.base_url}")
+    print("=" * 70)
+
+    # Phase 1: Decompose
+    print("\n[1/6] Decomposer — breaking down analysis task...")
+    r = await test_decomposer()
+    result.add(r)
+    status = "OK" if r.success else "FAIL"
+    print(f"  {status} | latency: {r.latency_ms:.0f}ms | tokens: {r.tokens_used} | cost: {r.cost_cents:.2f}¢")
+    if r.output:
+        subs = len(r.output.get("sub_goals", []))
+        print(f"  -&gt; Generated {subs} sub-goals: {[s['description'][:60] for s in r.output.get('sub_goals', [])]}")
+    if r.error:
+        print(f"  ERROR: {r.error[:200]}")
+
+    # Phase 2: Vision Eye
+    print("\n[2/6] Vision Eye — interpreting repo structure...")
+    r = await test_vision_eye()
+    result.add(r)
+    status = "OK" if r.success else "FAIL"
+    print(f"  {status} | latency: {r.latency_ms:.0f}ms | tokens: {r.tokens_used} | cost: {r.cost_cents:.2f}¢")
+    if r.output:
+        print(f"  -&gt; Page type: {r.output.get('page_type')}, elements: {len(r.output.get('visible_elements', []))}")
+        print(f"  -&gt; Overlays: {r.output.get('overlays')}, anomalies: {r.output.get('anomalies')}")
+    if r.error:
+        print(f"  ERROR: {r.error[:200]}")
+
+    # Phase 3: Goal Verifier
+    print("\n[3/6] Goal Verifier — checking if architecture info was found...")
+    r = await test_verifier_eye()
+    result.add(r)
+    status = "OK" if r.success else "FAIL"
+    print(f"  {status} | latency: {r.latency_ms:.0f}ms | tokens: {r.tokens_used} | cost: {r.cost_cents:.2f}¢")
+    if r.output:
+        print(f"  -&gt; Criteria met: {r.output.get('criteria_met')}, confidence: {r.output.get('confidence')}")
+        print(f"  -&gt; Reasoning: {r.output.get('reasoning', '')[:100]}")
+    if r.error:
+        print(f"  ERROR: {r.error[:200]}")
+
+    # Phase 4: Error Detector
+    print("\n[4/6] Error Detector — classifying missing ANS comparison...")
+    r = await test_error_detector()
+    result.add(r)
+    status = "OK" if r.success else "FAIL"
+    print(f"  {status} | latency: {r.latency_ms:.0f}ms | tokens: {r.tokens_used} | cost: {r.cost_cents:.2f}¢")
+    if r.output:
+        print(f"  -&gt; Failure type: {r.output.get('failure_type')}, should retry: {r.output.get('should_retry')}")
+        print(f"  -&gt; Escalation: {r.output.get('escalation_needed')}")
+    if r.error:
+        print(f"  ERROR: {r.error[:200]}")
+
+    # Phase 5: Coordinator
+    print("\n[5/6] Cross-Eye Coordinator — synthesizing all reports...")
+    r = await test_coordinator()
+    result.add(r)
+    status = "OK" if r.success else "FAIL"
+    print(f"  {status} | latency: {r.latency_ms:.0f}ms | tokens: {r.tokens_used} | cost: {r.cost_cents:.2f}¢")
+    if r.output:
+        print(f"  -&gt; Confidence: {r.output.get('confidence')}")
+        print(f"  -&gt; Perception: {r.output.get('unified_perception', '')[:150]}")
+        print(f"  -&gt; Alerts: {len(r.output.get('alerts', []))}, Contradictions: {len(r.output.get('contradictions', []))}")
+    if r.error:
+        print(f"  ERROR: {r.error[:200]}")
+
+    # Phase 6: Decision Intelligence
+    print("\n[6/6] Decision Intelligence — scoring and storing...")
+    r = await test_scoring()
+    result.add(r)
+    status = "OK" if r.success else "FAIL"
+    print(f"  {status} | latency: {r.latency_ms:.0f}ms")
+    if r.output:
+        print(f"  -&gt; Record ID: {r.output.get('record_id')}, total: {r.output.get('total_records')}")
+        best = r.output.get('best_actions', [])
+        for ba in best:
+            print(f"  -&gt; Best: {ba['action']} @ {ba['selector']} score={ba['composite_score']} dist={ba['distance']}")
+    if r.error:
+        print(f"  ERROR: {r.error[:200]}")
+
+    # Summary
+    result.overall_success = all(r.success for r in result.results)
+    print("\n" + "=" * 70)
+    print("FULL PIPELINE SUMMARY")
+    print("=" * 70)
+    print(f"  Components: {len(result.results)} run, {sum(1 for r in result.results if r.success)} passed, "
+          f"{sum(1 for r in result.results if not r.success)} failed")
+    print(f"  Total latency: {result.total_latency_ms:.0f}ms ({result.total_latency_ms/1000:.1f}s)")
+    print(f"  Total tokens: {result.total_tokens}")
+    print(f"  Total cost: {result.total_cost_cents:.2f}¢")
+    print(f"  Overall: {'ALL PASSED' if result.overall_success else 'SOME FAILED'}")
+
+    if not result.overall_success:
+        print("\nFAILURES:")
+        for r in result.results:
+            if not r.success:
+                print(f"  - {r.component}: {r.error}")
+
+    return result
+
+
+def main() -> int:
+    result = asyncio.run(run_full_pipeline())
+    return 0 if result.overall_success else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

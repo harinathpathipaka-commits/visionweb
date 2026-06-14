@@ -1,0 +1,222 @@
+"""Tests for AgentLoop — full perception→decision→action→learning cycle."""
+
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from ans_nerves.eyes.base import EyeReport
+from ans_nerves.planner.loop import AgentLoop, LoopResult
+from ans_nerves.planner.planner import PlannedAction
+
+
+class TestAgentLoop:
+    def setup_method(self):
+        # Mock all external dependencies
+        self.mock_grpc = MagicMock()
+        self.mock_grpc.get_distilled_dom = AsyncMock(return_value={
+            "url": "https://example.com/search",
+            "title": "Search Page",
+            "elements": [
+                {
+                    "selector": "#search-btn", "tag": "button", "text": "Search",
+                    "css_class": "", "css_id": "", "aria_role": "button",
+                    "is_visible": True, "is_enabled": True,
+                    "goal_relevance_score": 0.9,
+                },
+            ],
+        })
+        self.mock_grpc.capture_screenshot = AsyncMock(return_value={"data": "fakeb64"})
+        self.mock_grpc.compute_diff = AsyncMock(return_value={"added": 0, "removed": 0})
+        self.mock_grpc.execute_action = AsyncMock(return_value={"message": "OK"})
+
+        self.loop = AgentLoop(
+            session_id="test-session",
+            grpc=self.mock_grpc,
+        )
+
+    @pytest.mark.asyncio
+    async def test_decomposer_returns_no_sub_goals(self):
+        """When decomposer returns empty sub-goals, loop returns failure."""
+        mock_decomp = MagicMock()
+        mock_decomp.decompose = AsyncMock(return_value=MagicMock(sub_goals=[]))
+        self.loop._decomposer = mock_decomp
+
+        result = await self.loop.run("Do something")
+        assert not result.success
+        assert result.total_sub_goals == 0
+
+    @pytest.mark.asyncio
+    async def test_run_with_mocked_planner_single_step(self):
+        """Full loop with a single sub-goal that the planner marks as done."""
+        # Mock decomposer returns one sub-goal
+        mock_sub_goal = MagicMock()
+        mock_sub_goal.description = "Click search button"
+        mock_sub_goal.success_criteria = ["Search button clicked"]
+        mock_sub_goal.depends_on = []
+
+        mock_goal_spec = MagicMock()
+        mock_goal_spec.sub_goals = [mock_sub_goal]
+        mock_goal_spec.risk_factors = []
+
+        mock_decomp = MagicMock()
+        mock_decomp.decompose = AsyncMock(return_value=mock_goal_spec)
+        self.loop._decomposer = mock_decomp
+
+        # Mock planner returns "done" on first call
+        mock_planner = MagicMock()
+        mock_planner.plan_next_action = AsyncMock(return_value=PlannedAction(
+            action_type="done",
+            selector="",
+            tool="done",
+            reasoning="Goal achieved",
+            confidence=0.95,
+            source="llm_cold",
+        ))
+        mock_planner.total_records = 0
+        self.loop._planner = mock_planner
+
+        result = await self.loop.run("Click search button")
+
+        assert result.success
+        assert result.total_steps == 1
+        assert result.sub_goals_completed == 1
+
+    @pytest.mark.asyncio
+    async def test_run_executes_action_then_verifies(self):
+        """Planner returns click → execute → verify → done."""
+        mock_sub_goal = MagicMock()
+        mock_sub_goal.description = "Click search button"
+        mock_sub_goal.success_criteria = ["Button clicked"]
+
+        mock_goal_spec = MagicMock()
+        mock_goal_spec.sub_goals = [mock_sub_goal]
+        mock_goal_spec.risk_factors = []
+
+        mock_decomp = MagicMock()
+        mock_decomp.decompose = AsyncMock(return_value=mock_goal_spec)
+        self.loop._decomposer = mock_decomp
+
+        # Planner: first call = click, second call = done (after verify)
+        planned_click = PlannedAction(
+            action_type="click",
+            selector="#search-btn",
+            tool="click",
+            reasoning="Click the search button",
+            confidence=0.9,
+            source="llm_cold",
+        )
+        planned_done = PlannedAction(
+            action_type="done", selector="", tool="done",
+            reasoning="Goal complete", confidence=0.95, source="llm_cold",
+        )
+        mock_planner = MagicMock()
+        mock_planner.plan_next_action = AsyncMock(side_effect=[planned_click, planned_done])
+        mock_planner.total_records = 0
+        self.loop._planner = mock_planner
+
+        # Mock verifier: criteria met
+        mock_verifier = MagicMock()
+        mock_verifier.observe = AsyncMock(return_value=EyeReport(
+            eye_name="goal_verifier",
+            confidence=0.9,
+            content={"criteria_met": True, "reasoning": "Button clicked successfully"},
+        ))
+        self.loop._eyes["goal_verifier"] = mock_verifier
+
+        result = await self.loop.run("Click search button")
+
+        assert result.success
+        assert result.total_steps >= 1
+
+    @pytest.mark.asyncio
+    async def test_escalation_on_action_failure(self):
+        """When actions fail repeatedly, loop escalates."""
+        mock_sub_goal = MagicMock()
+        mock_sub_goal.description = "Risky action"
+        mock_sub_goal.success_criteria = ["Done"]
+
+        mock_goal_spec = MagicMock()
+        mock_goal_spec.sub_goals = [mock_sub_goal]
+        mock_goal_spec.risk_factors = []
+
+        mock_decomp = MagicMock()
+        mock_decomp.decompose = AsyncMock(return_value=mock_goal_spec)
+        self.loop._decomposer = mock_decomp
+
+        # Planner keeps suggesting click
+        planned = PlannedAction(
+            action_type="click", selector="#broken-btn", tool="click",
+            reasoning="Try clicking", confidence=0.7, source="llm_cold",
+        )
+        mock_planner = MagicMock()
+        mock_planner.plan_next_action = AsyncMock(return_value=planned)
+        mock_planner.total_records = 0
+        self.loop._planner = mock_planner
+
+        # gRPC always fails
+        self.mock_grpc.execute_action = AsyncMock(
+            side_effect=RuntimeError("Element not found")
+        )
+
+        result = await self.loop.run("Click broken button")
+
+        assert not result.success
+        assert "escalated" in result.summary.lower() or result.total_errors >= 3
+
+    @pytest.mark.asyncio
+    async def test_max_steps_gates_loop(self):
+        """Loop stops after max_steps even if not done."""
+        mock_sub_goal = MagicMock()
+        mock_sub_goal.description = "Endless task"
+        mock_sub_goal.success_criteria = ["Never met"]
+
+        mock_goal_spec = MagicMock()
+        mock_goal_spec.sub_goals = [mock_sub_goal]
+        mock_goal_spec.risk_factors = []
+
+        mock_decomp = MagicMock()
+        mock_decomp.decompose = AsyncMock(return_value=mock_goal_spec)
+        self.loop._decomposer = mock_decomp
+
+        # Planner never says done
+        planned = PlannedAction(
+            action_type="wait", selector="", tool="wait",
+            reasoning="Waiting...", confidence=0.3, source="llm_cold",
+        )
+        mock_planner = MagicMock()
+        mock_planner.plan_next_action = AsyncMock(return_value=planned)
+        mock_planner.total_records = 0
+        self.loop._planner = mock_planner
+        self.loop._max_steps = 5
+
+        result = await self.loop.run("Endless goal")
+        assert result.total_steps == 5
+
+    @pytest.mark.asyncio
+    async def test_escalate_action_type_stops_loop(self):
+        """When planner returns escalate, loop stops immediately."""
+        mock_sub_goal = MagicMock()
+        mock_sub_goal.description = "Captcha detected"
+        mock_sub_goal.success_criteria = ["Solve captcha"]
+
+        mock_goal_spec = MagicMock()
+        mock_goal_spec.sub_goals = [mock_sub_goal]
+        mock_goal_spec.risk_factors = ["captcha"]
+
+        mock_decomp = MagicMock()
+        mock_decomp.decompose = AsyncMock(return_value=mock_goal_spec)
+        self.loop._decomposer = mock_decomp
+
+        planned = PlannedAction(
+            action_type="escalate", selector="", tool="escalate",
+            reasoning="CAPTCHA detected — human needed",
+            confidence=0.99, source="llm_cold",
+        )
+        mock_planner = MagicMock()
+        mock_planner.plan_next_action = AsyncMock(return_value=planned)
+        mock_planner.total_records = 0
+        self.loop._planner = mock_planner
+
+        result = await self.loop.run("Solve captcha")
+        assert not result.success
+        assert "escalated" in result.summary.lower()

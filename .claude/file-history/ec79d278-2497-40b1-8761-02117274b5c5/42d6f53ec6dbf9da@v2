@@ -1,0 +1,42 @@
+import sqlite3
+from datetime import datetime, timezone
+from typing import Any, Dict
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def init_ledger(db_path: str) -> None:
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS epistemic_ledger (
+                event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                trace_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+
+
+def append_event(db_path: str, trace_id: str, event_type: str, payload_json: str) -> None:
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO epistemic_ledger (trace_id, event_type, payload_json, created_at) VALUES (?, ?, ?, ?)",
+            (trace_id, event_type, payload_json, _now()),
+        )
+
+
+def list_events(db_path: str, trace_id: str) -> list[Dict[str, Any]]:
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT event_type, payload_json, created_at FROM epistemic_ledger WHERE trace_id = ? ORDER BY event_id ASC",
+            (trace_id,),
+        ).fetchall()
+    return [
+        {"event_type": row[0], "payload_json": row[1], "created_at": row[2]}
+        for row in rows
+    ]

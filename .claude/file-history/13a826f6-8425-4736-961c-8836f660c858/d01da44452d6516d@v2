@@ -1,0 +1,26 @@
+"""Goal Verifier Eye — checks sub-goal criteria after every action.
+
+Compares DiffReport + eye reports against verifiable criteria defined
+by the Goal Decomposer. Determines if the current sub-goal is done,
+partially done, or blocked. Triggers re-planning when criteria fail
+after N attempts.
+"""
+
+from .base import BaseEye, EyeReport
+
+
+class GoalVerifierEye(BaseEye):
+    """Verifies sub-goal completion against measurable criteria."""
+
+    name = "goal_verifier"
+
+    async def observe(self, session_id: str, page_data: dict) -> EyeReport:
+        return EyeReport(
+            eye_name=self.name,
+            content={
+                "sub_goal_advanced": False,
+                "confidence": 0.0,
+                "reasoning": "",
+                "criteria_status": "pending",
+            },
+        )

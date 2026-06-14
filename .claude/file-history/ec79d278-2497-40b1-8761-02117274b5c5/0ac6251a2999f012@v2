@@ -1,0 +1,124 @@
+from datetime import datetime, timedelta
+from src.temporal_alignment import (
+    Frequency, detect_frequency, resample,
+    block_incompatible_fits, tag_native_frequency, AlignEngine,
+)
+from src.models import Observation
+
+
+def _make_ts(days_back: int) -> str:
+    return (datetime(2024, 1, 1) + timedelta(days=days_back)).isoformat()
+
+
+def _make_obs(variable: str, value: float, ts: str) -> Observation:
+    return Observation(
+        variable=variable, value=value, unit="USD",
+        timestamp=ts, entity_id="acme", quality_score=1.0,
+    )
+
+
+class TestFrequencyEnum:
+    def test_rank_values(self):
+        assert Frequency.DAILY.rank < Frequency.WEEKLY.rank
+        assert Frequency.WEEKLY.rank < Frequency.MONTHLY.rank
+        assert Frequency.MONTHLY.rank < Frequency.QUARTERLY.rank
+        assert Frequency.QUARTERLY.rank < Frequency.ANNUAL.rank
+
+    def test_approx_days(self):
+        assert Frequency.DAILY.approx_days == 1.0
+        assert Frequency.WEEKLY.approx_days == 7.0
+        assert Frequency.MONTHLY.approx_days > 28
+        assert Frequency.ANNUAL.approx_days > 350
+
+
+class TestDetectFrequency:
+    def test_detect_daily(self):
+        timestamps = [_make_ts(i) for i in range(30)]
+        freq = detect_frequency(timestamps)
+        assert freq == Frequency.DAILY
+
+    def test_detect_weekly(self):
+        timestamps = [_make_ts(i * 7) for i in range(20)]
+        freq = detect_frequency(timestamps)
+        assert freq == Frequency.WEEKLY
+
+    def test_detect_monthly(self):
+        timestamps = []
+        for m in range(1, 13):
+            timestamps.append(f"2024-{m:02d}-01T00:00:00")
+        freq = detect_frequency(timestamps)
+        assert freq in (Frequency.MONTHLY, Frequency.IRREGULAR)
+
+    def test_detect_quarterly(self):
+        timestamps = [
+            "2024-01-01T00:00:00", "2024-04-01T00:00:00",
+            "2024-07-01T00:00:00", "2024-10-01T00:00:00",
+            "2025-01-01T00:00:00",
+        ]
+        freq = detect_frequency(timestamps)
+        assert freq in (Frequency.QUARTERLY, Frequency.MONTHLY, Frequency.IRREGULAR)
+
+    def test_too_few_samples(self):
+        timestamps = ["2024-01-01", "2024-01-02"]
+        freq = detect_frequency(timestamps)
+        assert freq == Frequency.IRREGULAR
+
+
+class TestResample:
+    def test_resample_daily_to_weekly_mean(self):
+        obs = [_make_obs("revenue", float(i), _make_ts(i)) for i in range(14)]
+        result = resample(obs, Frequency.WEEKLY, "mean")
+        assert len(result) <= len(obs)
+        assert all(o.variable == "revenue" for o in result)
+
+    def test_resample_daily_to_monthly_sum(self):
+        obs = [_make_obs("sales", 10.0, f"2024-01-{d:02d}T00:00:00") for d in range(1, 32)]
+        result = resample(obs, Frequency.MONTHLY, "sum")
+        assert len(result) <= len(obs)
+
+    def test_resample_same_frequency_returns_original(self):
+        obs = [_make_obs("revenue", 100.0, _make_ts(i)) for i in range(5)]
+        result = resample(obs, Frequency.DAILY, "mean")
+        assert len(result) == len(obs)
+
+
+class TestBlockIncompatibleFits:
+    def test_compatible_frequencies(self):
+        blocked, reason = block_incompatible_fits(Frequency.DAILY, Frequency.WEEKLY)
+        assert blocked is False
+
+    def test_incompatible_frequencies(self):
+        blocked, reason = block_incompatible_fits(Frequency.DAILY, Frequency.ANNUAL)
+        assert blocked is True
+
+    def test_same_frequency_not_blocked(self):
+        blocked, reason = block_incompatible_fits(Frequency.MONTHLY, Frequency.MONTHLY)
+        assert blocked is False
+
+
+class TestTagNativeFrequency:
+    def test_tags_all_observations(self):
+        obs = [_make_obs("rev", 100.0, _make_ts(i)) for i in range(10)]
+        tagged = tag_native_frequency(obs)
+        assert isinstance(tagged, dict)
+        assert "frequency" in tagged
+        assert "n_obs" in tagged
+        assert tagged["n_obs"] == 10
+
+
+class TestAlignEngine:
+    def test_register_and_align(self):
+        engine = AlignEngine()
+        daily_obs = [_make_obs("sales", float(i), _make_ts(i)) for i in range(14)]
+        engine.register_variable("sales", [_make_ts(i) for i in range(14)])
+        aligned = engine.align_to_common(
+            {"sales": daily_obs}, target_freq=Frequency.WEEKLY,
+        )
+        assert "sales" in aligned
+
+    def test_block_incompatible(self):
+        engine = AlignEngine()
+        engine.register_variable("daily_var", [_make_ts(i) for i in range(14)])
+        engine.register_variable("annual_var", ["2024-01-01T00:00:00"])
+        blocked, reason = engine.block_incompatible("daily_var", "annual_var")
+        assert blocked is True

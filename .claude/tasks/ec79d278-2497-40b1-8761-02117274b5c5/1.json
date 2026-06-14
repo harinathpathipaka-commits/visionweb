@@ -1,0 +1,8 @@
+{
+  "id": "1",
+  "subject": "Phase 1: Core Math Engine — Rewrite fitting.py, compute.py, probabilistic.py, pysr_discovery.py with real implementations",
+  "description": "Replace all mocked computational components with real SciPy fitting, SymPy evaluation, Laplace approximation + BMA, and PySR integration.",
+  "status": "completed",
+  "blocks": [],
+  "blockedBy": []
+}

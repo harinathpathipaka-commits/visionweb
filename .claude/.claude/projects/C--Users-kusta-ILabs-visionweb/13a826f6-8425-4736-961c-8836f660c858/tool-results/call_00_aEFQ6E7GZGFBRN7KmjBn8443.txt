@@ -1,0 +1,252 @@
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs:116:pub struct ActionCheckRequest {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-117-    #[prost(string, tag = "1")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-118-    pub session_id: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-119-    #[prost(message, optional, tag = "2")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-120-    pub action: ::core::option::Option<Action>,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-121-}
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-122-#[derive(Clone, PartialEq, ::prost::Message)]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs:123:pub struct ActionCheckResponse {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-124-    #[prost(bool, tag = "1")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-125-    pub allowed: bool,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-126-    #[prost(string, tag = "2")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-127-    pub reason: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-128-    #[prost(string, repeated, tag = "3")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-129-    pub distraction_alerts: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-130-    #[prost(string, repeated, tag = "4")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-131-    pub injection_alerts: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-132-}
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-133-#[derive(Clone, PartialEq, ::prost::Message)]
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-134-pub struct DomRequest {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-135-    #[prost(string, tag = "1")]
+--
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs:311:pub struct DistractionRequest {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-312-    #[prost(string, tag = "1")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-313-    pub session_id: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-314-    #[prost(string, tag = "2")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-315-    pub url: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-316-    #[prost(message, optional, tag = "3")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-317-    pub dom: ::core::option::Option<DistilledDom>,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-318-}
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-319-#[derive(Clone, PartialEq, ::prost::Message)]
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-320-pub struct DistractionList {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-321-    #[prost(message, repeated, tag = "1")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-322-    pub distractions: ::prost::alloc::vec::Vec<Distraction>,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-323-    #[prost(int64, tag = "2")]
+--
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs:339:pub struct InjectionScanRequest {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-340-    #[prost(string, tag = "1")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-341-    pub session_id: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-342-    #[prost(string, tag = "2")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-343-    pub url: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-344-    /// raw HTML or distilled text
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-345-    #[prost(string, tag = "3")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-346-    pub page_content: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-347-}
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-348-#[derive(Clone, PartialEq, ::prost::Message)]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs:349:pub struct InjectionScanResult {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-350-    /// 0.0 (safe) to 1.0 (definite injection)
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-351-    #[prost(float, tag = "1")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-352-    pub score: f32,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-353-    #[prost(message, repeated, tag = "2")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-354-    pub flagged: ::prost::alloc::vec::Vec<FlaggedContent>,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-355-    /// allow, sanitize, block
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-356-    #[prost(string, tag = "3")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-357-    pub action: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-358-    #[prost(string, tag = "4")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-359-    pub reason: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-360-    #[prost(int64, tag = "5")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-361-    pub scan_time_us: i64,
+--
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs:490:pub struct CreateGoalRequest {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-491-    #[prost(string, tag = "1")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-492-    pub description: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-493-    #[prost(map = "string, string", tag = "2")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-494-    pub context: ::std::collections::HashMap<
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-495-        ::prost::alloc::string::String,
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-496-        ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-497-    >,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-498-    #[prost(int32, tag = "3")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-499-    pub max_budget_cents: i32,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-500-    #[prost(int32, tag = "4")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-501-    pub max_steps: i32,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-502-}
+--
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs:504:pub struct GoalState {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-505-    #[prost(string, tag = "1")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-506-    pub goal_id: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-507-    #[prost(string, tag = "2")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-508-    pub description: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-509-    /// pending, active, completed, failed, blocked
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-510-    #[prost(string, tag = "3")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-511-    pub status: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-512-    /// 0.0 to 1.0
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-513-    #[prost(float, tag = "4")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-514-    pub progress: f32,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-515-    #[prost(message, repeated, tag = "5")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-516-    pub sub_goals: ::prost::alloc::vec::Vec<SubGoal>,
+--
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs:552:pub struct GoalStateRequest {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-553-    #[prost(string, tag = "1")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-554-    pub goal_id: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-555-}
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-556-#[derive(Clone, PartialEq, ::prost::Message)]
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-557-pub struct ProgressUpdate {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-558-    #[prost(string, tag = "1")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-559-    pub goal_id: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-560-    #[prost(float, tag = "2")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-561-    pub progress: f32,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-562-    #[prost(string, tag = "3")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-563-    pub status: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-564-    #[prost(message, repeated, tag = "4")]
+--
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs:582:pub struct StoreScoreRequest {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-583-    #[prost(string, tag = "1")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-584-    pub session_id: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-585-    #[prost(string, tag = "2")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-586-    pub goal_id: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-587-    #[prost(message, optional, tag = "3")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-588-    pub action: ::core::option::Option<Action>,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-589-    #[prost(string, tag = "4")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-590-    pub tool: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-591-    #[prost(float, repeated, tag = "5")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-592-    pub context_embedding: ::prost::alloc::vec::Vec<f32>,
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-593-    \ immediate: did action succeed?
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-594-    #[prost(float, tag = "6")]
+--
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs:618:pub struct QueryBestActionsRequest {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-619-    #[prost(float, repeated, tag = "1")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-620-    pub context_embedding: ::prost::alloc::vec::Vec<f32>,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-621-    #[prost(int32, tag = "2")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-622-    pub k: i32,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-623-    #[prost(float, tag = "3")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-624-    pub min_score: f32,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-625-    #[prost(string, tag = "4")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-626-    pub context_type: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-627-}
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-628-#[derive(Clone, PartialEq, ::prost::Message)]
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-629-pub struct SearchRequest {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-630-    #[prost(float, repeated, tag = "1")]
+--
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs:640:pub struct ScoredActionList {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-641-    #[prost(message, repeated, tag = "1")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-642-    pub actions: ::prost::alloc::vec::Vec<ScoredAction>,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-643-    #[prost(int64, tag = "2")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-644-    pub search_time_us: i64,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-645-}
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-646-#[derive(Clone, PartialEq, ::prost::Message)]
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-647-pub struct ScoredAction {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-648-    #[prost(message, optional, tag = "1")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-649-    pub action: ::core::option::Option<Action>,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-650-    #[prost(string, tag = "2")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-651-    pub tool: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-652-    #[prost(float, tag = "3")]
+--
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs:716:pub struct HealthStatus {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-717-    #[prost(bool, tag = "1")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-718-    pub healthy: bool,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-719-    #[prost(string, tag = "2")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-720-    pub version: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-721-    #[prost(int32, tag = "3")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-722-    pub active_sessions: i32,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-723-    #[prost(int32, tag = "4")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-724-    pub active_goals: i32,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-725-    #[prost(int64, tag = "5")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-726-    pub uptime_seconds: i64,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-727-    #[prost(int64, tag = "6")]
+target\debug\build\ans-proto-1070c8880fec8dbc\out\ans.rs-728-    pub total_actions_executed: i64,
+--
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs:116:pub struct ActionCheckRequest {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-117-    #[prost(string, tag = "1")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-118-    pub session_id: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-119-    #[prost(message, optional, tag = "2")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-120-    pub action: ::core::option::Option<Action>,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-121-}
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-122-#[derive(Clone, PartialEq, ::prost::Message)]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs:123:pub struct ActionCheckResponse {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-124-    #[prost(bool, tag = "1")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-125-    pub allowed: bool,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-126-    #[prost(string, tag = "2")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-127-    pub reason: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-128-    #[prost(string, repeated, tag = "3")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-129-    pub distraction_alerts: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-130-    #[prost(string, repeated, tag = "4")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-131-    pub injection_alerts: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-132-}
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-133-#[derive(Clone, PartialEq, ::prost::Message)]
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-134-pub struct DomRequest {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-135-    #[prost(string, tag = "1")]
+--
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs:311:pub struct DistractionRequest {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-312-    #[prost(string, tag = "1")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-313-    pub session_id: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-314-    #[prost(string, tag = "2")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-315-    pub url: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-316-    #[prost(message, optional, tag = "3")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-317-    pub dom: ::core::option::Option<DistilledDom>,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-318-}
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-319-#[derive(Clone, PartialEq, ::prost::Message)]
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-320-pub struct DistractionList {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-321-    #[prost(message, repeated, tag = "1")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-322-    pub distractions: ::prost::alloc::vec::Vec<Distraction>,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-323-    #[prost(int64, tag = "2")]
+--
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs:339:pub struct InjectionScanRequest {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-340-    #[prost(string, tag = "1")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-341-    pub session_id: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-342-    #[prost(string, tag = "2")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-343-    pub url: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-344-    /// raw HTML or distilled text
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-345-    #[prost(string, tag = "3")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-346-    pub page_content: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-347-}
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-348-#[derive(Clone, PartialEq, ::prost::Message)]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs:349:pub struct InjectionScanResult {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-350-    /// 0.0 (safe) to 1.0 (definite injection)
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-351-    #[prost(float, tag = "1")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-352-    pub score: f32,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-353-    #[prost(message, repeated, tag = "2")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-354-    pub flagged: ::prost::alloc::vec::Vec<FlaggedContent>,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-355-    /// allow, sanitize, block
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-356-    #[prost(string, tag = "3")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-357-    pub action: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-358-    #[prost(string, tag = "4")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-359-    pub reason: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-360-    #[prost(int64, tag = "5")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-361-    pub scan_time_us: i64,
+--
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs:490:pub struct CreateGoalRequest {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-491-    #[prost(string, tag = "1")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-492-    pub description: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-493-    #[prost(map = "string, string", tag = "2")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-494-    pub context: ::std::collections::HashMap<
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-495-        ::prost::alloc::string::String,
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-496-        ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-497-    >,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-498-    #[prost(int32, tag = "3")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-499-    pub max_budget_cents: i32,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-500-    #[prost(int32, tag = "4")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-501-    pub max_steps: i32,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-502-}
+--
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs:504:pub struct GoalState {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-505-    #[prost(string, tag = "1")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-506-    pub goal_id: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-507-    #[prost(string, tag = "2")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-508-    pub description: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-509-    /// pending, active, completed, failed, blocked
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-510-    #[prost(string, tag = "3")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-511-    pub status: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-512-    /// 0.0 to 1.0
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-513-    #[prost(float, tag = "4")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-514-    pub progress: f32,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-515-    #[prost(message, repeated, tag = "5")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-516-    pub sub_goals: ::prost::alloc::vec::Vec<SubGoal>,
+--
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs:552:pub struct GoalStateRequest {
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-553-    #[prost(string, tag = "1")]
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-554-    pub goal_id: ::prost::alloc::string::String,
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-555-}
+target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-556-#[derive(Clone, PartialEq, ::prost::Message)]
+C:\Users\kusta\ILabs\visionweb\target\debug\build\ans-proto-0cec5cbde5b4089c\out\ans.rs-557-pub struct ProgressUpdate {
+
+[Showing results with pagination = limit: 250]

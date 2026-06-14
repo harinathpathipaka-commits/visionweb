@@ -1,0 +1,284 @@
+from __future__ import annotations
+
+import json
+import uuid
+from dataclasses import asdict
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+from .compute import evaluate_equation, sensitivity_map
+from .config import CONFIG
+from .correlation import run_correlation_analysis
+from .domain_router import _score_query, load_ontology, route_domain
+from .epistemic_ledger import append_event, init_ledger
+from .epistemic_parser import parse_query
+from .fallback_router import route_failure
+from .fitting import choose_best, fit_canonical_families
+from .formatter import format_fallback, format_output
+from .gating import gate
+from .models import (
+    ComputeResult,
+    CorrelationResult,
+    EquationFit,
+    ExtractionResult,
+    FitStats,
+    GateResult,
+    ProbabilisticResult,
+    SolveResult,
+)
+from .probabilistic import bayesian_model_averaging, laplace_approximation
+from .pysr_discovery import run_pysr_primary
+from .storage import (
+    find_equation,
+    get_or_create_equation,
+    init_storage,
+    insert_version,
+    promote_version,
+    record_shadow_eval,
+)
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _log(db_path: str, trace_id: str, event_type: str, payload: Any) -> None:
+    append_event(db_path, trace_id, event_type, json.dumps(payload, default=str))
+
+
+def _dict_to_fitstats(d: Dict[str, Any]) -> FitStats:
+    return FitStats(
+        r2_adj=float(d.get("r2_adj", 0)),
+        holdout_mape=float(d.get("holdout_mape", float("inf"))),
+        aic=float(d.get("aic", float("inf"))),
+        residual_random=bool(d.get("residual_random", False)),
+        n_obs=int(d.get("n_obs", 0)),
+    )
+
+
+def _equation_from_store(entry: Dict[str, Any]) -> EquationFit:
+    stats = _dict_to_fitstats(entry["stats"])
+    return EquationFit(
+        family=entry["form_family"],
+        parameters=entry["parameters"],
+        stats=stats,
+        sympy_expr=entry["sympy_ast"],
+    )
+
+
+def _fit_and_store(
+    x_values: List[float],
+    y_values: List[float],
+    domain: str,
+    var_hash: str,
+    db_path: str,
+    trace_id: str,
+    random_seed: Optional[int] = None,
+) -> EquationFit:
+    now = _now()
+    equation_id = get_or_create_equation(db_path, var_hash, domain, now)
+
+    canonical_candidates = fit_canonical_families(x_values, y_values, random_seed=random_seed)
+    pysr_result = run_pysr_primary(x_values, y_values)
+
+    all_candidates = canonical_candidates + [pysr_result.equation]
+    equation = choose_best(all_candidates)
+
+    if equation is None:
+        equation = pysr_result.equation
+
+    version_id = insert_version(
+        db_path=db_path,
+        equation_id=equation_id,
+        form_family=equation.family,
+        sympy_ast=equation.sympy_expr,
+        parameters=equation.parameters,
+        stats=asdict(equation.stats),
+        n_obs=equation.stats.n_obs,
+        created_at=now,
+        source="primary",
+        provenance={"source": equation.family, "n_candidates": len(all_candidates)},
+    )
+
+    gate_result = gate(equation.stats)
+    record_shadow_eval(
+        db_path=db_path,
+        version_id=version_id,
+        mape=equation.stats.holdout_mape,
+        aic=equation.stats.aic,
+        residual_random=equation.stats.residual_random,
+        passed=gate_result.passed,
+        evaluated_at=now,
+    )
+
+    if gate_result.passed:
+        promote_version(db_path, equation_id, version_id, now, "auto_promoted")
+
+    _log(db_path, trace_id, "fitting",
+         {"family": equation.family, "aic": equation.stats.aic,
+          "r2_adj": equation.stats.r2_adj, "passed": gate_result.passed})
+
+    return equation
+
+
+def solve(
+    query: str,
+    x_values: List[float],
+    y_values: List[float],
+    db_path: str,
+    llm_client: Optional[Any] = None,
+    x_historical: Optional[List[float]] = None,
+    y_historical: Optional[List[float]] = None,
+    random_seed: Optional[int] = None,
+) -> SolveResult:
+    trace_id = str(uuid.uuid4())
+    init_storage(db_path)
+    init_ledger(db_path)
+
+    # --- Domain Router ---
+    domain_scores = _score_query(query)
+    domain = route_domain(query)
+    ontology = load_ontology(domain)
+    _log(db_path, trace_id, "domain_routing",
+         {"domain": domain, "scores": {d: dict(s) for d, s in domain_scores.items()}})
+
+    # --- L1: Epistemic Parser ---
+    extraction = parse_query(query, domain, ontology, llm_client)
+    _log(db_path, trace_id, "extraction",
+         {"variables": [asdict(v) for v in extraction.variables],
+          "assumptions": extraction.assumptions, "domain": extraction.domain})
+
+    # --- L2: Correlation + Drift ---
+    correlation = run_correlation_analysis(x_values, y_values, x_historical, y_historical)
+    drift_detected = correlation.drift_flags.get(("x", "y"), False)
+    pearson_r = correlation.rho.get(("x", "y"), 0.0)
+    correlation_weak = abs(pearson_r) < CONFIG.thresholds.min_correlation
+
+    _log(db_path, trace_id, "correlation",
+         {"pearson_r": pearson_r, "drift_detected": drift_detected,
+          "correlation_weak": correlation_weak})
+
+    # --- Derive var_hash from extracted variables ---
+    var_names = [v.name for v in extraction.variables] if extraction.variables else ["x", "y"]
+    x_var = var_names[0] if len(var_names) > 0 else "x"
+    y_var = var_names[-1] if len(var_names) > 1 else "y"
+    var_hash = f"{domain}:{x_var}:{y_var}"
+
+    # --- L3: Library Lookup or Fit ---
+    conflict_exists = False
+    stored = find_equation(db_path, var_hash, domain)
+    if stored and not drift_detected:
+        equation = _equation_from_store(stored)
+        _log(db_path, trace_id, "library_hit",
+             {"family": equation.family, "aic": equation.stats.aic})
+    elif stored and drift_detected:
+        _log(db_path, trace_id, "drift_refit", {"var_hash": var_hash})
+        equation = _fit_and_store(x_values, y_values, domain, var_hash, db_path, trace_id, random_seed)
+    else:
+        _log(db_path, trace_id, "library_miss", {"var_hash": var_hash})
+        equation = _fit_and_store(x_values, y_values, domain, var_hash, db_path, trace_id, random_seed)
+
+    # --- L4: Compute ---
+    x_point = x_values[-1]
+    compute = evaluate_equation(equation, x_point)
+    _log(db_path, trace_id, "compute",
+         {"answer": compute.answer, "derivatives": compute.derivatives})
+
+    # --- Elasticity ---
+    try:
+        elasticity = sensitivity_map(equation, x_point)
+    except Exception:
+        elasticity = {}
+
+    # --- L5: Probabilistic ---
+    prob = laplace_approximation(equation, x_point, n_samples=CONFIG.laplace_samples)
+    _log(db_path, trace_id, "probabilistic",
+         {"mean": prob.mean, "std": prob.std, "ci_95": list(prob.ci_95)})
+
+    # --- L6: Gate ---
+    gate_result = gate(equation.stats)
+    _log(db_path, trace_id, "gate", {"passed": gate_result.passed, "reason": gate_result.reason})
+
+    # --- L7: Formatter (deferred — caller may call format_output) ---
+    # --- Fallback Router ---
+    fallback = None
+    if not gate_result.passed or drift_detected or conflict_exists or correlation_weak:
+        fallback = route_failure(
+            gate_result=gate_result,
+            equation=equation,
+            extraction=extraction,
+            drift_detected=drift_detected,
+            conflict_exists=conflict_exists,
+            correlation_weak=correlation_weak,
+        )
+        _log(db_path, trace_id, "fallback",
+             {"category": fallback.category, "title": fallback.title})
+
+    return SolveResult(
+        equation=equation,
+        compute=compute,
+        probabilistic=prob,
+        gate=gate_result,
+        trace_id=trace_id,
+        fallback_action=asdict(fallback) if fallback else None,
+        elasticity=elasticity,
+        pearson_r=pearson_r,
+        drift_detected=drift_detected,
+    )
+
+
+def solve_with_prose(
+    query: str,
+    x_values: List[float],
+    y_values: List[float],
+    db_path: str,
+    llm_client: Optional[Any] = None,
+    x_historical: Optional[List[float]] = None,
+    y_historical: Optional[List[float]] = None,
+    audience: str = "analyst",
+) -> str:
+    result = solve(query, x_values, y_values, db_path, llm_client, x_historical, y_historical)
+    return format_output(result, audience, llm_client)
+
+
+def solve_from_csv(
+    query: str,
+    csv_path: str,
+    x_column: str,
+    y_column: str,
+    db_path: str,
+    llm_client: Optional[Any] = None,
+) -> SolveResult:
+    import csv
+
+    x_vals: List[float] = []
+    y_vals: List[float] = []
+
+    with open(csv_path, "r", encoding="utf-8", errors="ignore") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            try:
+                xv = float(row[x_column])
+                yv = float(row[y_column])
+                x_vals.append(xv)
+                y_vals.append(yv)
+            except (ValueError, KeyError):
+                continue
+
+    if len(x_vals) < 3:
+        trace_id = str(uuid.uuid4())
+        return SolveResult(
+            equation=EquationFit(
+                family="none",
+                parameters={},
+                stats=FitStats(r2_adj=0.0, holdout_mape=float("inf"), aic=float("inf"),
+                               residual_random=False, n_obs=len(x_vals)),
+                sympy_expr="",
+            ),
+            compute=ComputeResult(answer=0.0, derivatives={}, curvature={}),
+            probabilistic=ProbabilisticResult(mean=0.0, std=0.0, ci_95=(0.0, 0.0), tail_risk=None),
+            gate=GateResult(passed=False, reason="insufficient_observations"),
+            trace_id=trace_id,
+        )
+
+    return solve(query, x_vals, y_vals, db_path, llm_client)

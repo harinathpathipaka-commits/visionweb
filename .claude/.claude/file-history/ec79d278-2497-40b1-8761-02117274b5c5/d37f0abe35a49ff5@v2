@@ -1,0 +1,132 @@
+use std::collections::HashSet;
+
+/// Infer the type of a column from sample values.
+#[derive(Debug, Clone, PartialEq)]
+pub enum InferredType {
+    Number,
+    Integer,
+    Date,
+    String,
+    Boolean,
+}
+
+pub fn infer_type(values: &[String], null_count: usize) -> (InferredType, f64, f64) {
+    let n = values.len();
+    if n == 0 {
+        return (InferredType::String, 0.0, 0.0);
+    }
+
+    let non_null: Vec<&String> = values.iter().filter(|v| !v.trim().is_empty()).collect();
+    let null_pct = if n > 0 { null_count as f64 / n as f64 } else { 0.0 };
+
+    let uniques: HashSet<&String> = non_null.iter().copied().collect();
+    let unique_pct = if n > 0 { uniques.len() as f64 / n as f64 } else { 0.0 };
+
+    if non_null.is_empty() {
+        return (InferredType::String, null_pct, unique_pct);
+    }
+
+    // Test number
+    let all_number = non_null
+        .iter()
+        .all(|v| parse_number(v).is_some());
+    if all_number {
+        let all_int = non_null.iter().all(|v| {
+            v.parse::<i64>().is_ok() || v.replace(',', "").parse::<i64>().is_ok()
+        });
+        if all_int {
+            return (InferredType::Integer, null_pct, unique_pct);
+        }
+        return (InferredType::Number, null_pct, unique_pct);
+    }
+
+    // Test boolean
+    let lower_vals: Vec<String> = non_null.iter().map(|v| v.trim().to_lowercase()).collect();
+    let all_bool = lower_vals
+        .iter()
+        .all(|v| matches!(v.as_str(), "true" | "false" | "0" | "1" | "yes" | "no"));
+    if all_bool {
+        return (InferredType::Boolean, null_pct, unique_pct);
+    }
+
+    // Test date
+    let date_count = non_null.iter().filter(|v| looks_like_date(v)).count();
+    if date_count as f64 / non_null.len() as f64 > 0.8 {
+        return (InferredType::Date, null_pct, unique_pct);
+    }
+
+    (InferredType::String, null_pct, unique_pct)
+}
+
+pub fn looks_like_date(value: &str) -> bool {
+    let v = value.trim();
+    // YYYY-MM-DD, YYYY/MM/DD, MM/DD/YYYY, DD/MM/YYYY, YYYY-MM
+    if v.len() < 7 {
+        return false;
+    }
+    if v.chars().filter(|c| *c == '-' || *c == '/').count() >= 2 {
+        return v.chars().any(|c| c.is_ascii_digit());
+    }
+    false
+}
+
+pub fn parse_number(value: &str) -> Option<f64> {
+    let v = value.trim();
+    if v.is_empty() {
+        return None;
+    }
+
+    // Currency: $1,234.56 or -$1,234.56
+    if v.starts_with('$') || v.starts_with("-＄") || v.starts_with("-$") {
+        let cleaned = v
+            .trim_start_matches('-')
+            .trim_start_matches('$')
+            .replace(',', "")
+            .trim()
+            .to_string();
+        let num = cleaned.parse::<f64>().ok()?;
+        return Some(if v.starts_with('-') { -num } else { num });
+    }
+
+    // Percentage: 12.5%
+    if v.ends_with('%') {
+        return v[..v.len() - 1].trim().parse::<f64>().ok().map(|n| n / 100.0);
+    }
+
+    // Suffixed: 2.3M, 1.2K, 3.5B
+    if v.len() >= 2 {
+        let last = v.chars().last().unwrap().to_ascii_uppercase();
+        if matches!(last, 'K' | 'M' | 'B') {
+            let num_str = &v[..v.len() - 1];
+            if let Ok(num) = num_str.replace(',', "").trim().parse::<f64>() {
+                return Some(match last {
+                    'K' => num * 1_000.0,
+                    'M' => num * 1_000_000.0,
+                    'B' => num * 1_000_000_000.0,
+                    _ => num,
+                });
+            }
+        }
+    }
+
+    // Plain number with possible comma separators
+    v.replace(',', "").trim().parse::<f64>().ok()
+}
+
+pub fn parse_date(value: &str) -> Option<String> {
+    let v = value.trim();
+    if v.is_empty() {
+        return None;
+    }
+    // Return ISO date portion if it looks like a date
+    if v.len() >= 10 && v[4..5].eq("-") && v[7..8].eq("-") {
+        return Some(v[..10].to_string());
+    }
+    if v.len() >= 10 && (v.contains('-') || v.contains('/')) {
+        let digits: String = v.chars().filter(|c| c.is_ascii_digit()).collect();
+        if digits.len() >= 8 {
+            return Some(format!("{}-{}-{}", &digits[..4], &digits[4..6], &digits[6..8]));
+        }
+    }
+    None
+}

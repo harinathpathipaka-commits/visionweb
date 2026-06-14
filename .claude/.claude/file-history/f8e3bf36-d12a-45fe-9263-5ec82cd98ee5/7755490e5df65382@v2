@@ -1,0 +1,113 @@
+# Plan: Finish Phase 1 at Production Grade
+
+## Context
+
+ANS Product Roadmap Phase 1 has 5 items. 2 are **DONE** (Dashboard UI, One-click Install). 3 remain:
+
+| # | Item | Status | Impact |
+|---|------|--------|--------|
+| 4 | Fast Mode | PARTIAL | ~60% LLM cost reduction per goal run |
+| 5 | Chrome Pre-warming | NOT DONE | 2-5s → near-instant session creation |
+| 9 | Streaming WebSocket | NOT DONE | Real-time dashboard updates without polling |
+
+All 3 are independent. Implement in order: 1→2→3 (2 and 3 touch the same `main.rs` lines so ordering avoids conflicts).
+
+---
+
+## Item 1: Fast Mode Wiring (Python)
+
+**What it does:** Wire the existing `RuntimeConfig` (currently dead code) into the AgentLoop so `ANS_MODE=fast` actually changes behavior.
+
+**Files modified:**
+- `nerves/ans_nerves/planner/loop.py` — import `get_config()`, store `self._runtime`, gate 4 code paths on runtime mode
+
+**Files created:**
+- `nerves/tests/test_loop_fast_mode.py` — 6 tests covering fast-mode gating
+
+**4 gating changes in `_execute_sub_goal`:**
+1. **Vision**: `runtime.mode == "fast" && skip_vision_in_fast` → skip Vision entirely (replaces hardcoded every-3rd-cycle)
+2. **PageDiff**: `runtime.mode == "fast" && skip_diff_in_fast` → skip PageDiff entirely
+3. **Coordinator**: `runtime.mode == "fast" && fast_coordinator` → use `_fallback_synthesize()` (0 LLM cost) instead of `synthesize()` (LLM call)
+4. **GoalVerifier**: fast mode → skip verifier on intermediate steps; only run when `errors_this_subgoal >= 2`. Sub-goal completion still detected by planner's `action_type == "done"` signal
+
+**Test strategy:** 6 pytest async tests using `patch("ans_nerves.planner.loop.get_config")` to inject `RuntimeConfig(mode="fast"/"thorough")`, verify calls vs no-calls to eye `.observe()` and coordinator methods.
+
+**Rollback:** Delete new test file, revert ~20 lines in loop.py across 4 blocks.
+
+---
+
+## Item 2: Chrome Pre-warming (Rust)
+
+**What it does:** Maintain a pool of pre-launched Chromium instances so `create_session` returns instantly instead of waiting 2-5s for a new Chromium process.
+
+**Files created:**
+- `crates/ans-ipc/src/pool.rs` — `BrowserPool` struct: `Arc<Mutex<VecDeque<CdpBackend>>>`, `acquire()`, `release()`, background `warmer_task()`
+
+**Files modified:**
+- `crates/ans-ipc/src/lib.rs` — add `pub mod pool;`
+- `crates/ans-ipc/src/session.rs` — `SessionManager` gets `pool: BrowserPool` field; `create()` calls `pool.acquire()` instead of `CdpBackend::launch()`; `close()` calls `pool.release()` instead of `backend.close()`
+- `crates/ans-ipc/src/server.rs` — `IpcServer` gets `with_pool_size(usize)` builder method
+- `crates/ans-daemon/src/main.rs` — add `--prewarm N` CLI flag (default 2), chain `.with_pool_size(cli.prewarm)` on `IpcServer`
+
+**Key design decisions:**
+- Pool lives in `ans-ipc` (not `ans-cdp`) because pooling is a session lifecycle concern, not a CDP concern
+- Uses `tokio::sync::Mutex` (not `std::sync::RwLock`) because the lock is held briefly across `pop_front()`/`push_back()` — no async-hold needed
+- Default pool size 2, configurable via `--prewarm N`
+- Warmer task uses `tokio::time::interval(500ms)`, pre-launches when `idle.len() < min_idle`
+- `release()` calls `backend.close()` if pool is full (caps at `max_size`)
+
+**Test strategy:** 4 integration tests in `tests/test_pool.rs` (acquire/release cycle, pool capping, empty pool fallback, warm task). `cargo test -p ans-ipc` must pass.
+
+**Rollback:** Delete `pool.rs`, remove `pub mod pool;` from `lib.rs`, revert `session.rs` create/close to direct launch, revert `main.rs` --prewarm flag.
+
+---
+
+## Item 3: WebSocket Streaming Bridge (Rust — cross-crate wiring)
+
+**What it does:** Connect the `GoalStateStore` broadcast (source of truth for goal state changes) to the `WebSocketServer` broadcast (delivers to browser clients). Currently 3 separate broadcast systems exist with zero cross-wiring.
+
+**Files modified:**
+- `crates/ans-gateway/Cargo.toml` — add `ans-goal = { path = "../ans-goal" }` dependency
+- `crates/ans-gateway/src/lib.rs` — `Gateway::init()` takes `Option<GoalStateStore>`, spawns background task that subscribes to `GoalStateStore` and forwards `GoalStateNotification` → `WebSocketServer::push_event(json)`
+- `crates/ans-ipc/src/server.rs` — add `goal_store()` and `goal_manager()` accessor methods so daemon can extract the store before moving `IpcServer` into `serve()`
+- `crates/ans-daemon/src/main.rs` — call `server.goal_store()` before spawn, pass `Some(goal_store)` to `Gateway::init()`
+
+**Key design decisions:**
+- `GoalStateStore` already implements `Clone` (Arc pointer copy) — extract before `IpcServer` is consumed by `serve()`
+- Gateway's `init()` uses `Option<GoalStateStore>` so it still works standalone for testing
+- JSON event format: `{"type": "goal_update", "goal_id": "...", "progress": 0.5, "status": "Active", "message": "Progress: 50%"}`
+- Background task runs for the lifetime of the gateway, dies on shutdown
+
+**Test strategy:** `cargo build --release -p ans-daemon` + `cargo clippy` with zero new warnings. Manual WebSocket smoke test: connect `wscat` to `ws://127.0.0.1:50052/ws`, create goal via MCP, verify JSON event received.
+
+**Rollback:** Revert `main.rs` to `Gateway::init(cli.grpc_port)`, revert `Gateway::init()` signature, remove `ans-goal` dep from `ans-gateway/Cargo.toml`.
+
+---
+
+## Verification
+
+```powershell
+# Python (after Item 1)
+cd nerves
+.\.venv\Scripts\python.exe -m pytest tests/ -q --tb=short
+# Expect: 258+ tests passing (252 existing + 6 new fast-mode tests)
+
+# Rust (after Items 2 & 3)
+cargo build --release -p ans-daemon
+cargo clippy --all-targets -p ans-daemon -p ans-gateway -p ans-ipc -p ans-cdp
+# Expect: zero new warnings
+cargo test -p ans-ipc
+cargo test -p ans-gateway
+
+# End-to-end
+.\target\release\ans-daemon.exe --prewarm 2
+# Verify: Dashboard loads at http://127.0.0.1:50052
+# Verify: WebSocket receives goal_update events on ws://127.0.0.1:50052/ws
+# Verify: Fast mode: $env:ANS_MODE='fast'; create goals via MCP, check latency
+```
+
+## Implementation Order
+
+1. **Item 1** (Python, isolated) — ~30 min
+2. **Item 2** (Rust, isolated crate) — ~45 min
+3. **Item 3** (Rust, cross-crate wiring) — ~30 min

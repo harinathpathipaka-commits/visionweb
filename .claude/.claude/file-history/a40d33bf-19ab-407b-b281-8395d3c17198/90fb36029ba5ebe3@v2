@@ -1,0 +1,51 @@
+# ── Rust build artifacts (multi-GB) ──────────────────────────
+target/
+**/*.rs.bk
+*.pdb
+
+# ── Python virtual environment & caches ──────────────────────
+nerves/.venv/
+nerves/__pycache__/
+nerves/**/__pycache__/
+nerves/**/*.pyc
+nerves/.pytest_cache/
+nerves/.mypy_cache/
+nerves/.ruff_cache/
+
+# ── Git (not needed in image) ────────────────────────────────
+.git/
+.gitignore
+.gitattributes
+.github/
+
+# ── IDE & editor droppings ───────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── OS droppings ─────────────────────────────────────────────
+Thumbs.db
+.DS_Store
+
+# ── Secrets — never bake into image ──────────────────────────
+nerves/.env
+.env
+*.pem
+*.key
+
+# ── Screenshots / binary blobs in root ──────────────────────
+*.png
+*.jpg
+*.jpeg
+*.exe
+
+# ── Documentation (not needed at runtime) ────────────────────
+*.md
+LICENSE
+
+# ── Docker / CI own files ────────────────────────────────────
+docker-compose.yml
+Dockerfile
+.dockerignore

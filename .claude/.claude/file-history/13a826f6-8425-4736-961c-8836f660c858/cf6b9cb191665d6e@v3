@@ -1,0 +1,287 @@
+//! API key authentication for the Layer 1 gateway.
+//!
+//! Loads `api_keys.json` at startup. Each key has scoped permissions:
+//! read-only, session-create, or full-access. All MCP, REST, and
+//! WebSocket endpoints validate the `X-API-Key` header through this
+//! module before any gRPC call is made.
+
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
+
+/// Permissions scoped to an API key.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum KeyPermission {
+    ReadOnly,
+    SessionCreate,
+    FullAccess,
+}
+
+impl KeyPermission {
+    /// Returns true if this permission allows creating sessions.
+    pub fn can_create_session(&self) -> bool {
+        matches!(self, KeyPermission::SessionCreate | KeyPermission::FullAccess)
+    }
+
+    /// Returns true if this permission allows mutating state.
+    pub fn can_write(&self) -> bool {
+        matches!(self, KeyPermission::SessionCreate | KeyPermission::FullAccess)
+    }
+
+    /// Returns true if this permission allows reading state.
+    pub fn can_read(&self) -> bool {
+        true // all permissions allow reading
+    }
+}
+
+/// A single API key entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiKeyEntry {
+    pub key: String,
+    pub name: String,
+    pub permission: KeyPermission,
+}
+
+/// The API key registry, loaded from disk at startup.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyRegistry {
+    keys: HashMap<String, ApiKeyEntry>,
+}
+
+impl KeyRegistry {
+    /// Load keys from a JSON file on disk. Creates a default
+    /// admin key if the file does not exist.
+    pub fn load(path: Option<PathBuf>) -> Result<Self, AuthError> {
+        let path = path.unwrap_or_else(|| {
+            let home = dirs_next();
+            home.join(".ans").join("api_keys.json")
+        });
+
+        match std::fs::read_to_string(&path) {
+            Ok(contents) => {
+                let registry: KeyRegistry = serde_json::from_str(&contents)
+                    .map_err(|e| AuthError::ParseError(e.to_string()))?;
+                Ok(registry)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // Bootstrap with a default admin key
+                let default = ApiKeyEntry {
+                    key: uuid::Uuid::new_v4().to_string(),
+                    name: "default-admin".into(),
+                    permission: KeyPermission::FullAccess,
+                };
+                tracing::warn!(
+                    key = %default.key,
+                    "No api_keys.json found — generated default admin key"
+                );
+                Ok(KeyRegistry {
+                    keys: [("default".into(), default)].into(),
+                })
+            }
+            Err(e) => Err(AuthError::IoError(e)),
+        }
+    }
+
+    /// Validate an API key and return its entry.
+    pub fn validate(&self, api_key: &str) -> Option<&ApiKeyEntry> {
+        self.keys.values().find(|entry| entry.key == api_key)
+    }
+}
+
+/// Cached in an Arc so all request handlers share the same registry.
+pub type SharedKeyRegistry = Arc<KeyRegistry>;
+
+/// Errors that can occur during authentication.
+#[derive(Debug, thiserror::Error)]
+pub enum AuthError {
+    #[error("missing API key")]
+    MissingKey,
+
+    #[error("invalid API key")]
+    InvalidKey,
+
+    #[error("insufficient permissions: required {required:?}, have {have:?}")]
+    InsufficientPermissions {
+        required: KeyPermission,
+        have: KeyPermission,
+    },
+
+    #[error("failed to parse api_keys.json: {0}")]
+    ParseError(String),
+
+    #[error("io error: {0}")]
+    IoError(#[from] std::io::Error),
+}
+
+/// Extract an API key from an HTTP header or query parameter.
+pub fn extract_api_key(
+    headers: &axum::http::HeaderMap,
+    query: Option<&str>,
+) -> Option<String> {
+    // Check X-API-Key header first
+    if let Some(value) = headers.get("x-api-key") {
+        return value.to_str().ok().map(String::from);
+    }
+    // Fall back to authorization bearer token
+    if let Some(value) = headers.get("authorization") {
+        if let Ok(auth) = value.to_str() {
+            if let Some(key) = auth.strip_prefix("Bearer ") {
+                return Some(key.to_string());
+            }
+        }
+    }
+    // Check query parameter
+    if let Some(q) = query {
+        for pair in q.split('&') {
+            if let Some(value) = pair.strip_prefix("api_key=") {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Axum extractor that validates API keys.
+///
+/// Usage: add `AuthLayer::new(registry)` to your axum router.
+#[derive(Clone)]
+pub struct AuthLayer {
+    registry: SharedKeyRegistry,
+}
+
+impl AuthLayer {
+    pub fn new(registry: SharedKeyRegistry) -> Self {
+        Self { registry }
+    }
+}
+
+impl<S> tower::Layer<S> for AuthLayer {
+    type Service = AuthMiddleware<S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        AuthMiddleware {
+            inner,
+            registry: Arc::clone(&self.registry),
+        }
+    }
+}
+
+/// Tower service that validates the API key before each request.
+#[derive(Clone)]
+pub struct AuthMiddleware<S> {
+    inner: S,
+    registry: SharedKeyRegistry,
+}
+
+impl<S, B> tower::Service<axum::http::Request<B>> for AuthMiddleware<S>
+where
+    S: tower::Service<axum::http::Request<B>, Response = axum::response::Response> + Clone + Send + 'static,
+    S::Future: Send + 'static,
+    B: Send + 'static,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = futures_util::future::BoxFuture<'static, Result<Self::Response, Self::Error>>;
+
+    fn poll_ready(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, req: axum::http::Request<B>) -> Self::Future {
+        let registry = Arc::clone(&self.registry);
+        let inner = self.inner.clone();
+        let mut inner = std::mem::replace(&mut self.inner, inner);
+
+        // Extract headers before the request is consumed
+        let headers = req.headers().clone();
+        let query = req.uri().query().map(String::from);
+
+        Box::pin(async move {
+            let api_key = extract_api_key(&headers, query.as_deref());
+            match api_key {
+                Some(key) if registry.validate(&key).is_some() => {
+                    // Valid key — pass through
+                    inner.call(req).await
+                }
+                Some(_) => {
+                    let response = axum::response::Response::builder()
+                        .status(axum::http::StatusCode::UNAUTHORIZED)
+                        .body(axum::body::Body::from(
+                            r#"{"error":"invalid API key"}"#,
+                        ))
+                        .unwrap();
+                    Ok(response)
+                }
+                None => {
+                    let response = axum::response::Response::builder()
+                        .status(axum::http::StatusCode::UNAUTHORIZED)
+                        .body(axum::body::Body::from(
+                            r#"{"error":"missing X-API-Key header"}"#,
+                        ))
+                        .unwrap();
+                    Ok(response)
+                }
+            }
+        })
+    }
+}
+
+/// Helper to get the user's home directory.
+fn dirs_next() -> PathBuf {
+    std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("."))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_key_validation() {
+        let registry = KeyRegistry {
+            keys: [(
+                "admin".into(),
+                ApiKeyEntry {
+                    key: "secret-123".into(),
+                    name: "Test Admin".into(),
+                    permission: KeyPermission::FullAccess,
+                },
+            )]
+            .into(),
+        };
+
+        assert!(registry.validate("secret-123").is_some());
+        assert!(registry.validate("wrong-key").is_none());
+    }
+
+    #[test]
+    fn test_permission_checks() {
+        assert!(KeyPermission::FullAccess.can_create_session());
+        assert!(KeyPermission::SessionCreate.can_create_session());
+        assert!(!KeyPermission::ReadOnly.can_create_session());
+
+        assert!(KeyPermission::FullAccess.can_write());
+        assert!(KeyPermission::SessionCreate.can_write());
+        assert!(!KeyPermission::ReadOnly.can_write());
+
+        assert!(KeyPermission::ReadOnly.can_read());
+    }
+
+    #[test]
+    fn test_extract_api_key_from_header() {
+        use axum::http::{HeaderMap, HeaderValue};
+        let mut headers = HeaderMap::new();
+        headers.insert("x-api-key", HeaderValue::from_static("my-key"));
+        assert_eq!(
+            extract_api_key(&headers, None),
+            Some("my-key".to_string())
+        );
+    }
+}

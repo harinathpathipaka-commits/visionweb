@@ -1,0 +1,25 @@
+"""Vision Eye — screenshot-based visual understanding.
+
+Receives screenshots via Arrow IPC shared memory, calls Claude/GPT-4o
+for visual analysis. Skipped when budget in CRITICAL/EMERGENCY mode.
+"""
+
+from .base import BaseEye, EyeReport
+
+
+class VisionEye(BaseEye):
+    """Analyses screenshots using vision models (Claude/GPT-4o)."""
+
+    name = "vision"
+
+    async def observe(self, session_id: str, page_data: dict) -> EyeReport:
+        return EyeReport(
+            eye_name=self.name,
+            content={
+                "visible_elements": [],
+                "overlays": [],
+                "blocked_regions": [],
+                "page_type": "unknown",
+                "anomalies": [],
+            },
+        )

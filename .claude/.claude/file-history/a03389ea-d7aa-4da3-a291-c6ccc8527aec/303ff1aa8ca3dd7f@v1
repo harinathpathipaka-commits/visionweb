@@ -1,0 +1,491 @@
+"""Agent Execution Loop — full perception→decision→action→learning cycle.
+
+Orchestrates:
+1. Decompose goal → sub_goals
+2. For each sub_goal:
+   a. Perceive (all 5 Eyes)
+   b. Synthesize (CrossEyeCoordinator)
+   c. Decide (AgentPlanner — cold or warm start)
+   d. Execute (gRPC client)
+   e. Learn (DecisionIntelligence — score → embed → store)
+   f. Verify (GoalVerifier)
+3. Re-plan on failure, escalate on deadlock
+"""
+
+from __future__ import annotations
+
+import time
+import uuid as _uuid
+from dataclasses import dataclass, field
+from typing import Any
+
+from ans_nerves.coordinator.coordinator import CrossEyeCoordinator, RoutedSignal
+from ans_nerves.decomposer.decomposer import GoalDecomposer, GoalSpec, SubGoal
+from ans_nerves.eyes.base import EyeReport
+from ans_nerves.eyes.dom_reader import DomReaderEye
+from ans_nerves.eyes.error_detector import ErrorDetectorEye
+from ans_nerves.eyes.goal_verifier import GoalVerifierEye
+from ans_nerves.eyes.page_diff import PageDiffEye
+from ans_nerves.eyes.vision import VisionEye
+from ans_nerves.grpc_client import GrpcClient, get_grpc_client
+from ans_nerves.logging import get_logger
+from ans_nerves.planner.planner import AgentPlanner, PlannedAction
+from ans_nerves.scoring.intelligence import ActionRecord, DecisionIntelligence
+
+logger = get_logger(__name__)
+
+_DEFAULT_MAX_STEPS = 50
+_DEFAULT_MAX_ERRORS_PER_SUBGOAL = 3
+
+
+@dataclass
+class LoopState:
+    """Mutable state tracked across the execution loop."""
+
+    goal_spec: GoalSpec | None = None
+    current_sub_goal_index: int = 0
+    step_count: int = 0
+    total_errors: int = 0
+    action_history: list[str] = field(default_factory=list)
+    last_page_url: str = ""
+    last_page_title: str = ""
+    last_distilled_dom: dict | None = None
+    last_screenshot_b64: str | None = None
+    last_diff: dict | None = None
+    last_error: str = ""
+    done: bool = False
+    final_summary: str = ""
+
+
+@dataclass
+class LoopResult:
+    """Final result of an agent loop run."""
+
+    success: bool = False
+    total_steps: int = 0
+    sub_goals_completed: int = 0
+    total_sub_goals: int = 0
+    total_errors: int = 0
+    total_cost_cents: float = 0.0
+    summary: str = ""
+    records_stored: list[str] = field(default_factory=list)
+    alerts: list[str] = field(default_factory=list)
+
+
+class AgentLoop:
+    """Main execution loop tying together all components.
+
+    Usage:
+        loop = AgentLoop(session_id="s1")
+
+        result = await loop.run(
+            goal="Search for flights from Delhi to Mumbai on June 5",
+            context={"budget_cents": 500},
+        )
+    """
+
+    def __init__(
+        self,
+        session_id: str,
+        *,
+        grpc: GrpcClient | None = None,
+        decomposer: GoalDecomposer | None = None,
+        coordinator: CrossEyeCoordinator | None = None,
+        planner: AgentPlanner | None = None,
+        intelligence: DecisionIntelligence | None = None,
+        max_steps: int = _DEFAULT_MAX_STEPS,
+        max_errors_per_subgoal: int = _DEFAULT_MAX_ERRORS_PER_SUBGOAL,
+    ) -> None:
+        self.session_id = session_id
+        self._browser_session_id: str = ""  # daemon-issued UUID, set in run()
+        self._grpc = grpc or get_grpc_client()
+        self._decomposer = decomposer or GoalDecomposer()
+        self._coordinator = coordinator or CrossEyeCoordinator()
+        self._intelligence = intelligence or DecisionIntelligence()
+        self._planner = planner or AgentPlanner(intelligence=self._intelligence)
+        self._max_steps = max_steps
+        self._max_errors_per_subgoal = max_errors_per_subgoal
+
+        # Eyes (created once, reused)
+        self._eyes = {
+            "dom_reader": DomReaderEye(),
+            "vision": VisionEye(),
+            "page_diff": PageDiffEye(),
+            "goal_verifier": GoalVerifierEye(),
+            "error_detector": ErrorDetectorEye(),
+        }
+
+    # ── Public API ─────────────────────────────────────────────
+
+    async def run(
+        self,
+        goal: str,
+        context: dict | None = None,
+    ) -> LoopResult:
+        """Execute the full agent loop for a goal.
+
+        Returns a LoopResult with success/failure and metrics.
+        """
+        state = LoopState()
+        t_start = time.monotonic()
+
+        logger.info("agent_loop: starting goal='%s' session=%s", goal[:80], self.session_id)
+
+        # 0. Create browser session with the daemon
+        try:
+            session = await self._grpc.create_session(
+                goal_id=str(_uuid.uuid4()),
+            )
+            self._browser_session_id = session.session_id
+            logger.info("agent_loop: browser session=%s", self._browser_session_id)
+        except Exception as exc:
+            logger.warning("agent_loop: create_session failed: %s", exc)
+            return LoopResult(
+                success=False,
+                summary=f"Failed to create browser session: {exc}",
+                total_sub_goals=0,
+            )
+
+        try:
+            result = await self._run_impl(goal, context, state, t_start)
+        finally:
+            try:
+                await self._grpc.close_session(self._browser_session_id, reason="loop done")
+            except Exception:
+                pass
+
+        return result
+
+    async def _run_impl(
+        self,
+        goal: str,
+        context: dict | None,
+        state: LoopState,
+        t_start: float,
+    ) -> LoopResult:
+        # 1. Decompose goal
+        state.goal_spec = await self._decomposer.decompose(goal, context)
+        if not state.goal_spec.sub_goals:
+            logger.warning("agent_loop: no sub-goals produced")
+            return LoopResult(
+                success=False,
+                summary="Goal decomposition produced no sub-goals.",
+                total_sub_goals=0,
+            )
+
+        goal_id = self._sanitize_goal_id(goal)
+        sg_count = len(state.goal_spec.sub_goals)
+
+        # 2. Iterate sub-goals
+        for i, sub_goal in enumerate(state.goal_spec.sub_goals):
+            if state.done:
+                break
+
+            state.current_sub_goal_index = i
+            logger.info(
+                "agent_loop: sub_goal %d/%d: '%s'",
+                i + 1, sg_count, sub_goal.description[:80],
+            )
+
+            sub_result = await self._execute_sub_goal(
+                goal=goal,
+                goal_id=goal_id,
+                sub_goal=sub_goal,
+                state=state,
+                context=context or {},
+            )
+
+            if sub_result.get("escalate"):
+                return LoopResult(
+                    success=False,
+                    total_steps=state.step_count,
+                    sub_goals_completed=i,
+                    total_sub_goals=sg_count,
+                    total_errors=state.total_errors,
+                    summary=f"Escalated at sub-goal {i+1}/{sg_count}: {sub_result.get('reason', '')}",
+                    alerts=state.goal_spec.risk_factors or [],
+                )
+
+        # 3. Build result
+        elapsed = time.monotonic() - t_start
+        completed = state.current_sub_goal_index + (1 if not state.done else 0)
+
+        logger.info(
+            "agent_loop: done steps=%d completed=%d/%d errors=%d elapsed=%.1fs",
+            state.step_count, min(completed, sg_count), sg_count,
+            state.total_errors, elapsed,
+        )
+
+        return LoopResult(
+            success=not state.done or completed >= sg_count,
+            total_steps=state.step_count,
+            sub_goals_completed=min(completed, sg_count),
+            total_sub_goals=sg_count,
+            total_errors=state.total_errors,
+            summary=state.final_summary or f"Completed {min(completed, sg_count)}/{sg_count} sub-goals in {state.step_count} steps.",
+        )
+
+    # ── Sub-goal execution ────────────────────────────────────
+
+    async def _execute_sub_goal(
+        self,
+        goal: str,
+        goal_id: str,
+        sub_goal: SubGoal,
+        state: LoopState,
+        context: dict,
+    ) -> dict:
+        """Execute a single sub-goal: perceive → decide → act → learn → verify."""
+        errors_this_subgoal = 0
+        sub_goal_done = False
+
+        while not sub_goal_done and state.step_count < self._max_steps:
+            state.step_count += 1
+
+            # ── Perceive ──────────────────────────────────────
+            page_data = await self._gather_page_data(state)
+
+            # Run eyes that have data
+            eye_reports: list[EyeReport] = []
+            eye_reports.append(await self._eyes["dom_reader"].observe(
+                self.session_id, page_data,
+            ))
+
+            if page_data.get("screenshot_base64"):
+                eye_reports.append(await self._eyes["vision"].observe(
+                    self.session_id, page_data,
+                ))
+
+            if page_data.get("diff"):
+                eye_reports.append(await self._eyes["page_diff"].observe(
+                    self.session_id, page_data,
+                ))
+
+            if state.last_error:
+                eye_reports.append(await self._eyes["error_detector"].observe(
+                    self.session_id, {
+                        "action_description": (
+                            state.action_history[-1] if state.action_history else "unknown"
+                        ),
+                        "error_message": state.last_error,
+                        "page_url": state.last_page_url,
+                        "page_title": state.last_page_title,
+                        "goal_context": goal,
+                    },
+                ))
+
+            # ── Synthesize ────────────────────────────────────
+            signal: RoutedSignal = await self._coordinator.synthesize(
+                reports=eye_reports,
+                goal_context=sub_goal.description,
+            )
+
+            # ── Decide ────────────────────────────────────────
+            dom_elements = self._extract_interactive_elements(page_data)
+            page_type = self._extract_page_type(signal)
+
+            planned = await self._planner.plan_next_action(
+                goal_context=goal,
+                sub_goal=sub_goal.description,
+                sub_goal_criteria=sub_goal.success_criteria,
+                unified_perception=signal.unified_perception,
+                available_elements=dom_elements,
+                action_history=state.action_history,
+                last_error=state.last_error,
+                page_type=page_type,
+            )
+
+            logger.info(
+                "agent_loop: step %d action=%s selector=%s source=%s conf=%.2f",
+                state.step_count, planned.action_type, planned.selector,
+                planned.source, planned.confidence,
+            )
+
+            # ── Terminal actions ──────────────────────────────
+            if planned.action_type == "done":
+                sub_goal_done = True
+                state.final_summary = f"Sub-goal '{sub_goal.description[:60]}' reported done."
+                break
+
+            if planned.action_type == "escalate":
+                return {"escalate": True, "reason": planned.reasoning}
+
+            # ── Execute ───────────────────────────────────────
+            t_action = time.monotonic()
+            try:
+                action_result = await self._execute_action(planned)
+                execution_time_ms = int((time.monotonic() - t_action) * 1000)
+                action_succeeded = True
+                result_text = action_result.get("message", "")
+                exec_error = None
+            except Exception as exc:
+                execution_time_ms = int((time.monotonic() - t_action) * 1000)
+                action_succeeded = False
+                result_text = ""
+                exec_error = str(exc)
+                state.last_error = exec_error
+                errors_this_subgoal += 1
+                state.total_errors += 1
+
+                logger.warning(
+                    "agent_loop: action failed step=%d error=%s",
+                    state.step_count, exec_error[:120],
+                )
+
+            state.action_history.append(
+                f"{planned.action_type} {planned.selector} {planned.value}".strip()
+            )
+
+            # ── Learn ─────────────────────────────────────────
+            record = ActionRecord(
+                session_id=self.session_id,
+                goal_id=goal_id,
+                action_type=planned.action_type,
+                selector=planned.selector,
+                value=planned.value,
+                tool=planned.tool,
+                context_type=page_type,
+                goal_description=goal,
+                page_type=page_type,
+                action_succeeded=action_succeeded,
+                results_produced=result_text,
+                error_message=exec_error,
+                goal_advanced=action_succeeded and not exec_error,
+                criterion_met=None,
+                sub_goal_completed=False,
+                execution_time_ms=execution_time_ms,
+            )
+            self._intelligence.record_action(record)
+
+            # ── Verify sub-goal ───────────────────────────────
+            verifier_report = await self._eyes["goal_verifier"].observe(
+                self.session_id, {
+                    "sub_goal_description": sub_goal.description,
+                    "success_criteria": sub_goal.success_criteria,
+                    "page_url": state.last_page_url,
+                    "page_title": state.last_page_title,
+                    "visible_text": page_data.get("visible_text", []),
+                    "dom_summary": json_safe(page_data.get("distilled_dom", {})),
+                },
+            )
+
+            if verifier_report.content.get("criteria_met") and verifier_report.confidence > 0.6:
+                sub_goal_done = True
+                state.final_summary = (
+                    f"Sub-goal '{sub_goal.description[:60]}' verified: "
+                    f"{verifier_report.content.get('reasoning', '')[:200]}"
+                )
+
+            # Reset error state on success
+            if action_succeeded:
+                state.last_error = ""
+
+            # Error gating
+            if errors_this_subgoal >= self._max_errors_per_subgoal:
+                return {
+                    "escalate": True,
+                    "reason": (
+                        f"Sub-goal '{sub_goal.description[:80]}' failed {errors_this_subgoal}x "
+                        f"(max {self._max_errors_per_subgoal}). Last error: {state.last_error[:200]}"
+                    ),
+                }
+
+        return {"escalate": False, "done": sub_goal_done}
+
+    # ── Helpers ────────────────────────────────────────────────
+
+    async def _gather_page_data(self, state: LoopState) -> dict[str, Any]:
+        """Gather current page state from gRPC daemon."""
+        page_data: dict[str, Any] = {}
+
+        try:
+            dom = await self._grpc.get_distilled_dom(self._browser_session_id, mode="all_fields")
+            state.last_distilled_dom = dom
+            page_data["distilled_dom"] = dom
+            if dom:
+                state.last_page_url = dom.get("url", state.last_page_url)
+                state.last_page_title = dom.get("title", state.last_page_title)
+        except Exception:
+            pass
+
+        try:
+            screenshot = await self._grpc.capture_screenshot(self._browser_session_id)
+            state.last_screenshot_b64 = screenshot.get("data", "")
+            page_data["screenshot_base64"] = state.last_screenshot_b64
+        except Exception:
+            pass
+
+        try:
+            if state.last_distilled_dom:
+                diff = await self._grpc.compute_diff(
+                    self._browser_session_id,
+                    before={},
+                    after=state.last_distilled_dom,
+                )
+                state.last_diff = diff
+                page_data["diff"] = diff
+        except Exception:
+            pass
+
+        page_data["page_url"] = state.last_page_url
+        page_data["page_title"] = state.last_page_title
+        page_data["goal_context"] = ""
+
+        return page_data
+
+    async def _execute_action(self, planned: PlannedAction) -> dict:
+        """Execute a planned action via gRPC."""
+        sid = self._browser_session_id
+        if planned.action_type == "navigate" and planned.value:
+            return await self._grpc.navigate(sid, planned.value)
+        return await self._grpc.execute_action(
+            sid,
+            action_type=planned.action_type,
+            selector=planned.selector,
+            value=planned.value,
+        )
+
+    @staticmethod
+    def _extract_interactive_elements(page_data: dict) -> list[dict]:
+        """Extract interactive elements from DOM data for the planner."""
+        dom = page_data.get("distilled_dom", {})
+        if isinstance(dom, str):
+            return []
+        elements = dom.get("elements", [])
+        return [
+            {
+                "selector": e.get("selector", ""),
+                "tag": e.get("tag", ""),
+                "text": e.get("text", ""),
+                "aria_role": e.get("aria_role", ""),
+                "is_visible": e.get("is_visible", True),
+                "is_enabled": e.get("is_enabled", True),
+            }
+            for e in elements
+            if e.get("is_visible") and e.get("is_enabled")
+        ]
+
+    @staticmethod
+    def _extract_page_type(signal: RoutedSignal) -> str:
+        """Extract page type from the coordinator's unified perception."""
+        perception = signal.unified_perception.lower()
+        for pt in ["search_form", "search_results", "product_page", "checkout",
+                    "login", "error", "article", "dashboard", "captcha", "paywall"]:
+            if pt in perception:
+                return pt
+        return "unknown"
+
+    @staticmethod
+    def _sanitize_goal_id(goal: str) -> str:
+        """Create a short stable goal ID from the goal text."""
+        import hashlib
+        return hashlib.sha256(goal.encode()).hexdigest()[:12]
+
+
+def json_safe(obj: Any) -> str:
+    """Convert an object to a safe JSON string for prompt use."""
+    import json as _json
+    try:
+        return _json.dumps(obj, default=str)
+    except Exception:
+        return str(obj)[:1000]

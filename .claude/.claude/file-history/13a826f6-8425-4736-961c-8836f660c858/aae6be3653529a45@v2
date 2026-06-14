@@ -1,0 +1,19 @@
+"""DOM Reader Eye — structured DOM perception.
+
+Consumes DistilledDom from gRPC, extracts interactive elements,
+groups by semantic block, scores goal relevance.
+"""
+
+from .base import BaseEye, EyeReport
+
+
+class DomReaderEye(BaseEye):
+    """Reads distilled DOM and produces structured element lists."""
+
+    name = "dom_reader"
+
+    async def observe(self, session_id: str, page_data: dict) -> EyeReport:
+        return EyeReport(
+            eye_name=self.name,
+            content={"elements": [], "interactive": [], "mode": "text_only"},
+        )

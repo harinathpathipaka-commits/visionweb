@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package ingestion;
+
+service IngestionService {
+  rpc ProfileCsv (ProfileCsvRequest) returns (ProfileCsvResponse);
+  rpc BuildObservations (BuildObservationsRequest) returns (BuildObservationsResponse);
+}
+
+message ProfileCsvRequest {
+  bytes file_bytes = 1;
+}
+
+message ColumnProfile {
+  string column_name = 1;
+  string inferred_type = 2;
+  double null_pct = 3;
+  double unique_pct = 4;
+  repeated string sample_values = 5;
+}
+
+message ProfileCsvResponse {
+  repeated ColumnProfile profiles = 1;
+}
+
+message SchemaMapping {
+  string column_name = 1;
+  string variable = 2;
+  string unit = 3;
+  bool time_column = 4;
+}
+
+message BuildObservationsRequest {
+  bytes file_bytes = 1;
+  repeated SchemaMapping mappings = 2;
+}
+
+message ObservationDraft {
+  string variable = 1;
+  double value = 2;
+  string unit = 3;
+  string timestamp = 4;
+  uint32 row_index = 5;
+}
+
+message QualityIssue {
+  uint32 row_index = 1;
+  string column_name = 2;
+  string code = 3;
+}
+
+message BuildObservationsResponse {
+  repeated ObservationDraft observations = 1;
+  repeated QualityIssue issues = 2;
+}

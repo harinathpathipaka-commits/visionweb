@@ -1,0 +1,32 @@
+//! Core domain types for the Agent Nervous System.
+//!
+//! This crate defines the shared vocabulary: the [`BrowserBackend`] trait,
+//! domain enums ([`DistillMode`], [`SessionStatus`], [`GoalStatus`]),
+//! and the [`DecisionRecord`] that powers the Decision Intelligence Layer.
+//!
+//! Wire-format types (gRPC messages) live in `ans-proto`. This crate
+//! defines the domain layer above them — traits that backends implement,
+//! enums that drive state machines, and records that the scoring engine
+//! stores and queries.
+
+#![deny(unsafe_code, rust_2018_idioms)]
+#![allow(missing_docs, dead_code)]
+
+pub mod backend;
+pub mod budget;
+pub mod decision;
+pub mod distill;
+pub mod goal;
+pub mod immune;
+pub mod metrics;
+pub mod session;
+pub mod signal;
+
+pub use backend::BrowserBackend;
+pub use budget::BudgetMode;
+pub use decision::{BusinessOutcome, DecisionRecord};
+pub use distill::{DistillMode, DistilledElement, InteractiveElement, SemanticBlock};
+pub use goal::{GoalContext, GoalState, GoalStatus, SubGoal, SubGoalStatus};
+pub use immune::{DistractionKind, ImmuneAction, InjectionAction, InjectionScore};
+pub use session::{Action, ActionOutcome, SessionStatus};
+pub use signal::{EyeName, EyeReportContent, RoutedSignal};

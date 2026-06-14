@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.DS_Store
+Thumbs.db
+*.log
+.claude/
+.swarm/
+ruvector.db
+.li-queue/

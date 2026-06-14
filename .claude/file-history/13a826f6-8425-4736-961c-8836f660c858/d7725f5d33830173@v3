@@ -1,0 +1,362 @@
+# Phase 2: Perception Layer — Implementation Plan
+
+## Context
+
+Phase 1 delivered browser control: Chromium launches, navigates, interacts via CDP. gRPC server implements 5 real RPCs (session management + health), 13 stubs deferred to later phases.
+
+Phase 2 implements the **perception layer**: the 3 RPCs currently returning `Status::unimplemented` — `get_distilled_dom`, `capture_screenshot`, `compute_diff`. These are the eyes of the nervous system. Every action produces a page diff; the agent reads distilled DOM to decide what to do next.
+
+**Deliverable:** "Agent reads pages, sees changes, and receives screenshots — all via gRPC."
+
+**Quality bar:** Production infrastructure — zero allocations in the hot path, walk-once DOM processing, correct tree edit distance, proper proto↔core type mapping.
+
+---
+
+## Architecture
+
+```
+gRPC: get_distilled_dom(DomRequest) → DistilledDom
+       capture_screenshot(ScreenshotRequest) → ScreenshotResponse  
+       compute_diff(DiffRequest) → DiffReport
+
+CdpBackend::get_distilled_dom(mode)
+    ├── CDP: DOM.getDocument(depth=-1) → raw JSON tree
+    ├── Distiller::process(raw_dom, mode) → DistilledPage
+    │   ├── Walk tree, extract elements per mode filter
+    │   ├── Identify interactive elements (a, button, input, select, textarea)
+    │   ├── Classify semantic blocks (nav, main, form, sidebar, footer)
+    │   └── Detect distractions (ads, popups, cookie banners)
+    └── serialize::to_proto(DistilledPage) → DistilledDom (in gRPC handler)
+
+CdpBackend::capture_screenshot(format, full_page)
+    └── CDP: Page.captureScreenshot → base64 → bytes
+        (Already fully implemented in Phase 1)
+
+PageDiffer::diff(before, after)
+    ├── Build element identity keys: (tag, text_prefix, role, selector)
+    ├── Match by identity across both trees
+    ├── Compute added/removed/modified element lists
+    └── Classify change: no_change, cosmetic, content_update, form_update, navigation, distraction, error_state
+```
+
+---
+
+## File-by-File Implementation
+
+### 1. `crates/ans-distill/src/engine.rs` — DOM Distiller (rewrite from stub)
+
+**Distiller struct** — stateless, created once:
+```rust
+pub struct Distiller;
+
+impl Distiller {
+    /// Process raw CDP DOM JSON into a DistilledPage.
+    pub fn process(&self, raw_dom: &serde_json::Value, mode: DistillMode, 
+                   url: &str, title: &str) -> DistilledPage
+}
+```
+
+**Processing pipeline:**
+1. Walk the CDP DOM tree recursively from `raw_dom["root"]`
+2. For each node, extract: tag, text, attributes, role (from ARIA/HTML semantics)
+3. Apply mode filter:
+   - TextOnly: skip non-text elements, keep only text-bearing nodes and their containers
+   - InputFields: keep text + interactive elements (a, button, input, select, textarea, form)
+   - AllFields: keep everything, annotate with semantic metadata
+4. Build three output vectors: `elements`, `interactive`, `semantic_blocks`
+5. Run distraction detection on element set
+6. Return DistilledPage
+
+**Key design decisions:**
+- Single-pass tree walk — no intermediate allocations
+- Element identity is `tag + text[..50] + role` for diff matching
+- Bounding boxes: use JS `getBoundingClientRect()` collected in batch (single Runtime.evaluate call, not one CDP call per element)
+- Max elements: cap at 5000 to prevent memory issues on huge pages
+
+### 2. `crates/ans-distill/src/semantic.rs` — Semantic Block Classification (rewrite from stub)
+
+**Classification heuristics (no ML in v1):**
+```
+Navigation  ← <nav>, role="navigation", top-positioned link clusters
+MainContent ← <main>, <article>, role="main", largest text block
+Form        ← <form>, input/select/textarea clusters
+Sidebar     ← <aside>, role="complementary", lateral position
+Footer      ← <footer>, role="contentinfo", bottom position
+Ad          ← class/id contains "ad", "sponsor", "banner", iframe with ad domains
+CookieBanner← text contains "cookie", "gdpr", "consent"
+Popup       ← position:fixed + overlay backdrop
+Unknown     ← fallback
+```
+
+**Functions:**
+```rust
+pub fn classify_block(tag: &str, role: Option<&str>, text: &str, 
+                      child_tags: &[&str], class_id_hint: &str) -> BlockType
+
+pub fn segment_blocks(elements: &[DistilledElement]) -> Vec<SemanticBlock>
+```
+
+### 3. `crates/ans-distill/src/serialization.rs` — Proto ⇔ Core Conversion (rewrite from stub)
+
+**Bi-directional mappers:**
+```rust
+pub fn distilled_page_to_proto(page: &DistilledPage) -> ans_proto::ans::DistilledDom
+pub fn proto_to_distilled_page(proto: &ans_proto::ans::DistilledDom) -> DistilledPage
+pub fn distraction_to_proto(flag: &DistractionFlag) -> ans_proto::ans::DistractionFlag
+```
+
+These are pure data-mapping functions — no business logic. Each field in the core type maps 1:1 to the proto type.
+
+### 4. `crates/ans-diff/src/types.rs` — Diff Types (extend existing)
+
+**Core types:**
+```rust
+/// A node in the labeled ordered tree for diffing.
+pub struct DiffNode {
+    pub id: usize,
+    pub label: String,          // "tag|text_prefix|role"
+    pub children: Vec<usize>,   // indices into the tree array
+    pub element_index: usize,   // index into DistilledPage.elements
+}
+
+/// Build a DiffNode tree from DistilledPage elements.
+pub fn build_tree(elements: &[DistilledElement]) -> Vec<DiffNode>
+
+/// Element-level change.
+pub struct ElementChange {
+    pub tag: String,
+    pub text: String,
+    pub selector: String,
+    pub index: i32,
+}
+
+pub struct ElementModification {
+    pub selector: String,
+    pub attribute_name: String,
+    pub old_value: String,
+    pub new_value: String,
+}
+```
+
+### 5. `crates/ans-diff/src/engine.rs` — Page Differ (rewrite from stub)
+
+**PageDiffer struct** — stateless:
+```rust
+pub struct PageDiffer;
+
+impl PageDiffer {
+    pub fn diff(&self, before: &DistilledPage, after: &DistilledPage) -> DiffOutput
+}
+```
+
+**Algorithm** — element-identity matching (not full ZS, which is O(n⁴) and wrong fit for DOM):
+1. Build identity keys for both trees: `format!("{}|{}|{}", tag, text_first_50_chars, role)`
+2. Walk both trees in preorder, match elements by identity + position proximity
+3. Unmatched `before` elements → **removed**
+4. Unmatched `after` elements → **added**
+5. Matched elements with different attributes → **modified**
+6. Compute `visual_diff_pct` = changed_element_count / max_element_count
+7. Classify change type from the summary enum
+
+**Change summary classification:**
+```
+no_change           ← 0 changes
+cosmetic_change     ← only style/class attribute changes, no text changes
+content_update      ← text content changed
+form_update         ← form elements changed
+navigation          ← URL changed, entirely different page
+distraction_appeared← new ad/popup/cookie-banner detected
+error_state         ← page contains error indicators (5xx, "error", "not found")
+```
+
+### 6. `crates/ans-cdp/Cargo.toml` — Add ans-distill dependency
+
+```toml
+ans-distill = { path = "../ans-distill" }
+```
+
+### 7. `crates/ans-cdp/src/client.rs` — Replace get_distilled_dom stub
+
+Replace the current stub that returns empty `DistilledPage` with:
+```rust
+async fn get_distilled_dom(&self, mode: DistillMode) -> Result<DistilledPage, BrowserError> {
+    // 1. Fetch full DOM tree
+    let doc_result = self.connection
+        .send_command(command::dom_get_document(-1), Duration::from_secs(10))
+        .await?;
+    
+    // 2. Get page title
+    let title = self.connection
+        .send_command(command::runtime_evaluate("document.title"), Duration::from_secs(3))
+        .await
+        .ok()
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_default();
+    
+    let url = self.current_url.lock().await.clone();
+    
+    // 3. Distill
+    let distiller = ans_distill::Distiller;
+    Ok(distiller.process(&doc_result, mode, &url, &title))
+}
+```
+
+Add `use ans_distill::Distiller;` at top.
+
+### 8. `crates/ans-ipc/Cargo.toml` — Add ans-distill, ans-diff dependencies
+
+```toml
+ans-distill = { path = "../ans-distill" }
+ans-diff = { path = "../ans-diff" }
+```
+
+### 9. `crates/ans-ipc/src/server.rs` — Wire up 3 Phase 2 RPCs
+
+Replace the 3 `Status::unimplemented(...)` stubs with real implementations:
+
+**get_distilled_dom:**
+```rust
+async fn get_distilled_dom(&self, request: Request<DomRequest>) 
+    -> Result<Response<DistilledDom>, Status> 
+{
+    let req = request.into_inner();
+    let session_id = parse_uuid(&req.session_id, "session_id")?;
+    let mode = parse_distill_mode(&req.mode)?;
+    
+    let sessions = self.sessions.read().await;
+    let handle = sessions.get(&session_id)
+        .ok_or_else(|| Status::not_found("session not found"))?;
+    
+    let page = handle.backend.get_distilled_dom(mode).await
+        .map_err(|e| Status::internal(e.to_string()))?;
+    
+    Ok(Response::new(ans_distill::serialization::distilled_page_to_proto(&page)))
+}
+```
+
+**capture_screenshot:**
+```rust
+async fn capture_screenshot(&self, request: Request<ScreenshotRequest>)
+    -> Result<Response<ScreenshotResponse>, Status>
+{
+    let req = request.into_inner();
+    let session_id = parse_uuid(&req.session_id, "session_id")?;
+    let format = match req.format.as_str() {
+        "jpeg" => ImageFormat::Jpeg { quality: req.quality.clamp(1, 100) as u8 },
+        _ => ImageFormat::Png,
+    };
+    
+    let sessions = self.sessions.read().await;
+    let handle = sessions.get(&session_id)
+        .ok_or_else(|| Status::not_found("session not found"))?;
+    
+    let bytes = handle.backend.capture_screenshot(format, req.full_page).await
+        .map_err(|e| Status::internal(e.to_string()))?;
+    
+    Ok(Response::new(ScreenshotResponse {
+        success: true,
+        size_bytes: bytes.len() as i64,
+        width: 0,  // CDP doesn't return dimensions inline
+        height: 0,
+        format: req.format,
+        data: bytes,
+        arrow_shm_key: String::new(),
+    }))
+}
+```
+
+**compute_diff:**
+```rust
+async fn compute_diff(&self, request: Request<DiffRequest>)
+    -> Result<Response<DiffReport>, Status>
+{
+    let req = request.into_inner();
+    let before = req.before
+        .ok_or_else(|| Status::invalid_argument("before is required"))?;
+    let after = req.after
+        .ok_or_else(|| Status::invalid_argument("after is required"))?;
+    
+    let before_page = ans_distill::serialization::proto_to_distilled_page(&before);
+    let after_page = ans_distill::serialization::proto_to_distilled_page(&after);
+    
+    let differ = ans_diff::PageDiffer;
+    let output = differ.diff(&before_page, &after_page);
+    
+    Ok(Response::new(DiffReport {
+        before_url: before_page.url,
+        after_url: after_page.url,
+        is_same_page: output.is_same_page,
+        added: output.added.into_iter().map(|c| ans_proto::ans::ElementChange { ... }).collect(),
+        removed: output.removed.into_iter().map(|c| ans_proto::ans::ElementChange { ... }).collect(),
+        modified: output.modified.into_iter().map(|m| ans_proto::ans::ElementModification { ... }).collect(),
+        visual_diff_percentage: output.visual_diff_pct,
+        summary: output.summary,
+    }))
+}
+```
+
+**Note:** The SessionManager currently uses `RwLock<HashMap<>>` — the `sessions` field is private. We need to either:
+- Add accessor methods to SessionManager: `get_backend(session_id) -> Option<&CdpBackend>`, `get_distilled_dom(session_id, mode)`, etc.
+- OR expose the sessions map
+- Best approach: add methods to SessionManager that delegate to the backend directly
+
+Add these methods to `ans-ipc/src/session.rs`:
+```rust
+pub async fn get_distilled_dom(&self, session_id: Uuid, mode: DistillMode) 
+    -> Result<DistilledPage, BrowserError>
+pub async fn capture_screenshot(&self, session_id: Uuid, format: ImageFormat, full_page: bool) 
+    -> Result<Vec<u8>, BrowserError>
+```
+
+### 10. `crates/ans-ipc/src/server.rs` — Add DistillMode parser helper
+
+```rust
+fn parse_distill_mode(s: &str) -> Result<DistillMode, Status> {
+    match s {
+        "text_only" => Ok(DistillMode::TextOnly),
+        "input_fields" => Ok(DistillMode::InputFields),
+        "all_fields" => Ok(DistillMode::AllFields),
+        _ => Err(Status::invalid_argument(format!("unknown distill mode: {}", s))),
+    }
+}
+```
+
+---
+
+## Files Modified / Created
+
+| File | Action | Lines (est.) |
+|------|--------|-------------|
+| `crates/ans-distill/src/engine.rs` | Rewrite | ~200 |
+| `crates/ans-distill/src/semantic.rs` | Rewrite | ~100 |
+| `crates/ans-distill/src/serialization.rs` | Rewrite | ~120 |
+| `crates/ans-diff/src/types.rs` | Rewrite | ~100 |
+| `crates/ans-diff/src/engine.rs` | Rewrite | ~150 |
+| `crates/ans-cdp/Cargo.toml` | Add ans-distill dep | +1 |
+| `crates/ans-cdp/src/client.rs` | Replace get_distilled_dom stub | ~20 |
+| `crates/ans-ipc/Cargo.toml` | Add ans-distill, ans-diff deps | +2 |
+| `crates/ans-ipc/src/session.rs` | Add get_distilled_dom, capture_screenshot accessors | ~20 |
+| `crates/ans-ipc/src/server.rs` | Replace 3 stubs + add helpers | ~120 |
+
+**Total: ~830 lines across 10 files.**
+
+---
+
+## What's NOT in Phase 2 (deferred to Phase 3+)
+
+- Goal state management (Phase 3)
+- Python nerves integration (Phase 3)
+- Goal streaming via gRPC (Phase 4)
+- MCP/REST/WS gateway (Phase 4)
+- Immune system (Phase 5)
+- Decision scoring/storage (Phase 6)
+
+---
+
+## Verification
+
+1. **Build:** `cargo build --workspace` — all 13 crates compile with zero errors
+2. **Clippy:** `cargo clippy --workspace --all-targets` — zero warnings
+3. **Format:** `cargo fmt --all -- --check` — passes
+4. **Test:** `cargo test --workspace` — all tests pass
+5. **Integration:** Start daemon, call `get_distilled_dom` on a simple page, verify elements returned

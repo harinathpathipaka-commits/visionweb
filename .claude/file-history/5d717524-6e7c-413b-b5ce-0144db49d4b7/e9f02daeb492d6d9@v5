@@ -1,0 +1,17 @@
+from ans_nerves.logging import configure_logging
+
+configure_logging()
+
+"""Agent Nervous System — Python intelligence layer.
+
+This package contains:
+- llm/         — Shared GPT-4o-mini client, prompt templates for all Eyes
+- eyes/        — The 5 Eyes: DOM Reader, Vision, Page Diff, Goal Verifier, Error Detector
+- coordinator/ — Cross-Eye Coordinator with contradiction resolution
+- decomposer/  — Goal Decomposer (LLM: text → structured sub-goals with verifiable criteria)
+- scoring/     — Decision Intelligence: scoring, embedding, LanceDB storage, feedback loop
+- grpc_client/ — Async gRPC client for Rust daemon (21 RPCs)
+- config.py    — Configuration from env vars and ans.toml
+"""
+
+__version__ = "0.4.0"

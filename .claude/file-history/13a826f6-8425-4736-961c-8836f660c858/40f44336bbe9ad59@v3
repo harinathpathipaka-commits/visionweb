@@ -1,0 +1,20 @@
+[package]
+name = "ans-gateway"
+version.workspace = true
+edition.workspace = true
+description = "Layer 1 External API Gateway — MCP server, REST API, WebSocket for external agents"
+
+[dependencies]
+ans-proto.workspace = true
+ans-core.workspace = true
+tonic.workspace = true
+axum.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+futures-util.workspace = true

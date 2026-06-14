@@ -1,0 +1,123 @@
+from __future__ import annotations
+
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+
+
+def detect_categorical(
+    values: List,
+    max_unique_ratio: float = 0.05,
+    max_unique_absolute: int = 20,
+) -> bool:
+    """Heuristic: a variable is categorical if it has few unique values relative to its size.
+
+    Works on strings, floats that look like categories, or lists with few distinct values.
+    """
+    if not values:
+        return False
+    n = len(values)
+    # Drop None/NaN
+    cleaned = [v for v in values if v is not None]
+    if not cleaned:
+        return False
+
+    # If all values are strings, categorical
+    all_str = all(isinstance(v, str) for v in cleaned)
+    if all_str:
+        unique = set(cleaned)
+        n_unique = len(unique)
+        return n_unique <= max(max_unique_absolute, n * max_unique_ratio)
+
+    # If all values are numeric (float/int), non-categorical unless binary
+    try:
+        numeric_vals = [float(v) for v in cleaned]
+        unique = set(numeric_vals)
+        n_unique = len(unique)
+        if n_unique <= 2:
+            return True  # Binary numeric could be categorical
+        # For purely numeric columns with >2 unique values, treat as continuous
+        # unless very low cardinality relative to size
+        if n > 0 and n_unique / n <= max_unique_ratio:
+            return True
+        return False
+    except (ValueError, TypeError):
+        # Mixed types — treat as categorical
+        unique = set(str(v) for v in cleaned)
+        n_unique = len(unique)
+        return n_unique <= max(max_unique_absolute, n * max_unique_ratio)
+
+
+def detect_all_categorical(
+    columns: Dict[str, List],
+    max_unique_ratio: float = 0.05,
+    max_unique_absolute: int = 20,
+) -> Dict[str, bool]:
+    """Return {column_name: is_categorical} for all columns."""
+    return {name: detect_categorical(vals, max_unique_ratio, max_unique_absolute)
+            for name, vals in columns.items()}
+
+
+def one_hot_encode(
+    values: List,
+    drop_first: bool = True,
+) -> Tuple[Dict[str, List[float]], List[str]]:
+    """One-hot encode a categorical variable.
+
+    Returns ({encoded_column_name: [0/1 values]}, category_labels).
+    drop_first=True avoids the dummy variable trap for regression.
+    """
+    if not values:
+        return {}, []
+
+    unique = sorted(set(str(v) for v in values if v is not None))
+    if drop_first and len(unique) > 1:
+        categories = unique[1:]  # Drop first as reference
+    else:
+        categories = unique
+
+    encoded: Dict[str, List[float]] = {}
+    for cat in categories:
+        encoded[cat] = [1.0 if str(v) == cat else 0.0 for v in values]
+
+    return encoded, categories
+
+
+def label_encode(values: List) -> Tuple[List[float], Dict[str, int]]:
+    """Label-encode (ordinal) a categorical variable. Returns (encoded_values, mapping)."""
+    unique = sorted(set(str(v) for v in values if v is not None))
+    mapping = {cat: i for i, cat in enumerate(unique)}
+    encoded = [float(mapping.get(str(v), 0)) for v in values]
+    return encoded, mapping
+
+
+def auto_encode(
+    columns: Dict[str, List],
+    categorical_flags: Optional[Dict[str, bool]] = None,
+) -> Dict[str, List[float]]:
+    """Auto-detect and encode categorical columns. Returns all-numeric column dict.
+
+    - Numeric columns: passed through unchanged
+    - Binary categorical: label-encoded (0/1)
+    - Multi-category: one-hot encoded (drop_first)
+    """
+    if categorical_flags is None:
+        categorical_flags = detect_all_categorical(columns)
+
+    result: Dict[str, List[float]] = {}
+    for name, vals in columns.items():
+        is_cat = categorical_flags.get(name, False)
+        if not is_cat:
+            result[name] = [float(v) if v is not None else 0.0 for v in vals]
+            continue
+
+        unique_count = len(set(str(v) for v in vals if v is not None))
+        if unique_count <= 2:
+            encoded_vals, _ = label_encode(vals)
+            result[name] = encoded_vals
+        else:
+            encoded_cols, _ = one_hot_encode(vals, drop_first=True)
+            for enc_name, enc_vals in encoded_cols.items():
+                result[f"{name}_{enc_name}"] = enc_vals
+
+    return result

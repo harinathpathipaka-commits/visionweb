@@ -1,0 +1,85 @@
+from __future__ import annotations
+
+import os
+import time
+from typing import Dict
+
+from fastapi import Request, Response
+
+METRICS_ENABLED = os.environ.get("EL_METRICS_ENABLED", "1") == "1"
+
+try:
+    from prometheus_client import Counter, Gauge, Histogram, generate_latest, REGISTRY
+    _PROM_AVAILABLE = True
+except ImportError:
+    _PROM_AVAILABLE = False
+
+
+class _NoopMetric:
+    def labels(self, **kwargs): return self
+    def inc(self, amount=1): pass
+    def dec(self, amount=1): pass
+    def observe(self, value): pass
+    def set(self, value): pass
+
+
+def _counter(name, doc, labels=()):
+    if _PROM_AVAILABLE and METRICS_ENABLED:
+        return Counter(name, doc, list(labels))
+    return _NoopMetric()
+
+
+def _histogram(name, doc, labels=(), buckets=()):
+    if _PROM_AVAILABLE and METRICS_ENABLED:
+        return Histogram(name, doc, list(labels), buckets=list(buckets))
+    return _NoopMetric()
+
+
+def _gauge(name, doc):
+    if _PROM_AVAILABLE and METRICS_ENABLED:
+        return Gauge(name, doc)
+    return _NoopMetric()
+
+
+http_requests_total = _counter(
+    "el_http_requests_total", "Total HTTP requests", ["method", "path", "status"])
+http_request_duration_seconds = _histogram(
+    "el_http_request_duration_seconds", "HTTP request latency",
+    ["method", "path"],
+    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0))
+http_requests_in_flight = _gauge("el_http_requests_in_flight", "In-flight requests")
+solve_total = _counter("el_solve_total", "Solve requests", ["outcome"])
+equation_library_size = _gauge("el_equation_library_size", "Equations in library")
+fit_duration_seconds = _histogram(
+    "el_fit_duration_seconds", "Fit duration",
+    buckets=(0.01, 0.05, 0.1, 0.5, 1.0, 2.5, 5.0, 10.0))
+
+
+async def metrics_middleware(request: Request, call_next):
+    if not METRICS_ENABLED:
+        return await call_next(request)
+    path = request.url.path
+    if path == "/metrics":
+        return await call_next(request)
+    http_requests_in_flight.inc()
+    start = time.monotonic()
+    try:
+        response = await call_next(request)
+        status = str(response.status_code)
+    except Exception:
+        status = "500"
+        raise
+    finally:
+        http_requests_in_flight.dec()
+        duration = time.monotonic() - start
+        http_requests_total.labels(method=request.method, path=path, status=status).inc()
+        http_request_duration_seconds.labels(method=request.method, path=path).observe(duration)
+    return response
+
+
+async def metrics_endpoint() -> Response:
+    if not METRICS_ENABLED:
+        return Response(content="metrics disabled\n", media_type="text/plain", status_code=200)
+    if not _PROM_AVAILABLE:
+        return Response(content="prometheus_client not installed\n", media_type="text/plain", status_code=200)
+    return Response(content=generate_latest(REGISTRY), media_type="text/plain")

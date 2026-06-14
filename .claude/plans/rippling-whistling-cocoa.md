@@ -1,0 +1,114 @@
+# Production Hardening — Fix All Remaining Gaps
+
+**Context**: The V2 gateway proxy is implemented but has 10 production gaps across throughput, reliability, and data integrity. These fixes harden the system to handle 1000 outcomes/min at production grade. LLM classifier changes and metrics are excluded per user request.
+
+---
+
+## Fix 1: Raise Rate Limits for Production Throughput
+**File**: `layer5/api/middleware/rate-limit.ts`
+**Changes**:
+- `DEFAULT_MAX_REQUESTS` (line 13): `300` → `1000` (general endpoints)
+- `DEFAULT_TOOLS_CALL_MAX` (line 14): `600` → `2000` (tools/call + log-outcome + simulate)
+- `DEFAULT_TOOLS_LIST_MAX` (line 13): keep at `60` (cached, rarely hits)
+**Why**: Current defaults cap at 600/min for the primary write path. At 1000/min target with headroom, 2000 is appropriate.
+
+## Fix 2: Reduce Decision Writer Data Loss Window
+**File**: `layer5/api/lib/decision-writer.ts`
+**Changes**:
+- `FLUSH_INTERVAL_MS` (line 20): `5000` → `2000`
+- `MAX_BUFFER_SIZE` (line 14): `50` → `100`
+**Why**: At 17 outcomes/sec, 5s = 85 decisions lost on crash. At 2s = 34 decisions. Buffer of 100 at 2s flush is safe (34 < 100). Also add immediate flush on SIGTERM in addition to SIGTERM handler already present (line 108) — verify it awaits properly.
+
+## Fix 3: Enable Durable Postgres Queue by Default
+**File**: `layer5/api/lib/outcome-ingest-queue.ts`
+**Changes**:
+- `getOutcomeQueueMode()` (line 178): default from `'sync'` → `'postgres'`
+- `PG_WORKER_BATCH_SIZE` (line 187): `50` → `100`
+- `PG_WORKER_POLL_INTERVAL_MS` (line 188): `1000` → `500`
+- Update comment on line 176-178 to reflect new default
+**Why**: Sync mode means every outcome blocks the HTTP response until all 14 ingest steps complete. Postgres queue mode accepts immediately (202), writes to `queue_outcome_ingress`, and a background worker processes batches. This is the single biggest throughput unlock. The queue already has full implementation: FOR UPDATE SKIP LOCKED claiming, exponential backoff retry, dead-letter, stale lock recovery, hourly purge — it's production-grade.
+
+## Fix 4: Remove Silent No-Op downstream_webhook Source
+**File**: `layer5/api/lib/verifier.ts`
+**Changes**:
+- Line 6: Remove `'downstream_webhook'` from `VerifierSignal.source` union type
+- Add comment noting V2 webhooks work via `webhook.ts` route directly, not through verifier signals
+**Why**: This source type was accepted but resolveVerifiedSuccess() had no handler — it silently returned `verified_success = agentSuccess` without actually calling any webhook. V2 webhooks use the dedicated `POST /v1/webhook/:provider` route. Keeping this dead source type is misleading.
+
+## Fix 5: Remove Hardcoded Credentials from e2e-verify.js
+**File**: `layer5/e2e-verify.js`
+**Changes**:
+- Line 10: Replace `'key123'` with `process.env.E2E_API_KEY || 'key123'`
+- Line 10: Replace hardcoded UUID with `process.env.E2E_CUSTOMER_ID || 'a0000000-0000-0000-0000-000000000001'`
+- Lines 47-49: Same replacements for X-API-Key, X-Agent-ID, X-Customer-ID
+- Line 52: Replace hardcoded session_id with `process.env.E2E_SESSION_ID || '00000000-0000-0000-0000-000000000123'`
+- Add comment at top documenting required env vars
+**Why**: Hardcoded credentials in source leak via git, CI logs, and screenshots. The fallback defaults keep the script runnable in dev.
+
+## Fix 6: Create get_undelivered_alerts RPC Migration
+**File**: NEW `layer5/supabase/migrations/133_create_undelivered_alerts_rpc.sql`
+**Changes**: Create PL/pgSQL function `get_undelivered_alerts()` that:
+- Joins `alert_notification_channels` (active channels) with pending alerts
+- Returns undelivered alerts with channel info
+- The notification-dispatcher already has a fallback query (lines 308-324), so this RPC primarily improves efficiency
+**Why**: The notification-dispatcher edge function calls `supabase.rpc('get_undelivered_alerts')` at line 304-306. The RPC doesn't exist in any migration. The dispatcher has a raw-query fallback, so it won't crash, but the RPC path is more efficient and is the intended design.
+
+## Fix 7: Delete Debug Migration from Production
+**File**: DELETE `layer5/supabase/migrations/128_debug.sql`
+**Why**: Debug SQL has no place in production migrations. It can cause issues on fresh deployments and is a code smell.
+
+## Fix 8: Remove Stale TODO from ips-engine.ts
+**File**: `layer5/api/lib/ips-engine.ts`
+**Changes**:
+- Lines 197-201: Remove the TODO comment about adding UNIQUE constraint
+- The constraint already exists: migration 021 line 89-90 has `CONSTRAINT unique_decision_action UNIQUE (decision_id, unchosen_action_id)`
+- The `onConflict: 'decision_id,unchosen_action_id'` with `ignoreDuplicates: true` at line 205-206 already works correctly
+**Why**: The TODO implies work that was already completed in migration 021. It's misleading to future developers.
+
+## Fix 9: Cohort Cycle — Add DB Warm on Startup
+**File**: `layer5/api/lib/recommendation/cohort-cycle.ts`
+**Changes**:
+- Add `warmCohortCycleStore()` async function that queries `recommendation_cohort_cycles` table for active cycles and populates the in-memory Map
+- Call it from the API startup (in `layer5/api/index.ts`)
+- The existing pattern (RPC-primary, in-memory fallback) stays intact — this just ensures the fallback isn't empty on cold start
+**Why**: After server restart, the in-memory Map is empty. If the RPC is unavailable temporarily, all cohort state is lost and new cycles start from scratch. Warming from DB on startup provides a safety net.
+
+## Fix 10: Coach Session Tracker — Persist to DB
+**File**: `layer5/api/lib/coach-session-tracker.ts`
+**Changes**:
+- Add optional Supabase-backed persistence for session state
+- On `recordCoaching()`: also upsert to a lightweight DB table or Redis
+- On `canCoach()`: check DB if in-memory state is missing (server restart)
+- Keep in-memory as primary (fast path), DB as cold-start recovery
+**Why**: Currently purely in-memory — server restart resets all coaching caps. Agents that already received coaching could get 3 more in the same session. Lightweight DB persistence prevents this without adding latency to the hot path.
+
+---
+
+## Verification
+
+1. **Rate limit**: `curl -H "X-API-Key: key123" localhost:3000/v1/log-outcome` in a loop — verify 429 kicks in at 2000, not 600
+2. **Decision writer**: Check logs for flush interval — should see writes every 2s. Kill process, verify buffer < 100 and flush on SIGTERM
+3. **Durable queue**: Set `LI_OUTCOME_QUEUE_MODE` unset (test default). POST outcome, verify 202 response with `ingress_id`. Check `queue_outcome_ingress` table for pending row. Wait for worker to process, verify row moves to succeeded.
+4. **Verifier**: TypeScript compile — verify no references to `'downstream_webhook'` remain
+5. **e2e-verify.js**: `node layer5/e2e-verify.js` with env vars set — should pass. With env vars unset — should use defaults and still run.
+6. **RPC migration**: Apply migration 133. Call `supabase.rpc('get_undelivered_alerts')` — should return results without error.
+7. **Debug migration**: Verify `128_debug.sql` no longer exists in migrations directory
+8. **IPS TODO**: grep for `TODO(migration)` in ips-engine.ts — should return no results
+9. **Cohort warm**: Restart API, check logs for `[cohort-cycle] Warmed N active cycles from DB`
+10. **Coach persistence**: Coach an agent 3 times. Restart server. Try to coach again — should be blocked (cap remembered from DB). Wait 30 min for session expiry. Should allow coaching again.
+
+## Files Modified
+
+| File | Change Type |
+|------|-------------|
+| `layer5/api/middleware/rate-limit.ts` | Modify constants |
+| `layer5/api/lib/decision-writer.ts` | Modify constants |
+| `layer5/api/lib/outcome-ingest-queue.ts` | Modify defaults + constants |
+| `layer5/api/lib/verifier.ts` | Remove union member |
+| `layer5/e2e-verify.js` | Env-var-ify credentials |
+| `layer5/api/lib/ips-engine.ts` | Remove stale TODO |
+| `layer5/api/lib/recommendation/cohort-cycle.ts` | Add warm function |
+| `layer5/api/lib/coach-session-tracker.ts` | Add DB persistence |
+| `layer5/api/index.ts` | Call cohort warm on startup |
+| `layer5/supabase/migrations/128_debug.sql` | DELETE |
+| `layer5/supabase/migrations/133_create_undelivered_alerts_rpc.sql` | CREATE |

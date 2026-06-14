@@ -1,0 +1,91 @@
+"""Configuration for ans-nerves — loaded from env vars and ans.toml."""
+
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+
+
+@dataclass
+class LLMConfig:
+    provider: str = "openai"
+    model: str = "gpt-4o-mini"
+    max_tokens: int = 1024
+    temperature: float = 0.1  # low temp for structured observation
+    request_timeout_secs: float = 30.0
+    max_retries: int = 3
+    cost_per_1k_input_tokens: float = 0.00015  # $0.15/1M
+    cost_per_1k_output_tokens: float = 0.00060  # $0.60/1M
+
+
+@dataclass
+class VisionConfig:
+    model: str = "gpt-4o-mini"
+    max_tokens: int = 1024
+    screenshot_width: int = 1280
+    screenshot_height: int = 720
+    cost_per_call_cents: float = 0.30
+
+
+@dataclass
+class VerifierConfig:
+    model: str = "gpt-4o-mini"
+    max_tokens: int = 256
+    cost_per_call_cents: float = 0.05
+    run_on_every_nth_action: int = 1
+
+
+@dataclass
+class DecomposerConfig:
+    model: str = "gpt-4o-mini"
+    max_tokens: int = 512
+    cost_per_call_cents: float = 0.10
+
+
+@dataclass
+class ScoringConfig:
+    outcome_weight: float = 0.35
+    result_weight: float = 0.25
+    error_penalty_weight: float = 0.20
+    business_composite_weight: float = 0.20
+    recency_decay_days: int = 30
+    min_score_threshold: float = 0.3
+    context_embedding_model: str = "all-MiniLM-L6-v2"
+
+
+@dataclass
+class NervesConfig:
+    grpc_host: str = "127.0.0.1"
+    grpc_port: int = 50051
+    data_dir: Path = field(default_factory=lambda: Path.home() / ".ans")
+    llm: LLMConfig = field(default_factory=LLMConfig)
+    vision: VisionConfig = field(default_factory=VisionConfig)
+    verifier: VerifierConfig = field(default_factory=VerifierConfig)
+    decomposer: DecomposerConfig = field(default_factory=DecomposerConfig)
+    scoring: ScoringConfig = field(default_factory=ScoringConfig)
+
+    @classmethod
+    def from_env(cls) -> "NervesConfig":
+        grpc_host = os.getenv("ANS_GRPC_HOST", "127.0.0.1")
+        grpc_port = int(os.getenv("ANS_GRPC_PORT", "50051"))
+        data_dir = Path(os.getenv("ANS_DATA_DIR", Path.home() / ".ans"))
+        return cls(grpc_host=grpc_host, grpc_port=grpc_port, data_dir=data_dir)
+
+
+_config: NervesConfig | None = None
+
+
+def get_config() -> NervesConfig:
+    global _config
+    if _config is None:
+        _config = NervesConfig.from_env()
+    return _config
+
+
+def get_api_key() -> str:
+    key = os.getenv("OPENAI_API_KEY", "")
+    if not key:
+        raise RuntimeError(
+            "OPENAI_API_KEY environment variable is not set. "
+            "Set it via: $env:OPENAI_API_KEY='sk-...' (PowerShell) or export OPENAI_API_KEY=sk-... (bash)"
+        )
+    return key

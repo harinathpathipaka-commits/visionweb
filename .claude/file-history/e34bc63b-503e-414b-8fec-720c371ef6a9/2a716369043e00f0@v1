@@ -1,0 +1,96 @@
+---
+name: production-gaps
+description: "Remaining gaps between current Phase 9 state and true production readiness, with solutions"
+metadata: 
+  node_type: memory
+  type: reference
+  originSessionId: 13a826f6-8425-4736-961c-8836f660c858
+---
+
+# Production Readiness Gaps
+
+## Gap 1: 610 Clippy Warnings (Low Severity)
+
+**Solution:** Dedicated cleanup pass. Key categories:
+- 112 `must_use` — add `#[must_use]` attribute to relevant types/functions
+- 84 docs missing backticks — automated doc fix pass
+- 51 missing `# Errors` section — add to public API docs
+- 47 could be `const fn` — mark pure functions const
+- 26 `PartialEq` without `Eq` — add `Eq` derive where semantic equality holds
+- ~40 integer casting warnings — explicit `TryFrom` or `allow` with justification
+
+**Effort:** 1 day of focused lint cleanup.
+
+## Gap 2: No Observability (Medium Severity)
+
+**Symptoms:** Only JSON tracing logs to stdout. No metrics, no dashboards.
+
+**Solution:**
+- Add `metrics` crate with Prometheus-compatible counters/gauges for: session count, goal count, actions/sec, CDP command latency, injection detection rate, error rate
+- Expose `GET /api/v1/metrics` endpoint (Prometheus scrape target)
+- Add `tracing-loki` or similar for structured log aggregation
+- Wire Grafana dashboard (reference: `grafana.internal/d/api-latency` for oncall)
+
+**Effort:** 1 day.
+
+## Gap 3: No CI/CD Pipeline (Medium Severity)
+
+**Symptoms:** Build/test/bench only run manually.
+
+**Solution:**
+- GitHub Actions workflow:
+  - `cargo build --workspace` on push/PR
+  - `cargo test --workspace` on push/PR
+  - `cargo clippy --workspace --all-targets` on push/PR
+  - `cargo fmt --all -- --check` on push/PR
+  - `cargo bench --workspace` on merge to main (with benchmark regression threshold)
+- `.github/workflows/ci.yml`
+
+**Effort:** 0.5 day.
+
+## Gap 4: No Containerization (Medium Severity)
+
+**Symptoms:** Chrome version varies per machine. CDP protocol compatibility is version-dependent.
+
+**Solution:**
+- `Dockerfile` bundling the daemon with a pinned Chromium version
+- Use `alpine` or `debian-slim` base with Chromium installed via package manager
+- Multi-stage build: Rust build → slim runtime image
+- `docker-compose.yml` for local development with Chrome + daemon + optional LanceDB
+- Pin Chrome version in Dockerfile (e.g., `chromium=131.0.6778.0`)
+
+**Effort:** 0.5 day.
+
+## Gap 5: No Load Testing (Medium Severity)
+
+**Symptoms:** Unknown behavior under concurrent sessions, memory leaks unverified.
+
+**Solution:**
+- Add `ans-bench` crate with scenario tests: 10 concurrent sessions navigating, DOM distilling, screenshot capturing
+- Memory profiling with `dhat` or `heaptrack`
+- CDP command latency p50/p99 under load
+- Verify Chromium pool exhaustion behavior
+
+**Effort:** 1 day.
+
+## Gap 6: Budget Tracker Not Verified (Low Severity)
+
+**Symptoms:** `ans-budget` crate has unit tests but no end-to-end spend tracking verification.
+
+**Solution:**
+- Integration test: create goal with max budget, execute actions, verify mode transitions (normal → conservative → critical → emergency)
+- Verify circuit breaker triggers at configured thresholds
+
+**Effort:** 0.5 day.
+
+## Gap 7: Chrome Version Matrix (Medium Severity)
+
+**Symptoms:** Only tested against one Chrome version on Windows 11.
+
+**Solution:**
+- Test against Chrome stable, beta, and dev channels
+- Test on macOS and Linux
+- CI matrix: Windows + macOS + Linux with Chrome stable
+- Document minimum Chrome version requirement (Chrome 100+ for `--headless=new`)
+
+**Effort:** 1 day.

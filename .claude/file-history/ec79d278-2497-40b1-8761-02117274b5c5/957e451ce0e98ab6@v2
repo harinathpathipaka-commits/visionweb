@@ -1,0 +1,35 @@
+from src.epistemic_parser import parse_query, build_extraction_prompt
+from src.models import Variable
+
+
+class TestBuildExtractionPrompt:
+    def test_builds_prompt_for_domain(self):
+        prompt = build_extraction_prompt("How does churn affect revenue?", "finance_saas")
+        assert "How does churn affect revenue?" in prompt
+
+    def test_domain_context_in_prompt(self):
+        prompt = build_extraction_prompt("test query", "general")
+        assert isinstance(prompt, str)
+        assert len(prompt) > 50
+
+
+class TestParseQuery:
+    def test_parses_simple_query(self):
+        result = parse_query(
+            "What is the relationship between price and demand?",
+            "general",
+            ontology={"variables": [{"name": "price", "unit": "USD"}, {"name": "demand", "unit": "units"}]},
+        )
+        assert isinstance(result.domain, str)
+        assert len(result.variables) >= 0
+        assert isinstance(result.assumptions, list)
+
+    def test_empty_query(self):
+        result = parse_query("", "general", None)
+        # Rule-based parser returns default variables when no matches found
+        assert result.variables == [Variable(name="input", unit="unit"), Variable(name="output", unit="unit")]
+        assert isinstance(result.assumptions, list)
+
+    def test_result_has_no_equation_field(self):
+        result = parse_query("What drives revenue?", "finance_saas", None)
+        assert not hasattr(result, 'equation_form')

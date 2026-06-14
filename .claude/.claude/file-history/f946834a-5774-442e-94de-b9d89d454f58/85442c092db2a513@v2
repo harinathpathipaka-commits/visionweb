@@ -1,0 +1,81 @@
+from __future__ import annotations
+
+import os
+import threading
+import time
+from collections import defaultdict
+from typing import Dict, Tuple
+
+from fastapi import HTTPException, Request
+
+
+def _parse_limit(env_var: str, default: int) -> int:
+    raw = os.environ.get(env_var, "")
+    try:
+        return int(raw) if raw else default
+    except ValueError:
+        return default
+
+
+RATE_LIMIT_REQUESTS = _parse_limit("EL_RATE_LIMIT_REQUESTS", 120)
+RATE_LIMIT_WINDOW = _parse_limit("EL_RATE_LIMIT_WINDOW_SEC", 60)
+
+
+class TokenBucket:
+    def __init__(self, max_tokens: int, window_sec: int):
+        self._max_tokens = max_tokens
+        self._window = window_sec
+        self._buckets: Dict[str, Tuple[float, float]] = {}  # key -> (tokens, last_refill)
+        self._lock = threading.Lock()
+
+    def _refill(self, key: str, now: float) -> float:
+        tokens, last = self._buckets.get(key, (float(self._max_tokens), now))
+        elapsed = now - last
+        new_tokens = min(float(self._max_tokens), tokens + elapsed * (self._max_tokens / self._window))
+        self._buckets[key] = (new_tokens, now)
+
+        if len(self._buckets) > 10_000:
+            stale = [k for k, (_, t) in self._buckets.items() if now - t > self._window * 2]
+            for k in stale:
+                del self._buckets[k]
+
+        return new_tokens
+
+    def consume(self, key: str, tokens: int = 1) -> bool:
+        with self._lock:
+            now = time.monotonic()
+            current = self._refill(key, now)
+            if current >= tokens:
+                self._buckets[key] = (current - tokens, now)
+                return True
+            return False
+
+    def remaining(self, key: str) -> float:
+        with self._lock:
+            return self._refill(key, time.monotonic())
+
+
+_bucket = TokenBucket(RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW)
+
+
+def _client_key(request: Request) -> str:
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    client_ip = forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else "unknown")
+    api_client = getattr(request.state, "api_client", None)
+    return api_client or client_ip
+
+
+async def rate_limit(request: Request) -> None:
+    if not request.url.path.startswith("/v1/"):
+        return
+    if request.url.path in ("/v1/health", "/metrics"):
+        return
+
+    key = _client_key(request)
+    if not _bucket.consume(key):
+        retry_after = max(1, int(RATE_LIMIT_WINDOW / RATE_LIMIT_REQUESTS))
+        raise HTTPException(
+            429,
+            f"Rate limit exceeded ({RATE_LIMIT_REQUESTS} req/{RATE_LIMIT_WINDOW}s). Retry in {retry_after}s.",
+            headers={"Retry-After": str(retry_after)},
+        )

@@ -1,0 +1,458 @@
+# Phase 1: Browser Control — Implementation Plan
+
+## Context
+
+Phase 0 delivered: 13 crates compile green, proto frozen, gRPC contract defined. But every type is a stub — `CdpBackend;`, `ChromiumProcess;`, `IpcServer;`. Phase 1 makes them real.
+
+**Deliverable:** "Chromium launches, navigates, interacts via gRPC."
+
+**Quality bar:** Production infrastructure — RAII process cleanup, typed CDP commands, proper error handling, zero unwrap() in library code.
+
+---
+
+## Architecture
+
+```
+ans-daemon (main.rs)
+├── Loads ans.toml config
+├── Starts IpcServer (gRPC on loopback:50051)
+└── On shutdown: graceful drain
+
+IpcServer (ans-ipc/server.rs)
+├── Implements tonic-generated AgentNervousSystem service
+├── Owns SessionManager (Arc<RwLock<HashMap<Uuid, SessionHandle>>>)
+├── gRPC methods delegate to SessionManager → CdpBackend
+└── Health RPC returns system status
+
+SessionManager (new: ans-ipc/src/session.rs)
+├── create(goal_id, start_url) → spawns ChromiumProcess, wraps in CdpBackend
+├── close(session_id) → kills Chromium, removes from map
+├── execute(session_id, action) → dispatches to CdpBackend method
+└── tracks: session→backend mapping, status, goal_id
+
+CdpBackend (ans-cdp/src/client.rs)
+├── Implements BrowserBackend trait
+├── Owns ChromiumProcess + tokio_tungstenite WebSocket
+├── Sends CDP commands, awaits responses via oneshot channels
+├── Background task reads WS messages, routes to waiting commands/event handlers
+└── Implements reconnect with exponential backoff
+
+ChromiumProcess (ans-cdp/src/process.rs)
+├── Finds chromium/chrome on PATH
+├── Spawns headless Chromium with remote-debugging-port
+├── Discovers WS debug URL from /json/version
+├── Drop impl kills child process (RAII guarantee)
+└── Health: periodic Browser.getVersion ping
+
+CdpCommand (ans-cdp/src/command.rs)
+├── CdpCommand { id, method, params }
+├── CdpResponse { id, result, error }
+├── Typed builders for Page, DOM, Runtime, Input domains
+└── Response parsers return domain types
+```
+
+---
+
+## File-by-File Implementation
+
+### 1. `crates/ans-cdp/src/process.rs` — Chromium lifecycle
+
+**ChromiumProcess struct:**
+```rust
+pub struct ChromiumProcess {
+    child: Mutex<Option<Child>>,  // tokio::process::Child
+    debug_port: u16,
+    debug_url: String,            // ws://localhost:{port}/devtools/browser/{id}
+    user_data_dir: PathBuf,       // cleaned up on drop
+}
+```
+
+**Methods:**
+- `pub async fn launch() -> Result<Self>` — find exe, pick port, spawn, fetch debug URL
+- `pub fn debug_url(&self) -> &str`
+- `pub fn debug_port(&self) -> u16`
+
+**Drop impl:** Kill child process, clean up `user_data_dir`. Fire warning if child was still running (should have been closed explicitly).
+
+**Port allocation:** Bind `TcpListener::bind("127.0.0.1:0")` → read local addr → drop listener → pass port to chromium. This avoids port collisions without a port manager.
+
+**Chromium discovery:** Try `chromium`, `chromium-browser`, `chrome`, `google-chrome`. On Windows also check `%LOCALAPPDATA%\Chromium\Application\chrome.exe` and `%ProgramFiles%\Google\Chrome\Application\chrome.exe`.
+
+**Spawn args:**
+```
+--headless=new
+--no-sandbox
+--disable-gpu
+--disable-dev-shm-usage
+--disable-extensions
+--disable-background-networking
+--remote-debugging-port={port}
+--user-data-dir={temp_dir}
+--window-size=1280,720
+about:blank
+```
+
+**Debug URL discovery:** HTTP GET `http://127.0.0.1:{port}/json/version` → parse JSON → extract `webSocketDebuggerUrl` field. Retry with backoff (Chromium takes time to start).
+
+### 2. `crates/ans-cdp/src/command.rs` — Typed CDP commands
+
+**Core types:**
+```rust
+pub struct CdpCommand {
+    pub id: i64,
+    pub method: String,
+    pub params: serde_json::Value,
+}
+
+pub struct CdpResponse {
+    pub id: i64,
+    pub result: Option<serde_json::Value>,
+    pub error: Option<CdpError>,
+}
+
+pub struct CdpError {
+    pub code: i64,
+    pub message: String,
+}
+
+pub struct CdpEvent {
+    pub method: String,
+    pub params: serde_json::Value,
+}
+```
+
+**Message wire format helper:**
+- `CdpCommand::to_json(&self) -> String` → `{"id":1,"method":"Page.navigate","params":{...}}`
+- `CdpMessage::from_json(s: &str) -> Result<CdpMessage>` → parse, dispatch to Command/Response/Event based on field presence
+- `CdpMessage` enum: `Request(CdpCommand)`, `Response(CdpResponse)`, `Event(CdpEvent)`
+
+**Typed command builders (module-level functions):**
+```rust
+pub fn page_navigate(url: &str) -> CdpCommand
+pub fn page_get_frame_tree() -> CdpCommand
+pub fn dom_get_document(depth: i32) -> CdpCommand
+pub fn dom_query_selector(node_id: i32, selector: &str) -> CdpCommand
+pub fn dom_get_outer_html(node_id: i32) -> CdpCommand
+pub fn dom_get_attributes(node_id: i32) -> CdpCommand
+pub fn runtime_evaluate(expression: &str) -> CdpCommand
+pub fn input_dispatch_mouse_event(type_: &str, x: f64, y: f64, button: &str) -> CdpCommand
+pub fn input_dispatch_key_event(type_: &str, key: &str) -> CdpCommand
+pub fn input_insert_text(text: &str) -> CdpCommand
+pub fn browser_get_version() -> CdpCommand
+pub fn page_capture_screenshot(format: &str, quality: Option<u8>) -> CdpCommand
+```
+
+**Response parsers:**
+```rust
+pub fn parse_navigation_result(result: &serde_json::Value) -> Result<NavigationResult>
+pub fn parse_dom_node(result: &serde_json::Value) -> Result<DomNode>
+pub fn parse_evaluate_result(result: &serde_json::Value) -> Result<serde_json::Value>
+pub fn parse_screenshot_result(result: &serde_json::Value) -> Result<Vec<u8>>  // base64 decoded
+pub fn parse_frame_tree(result: &serde_json::Value) -> Result<FrameTree>
+```
+
+**Atomic ID counter:** `static NEXT_ID: AtomicI64 = AtomicI64::new(1)` — thread-safe, no Mutex needed.
+
+### 3. `crates/ans-cdp/src/client.rs` — CdpBackend + BrowserBackend impl
+
+**CdpBackend struct:**
+```rust
+pub struct CdpBackend {
+    process: ChromiumProcess,
+    ws: Arc<Mutex<WebSocketStream>>,  // or split into writer/reader
+    pending: Arc<Mutex<HashMap<i64, oneshot::Sender<Result<serde_json::Value, CdpError>>>>>,
+    event_handlers: Arc<Mutex<HashMap<String, Vec<Box<dyn Fn(CdpEvent) + Send>>>>>,
+}
+```
+
+Actually better design — separate the WebSocket connection from the backend:
+```rust
+struct CdpConnection {
+    write: mpsc::Sender<String>,  // queue for outgoing messages
+    pending: Arc<Mutex<HashMap<i64, oneshot::Sender<CdpResult>>>>,
+}
+
+pub struct CdpBackend {
+    connection: CdpConnection,
+    process: ChromiumProcess,
+}
+```
+
+**Connection flow:**
+1. `CdpConnection::connect(debug_url)` — establish WS, spawn reader task
+2. Reader task: loop over `ws.next()`, parse each message, check `id` field:
+   - Has `id`: look up in `pending` map, send to oneshot sender, remove entry
+   - Has `method` (no id): it's an event — dispatch to registered handlers
+3. `connection.send_command(cmd: CdpCommand)` → put in pending map, write to WS, await oneshot receiver
+4. Timeout: `tokio::time::timeout(Duration::from_secs(30), rx)` — return `CdpProtocol` error on timeout
+
+**BrowserBackend implementation for CdpBackend:**
+- `navigate(url, timeout)` → `page_navigate(url)` → await response + `Page.loadEventFired` event → build PageState
+- `click(selector)` → `dom_get_document()` → `dom_query_selector(node_id, selector)` → get bounding box → `input_dispatch_mouse_event("mousePressed", x, y)` → `input_dispatch_mouse_event("mouseReleased", x, y)` → return ActionOutcome
+- `type_text(selector, text)` → query selector → click to focus → `input_insert_text(text)` → return ActionOutcome
+- `select_option(selector, value)` → query selector → `runtime_evaluate("...")` to set value → dispatch change event
+- `scroll(pixels, selector)` → `runtime_evaluate("window.scrollBy(0, N)")` or scroll element into view
+- `wait_for_load(timeout)` → wait for `Page.loadEventFired` event or timeout
+- `capture_screenshot(format, full_page)` → `page_capture_screenshot(...)` → base64 decode → return bytes
+- `execute_script(script)` → `runtime_evaluate(script)` → return JSON string
+- `get_distilled_dom(mode)` → `dom_get_document()` → walk tree → build DistilledPage (Phase 2, return stub for now)
+- `close()` → close WS → kill process → Ok(())
+
+**WebSocket message loop (spawned task):**
+```rust
+async fn read_loop(
+    mut ws: WebSocketStream,
+    pending: Arc<Mutex<HashMap<i64, oneshot::Sender<CdpResult>>>>,
+) {
+    while let Some(msg) = ws.next().await {
+        match msg {
+            Ok(Message::Text(text)) => {
+                let msg: CdpMessage = serde_json::from_str(&text)?;
+                match msg {
+                    CdpMessage::Response(resp) => {
+                        if let Some(tx) = pending.lock().await.remove(&resp.id) {
+                            let _ = tx.send(resp.into_result());
+                        }
+                    }
+                    CdpMessage::Event(event) => {
+                        tracing::debug!(method = %event.method, "CDP event");
+                    }
+                    _ => {}
+                }
+            }
+            Ok(Message::Close(_)) => break,
+            Err(e) => {
+                tracing::error!(?e, "CDP WebSocket error");
+                break;
+            }
+            _ => {}
+        }
+    }
+}
+```
+
+### 4. `crates/ans-ipc/src/session.rs` — Session manager (NEW FILE)
+
+```rust
+pub struct SessionHandle {
+    pub session_id: Uuid,
+    pub goal_id: Uuid,
+    pub backend: CdpBackend,
+    pub current_page: Option<PageState>,
+    pub status: SessionStatus,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+pub struct SessionManager {
+    sessions: Arc<RwLock<HashMap<Uuid, SessionHandle>>>,
+}
+```
+
+**Methods:**
+- `new() -> Self`
+- `async fn create(&self, goal_id: Uuid, start_url: Option<String>) -> Result<Uuid>` — launch Chromium, navigate if URL given, store handle, return session_id
+- `async fn close(&self, session_id: Uuid) -> Result<()>` — call backend.close(), remove from map
+- `async fn execute_action(&self, session_id: Uuid, action: Action) -> Result<ActionOutcome>` — dispatch to backend
+- `async fn navigate(&self, session_id: Uuid, url: &str) -> Result<PageState>`
+- `fn get(&self, session_id: Uuid) -> Option<SessionHandle>` (returns clone of handle data, not the handle itself)
+- `fn list_sessions(&self) -> Vec<Uuid>`
+
+Add `Cargo.toml` dependencies: `ans-cdp` at `../ans-cdp`.
+
+### 5. `crates/ans-ipc/src/subscriber.rs` — Internal pub/sub
+
+```rust
+use tokio::sync::broadcast;
+
+pub struct GoalEventBus {
+    tx: broadcast::Sender<GoalUpdate>,
+}
+
+pub struct EyeReportBus {
+    tx: broadcast::Sender<EyeReport>,
+}
+
+pub struct EventBus {
+    pub goals: GoalEventBus,
+    pub eye_reports: EyeReportBus,
+}
+```
+
+**GoalUpdate type** (new or use existing proto type):
+```rust
+#[derive(Debug, Clone)]
+pub struct GoalUpdate {
+    pub goal_id: Uuid,
+    pub progress: f32,
+    pub status: String,
+    pub message: String,
+}
+```
+
+**Methods:**
+- `GoalEventBus::new(capacity: usize) -> Self`
+- `fn subscribe(&self) -> broadcast::Receiver<GoalUpdate>`
+- `fn publish(&self, update: GoalUpdate) -> Result<usize>` — returns number of receivers
+- Same pattern for EyeReportBus
+
+### 6. `crates/ans-ipc/src/server.rs` — gRPC server
+
+```rust
+pub struct IpcServer {
+    session_manager: SessionManager,
+    event_bus: Arc<EventBus>,
+}
+```
+
+**Methods:**
+- `pub fn new() -> Self` — creates SessionManager and EventBus
+- `pub async fn serve(self, addr: SocketAddr) -> Result<()>` — starts tonic server, runs until shutdown signal
+
+**gRPC service implementation** (implement the generated `AgentNervousSystem` trait):
+
+Phase 1 RPCs with real implementations:
+- `CreateSession` → `session_manager.create(goal_id, start_url)` → return Session proto
+- `CloseSession` → `session_manager.close(session_id)` → return Empty
+- `Navigate` → `session_manager.navigate(session_id, url)` → return PageState proto
+- `ExecuteAction` → map proto Action to core Action → `session_manager.execute_action(...)` → return ActionResult proto
+- `Health` → return HealthStatus { healthy: true, ... }
+
+Phase 2+ RPCs (return `unimplemented` gRPC status):
+- `GetDistilledDom`, `CaptureScreenshot`, `ComputeDiff`
+- `CreateGoal`, `GetGoalState`, `UpdateGoalProgress`, `SubscribeGoalUpdates`
+- `ClassifyDistractions`, `CheckAction`
+- `SubmitEyeReports`
+- `StoreScore`, `QueryBestActions`, `SearchSimilarDecisions`
+
+**Type mapping helpers:** Functions to convert between proto-generated types and ans-core domain types, since they're separate crates:
+```
+proto::Action → core::Action
+core::ActionOutcome → proto::ActionOutcome  
+core::PageState → proto::PageState
+```
+
+Add `Cargo.toml` dependencies: `ans-cdp` at `../ans-cdp`.
+
+### 7. `crates/ans-ipc/src/arrow_ipc.rs` — Arrow IPC (basic)
+
+Extend beyond `shm_dir()`:
+
+```rust
+pub struct IpcBuffer {
+    path: PathBuf,
+    key: String,  // random unique key
+}
+
+impl IpcBuffer {
+    pub fn create(prefix: &str) -> Result<Self>
+    pub fn write_arrow_batch(&self, schema: &Schema, batch: &RecordBatch) -> Result<()>
+    pub fn read_arrow_batch(&self) -> Result<RecordBatch>
+    pub fn key(&self) -> &str
+    pub fn path(&self) -> &Path
+}
+
+impl Drop for IpcBuffer {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+```
+
+Use `arrow::ipc::writer::FileWriter` and `arrow::ipc::reader::FileReader` — the file-based IPC format suits our mmap approach. The gRPC message carries the `key` string; the receiver opens the file at `shm_dir()/ans_{key}.arrow`.
+
+### 8. `crates/ans-daemon/src/main.rs` — Entry point
+
+```rust
+use clap::Parser;
+
+#[derive(Parser)]
+#[command(name = "ans-daemon")]
+struct Cli {
+    #[arg(long, default_value = "ans.toml")]
+    config: PathBuf,
+    
+    #[arg(long, default_value = "50051")]
+    grpc_port: u16,
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    color_eyre::install()?;
+    
+    let cli = Cli::parse();
+    
+    // Load config
+    let config = load_config(&cli.config)?;
+    
+    // Init tracing
+    tracing_subscriber::fmt()
+        .with_env_filter("ans=debug,info")
+        .init();
+    
+    tracing::info!("ans-daemon v{} starting", env!("CARGO_PKG_VERSION"));
+    
+    // Create IPC server
+    let server = IpcServer::new();
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), cli.grpc_port);
+    
+    tracing::info!("gRPC server listening on {}", addr);
+    
+    // Graceful shutdown
+    server.serve(addr).await?;
+    
+    Ok(())
+}
+```
+
+**Signal handling:** `tokio::signal::ctrl_c()` → initiate graceful shutdown. On SIGTERM: close all sessions (kills all Chromium processes), then stop gRPC server.
+
+---
+
+## Files Modified / Created
+
+| File | Action | Lines (est.) |
+|------|--------|-------------|
+| `crates/ans-cdp/src/process.rs` | Rewrite | ~150 |
+| `crates/ans-cdp/src/command.rs` | Rewrite | ~250 |
+| `crates/ans-cdp/src/client.rs` | Rewrite | ~350 |
+| `crates/ans-cdp/Cargo.toml` | Add deps (reqwest, tokio process) | +3 |
+| `crates/ans-ipc/src/session.rs` | **Create** | ~120 |
+| `crates/ans-ipc/src/subscriber.rs` | Rewrite | ~80 |
+| `crates/ans-ipc/src/arrow_ipc.rs` | Rewrite | ~80 |
+| `crates/ans-ipc/src/server.rs` | Rewrite | ~250 |
+| `crates/ans-ipc/Cargo.toml` | Add ans-cdp dep | +1 |
+| `crates/ans-daemon/src/main.rs` | Rewrite | ~60 |
+
+**Total: ~1,350 lines of production Rust, 10 files touched.**
+
+---
+
+## What's NOT in Phase 1 (deferred to Phase 2+)
+
+- DOM distillation engine (Phase 2)
+- Page diff engine (Phase 2)
+- Immune system (Phase 5)
+- Signal router (Phase 7)
+- Decision scoring/storage (Phase 6)
+- MCP/REST/WS gateway (Phase 4)
+- Python nerves integration (Phase 3)
+- Full gRPC streaming (Phase 4)
+- CdpBackend.get_distilled_dom() — returns stub DistilledPage (Phase 2)
+- Screenshot via Arrow IPC — screenshots go through gRPC for now (small enough)
+
+---
+
+## Verification
+
+1. **Build:** `cargo build --workspace` — all 13 crates + new code compiles with zero warnings
+2. **Clippy:** `cargo clippy --workspace --all-targets` — zero warnings
+3. **Format:** `cargo fmt --all -- --check` — passes
+4. **Integration test:** Create a test that:
+   - Launches ans-daemon on a random port
+   - Creates a gRPC client (using tonic)
+   - Calls `CreateSession` → gets session ID back
+   - Calls `Navigate` to `data:text/html,<html><body><h1>Hello ANS</h1><button id="btn">Click me</button></body></html>`
+   - Calls `ExecuteAction` with a Click action on `#btn`
+   - Calls `CloseSession`
+   - Verifies health endpoint returns healthy
+5. **Process cleanup:** After test, verify zero zombie chromium processes

@@ -1,0 +1,147 @@
+/**
+ * force-refresh.ts — Force refresh the materialized views on production
+ * and verify scores differentiate after refresh.
+ */
+import { createClient } from '@supabase/supabase-js';
+
+const SUPABASE_URL = 'https://fakomwsewdxazaqawjuv.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZha29td3Nld2R4YXphcWF3anV2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MjY5MTk1NywiZXhwIjoyMDg4MjY3OTU3fQ.T4NK919YFRO6zhHeFb2lEoKo0cvE5oERKgtsrSEJVto';
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const LI_BASE_URL = 'https://layerinfinite.me';
+const LI_API_KEY = 'layerinfinite_60a7e2729d358205f2f2433e4e4cf78d';
+
+async function main() {
+  console.log('═══════════════════════════════════════════════════');
+  console.log('  FORCE MV REFRESH + SCORE VERIFICATION');
+  console.log('═══════════════════════════════════════════════════\n');
+
+  // 1. Check how many outcomes exist in fact_outcomes
+  console.log('1️⃣  OUTCOME COUNT IN fact_outcomes');
+  const { data: outcomeCount, error: countErr } = await supabase
+    .from('fact_outcomes')
+    .select('outcome_id', { count: 'exact', head: true });
+  console.log(`   Total outcomes: ${outcomeCount}`);
+  if (countErr) console.log(`   Error: ${countErr.message}`);
+
+  // Count by issue_type (sudoku tasks)
+  const { data: sudokuOutcomes, error: sudokuErr } = await supabase
+    .from('fact_outcomes')
+    .select('context_id, action_id, success, outcome_score')
+    .like('task_name', 'sudoku%')
+    .limit(100);
+  
+  console.log(`   Sudoku-related outcomes: ${sudokuOutcomes?.length ?? 0}`);
+  if (sudokuOutcomes && sudokuOutcomes.length > 0) {
+    // Group by action
+    const byAction = new Map<string, { total: number; successes: number }>();
+    for (const o of sudokuOutcomes) {
+      const key = o.action_id;
+      const existing = byAction.get(key) ?? { total: 0, successes: 0 };
+      existing.total++;
+      if (o.success) existing.successes++;
+      byAction.set(key, existing);
+    }
+    console.log(`   Unique action_ids: ${byAction.size}`);
+    for (const [actionId, stats] of byAction) {
+      console.log(`     ${actionId.slice(0, 8)}... → ${stats.total} outcomes, ${stats.successes} successes`);
+    }
+  }
+  console.log();
+
+  // 2. Check current MV state
+  console.log('2️⃣  CURRENT mv_action_scores STATE');
+  const { data: mvRows, error: mvErr } = await supabase
+    .from('mv_action_scores')
+    .select('action_name, context_id, total_attempts, confidence, weighted_success_rate, view_refreshed_at')
+    .limit(20);
+  
+  if (mvErr) {
+    console.log(`   ❌ MV query failed: ${mvErr.message}`);
+  } else if (!mvRows || mvRows.length === 0) {
+    console.log('   ⚠️  MV is EMPTY — no rows at all');
+  } else {
+    console.log(`   Rows in MV: ${mvRows.length}`);
+    for (const r of mvRows.slice(0, 10)) {
+      console.log(`     ${(r.action_name ?? '???').padEnd(20)} | attempts: ${String(r.total_attempts).padEnd(4)} | conf: ${r.confidence} | wsr: ${r.weighted_success_rate} | refreshed: ${r.view_refreshed_at}`);
+    }
+  }
+  console.log();
+
+  // 3. Force refresh MV
+  console.log('3️⃣  FORCE REFRESHING mv_action_scores...');
+  const { error: refreshErr } = await supabase.rpc('refresh_action_scores');
+  if (refreshErr) {
+    console.log(`   ❌ RPC failed: ${refreshErr.message}`);
+    console.log('   Trying direct SQL via RPC...');
+  } else {
+    console.log('   ✅ refresh_action_scores RPC succeeded');
+  }
+  console.log();
+
+  // 4. Check MV state AFTER refresh
+  console.log('4️⃣  mv_action_scores AFTER REFRESH');
+  const { data: mvAfter, error: mvAfterErr } = await supabase
+    .from('mv_action_scores')
+    .select('action_name, context_id, total_attempts, confidence, weighted_success_rate, raw_success_rate, view_refreshed_at')
+    .limit(30);
+  
+  if (mvAfterErr) {
+    console.log(`   ❌ MV query failed: ${mvAfterErr.message}`);
+  } else if (!mvAfter || mvAfter.length === 0) {
+    console.log('   ⚠️  MV is STILL EMPTY after refresh');
+  } else {
+    console.log(`   Rows in MV: ${mvAfter.length}`);
+    for (const r of mvAfter) {
+      console.log(`     ${(r.action_name ?? '???').padEnd(20)} | attempts: ${String(r.total_attempts).padEnd(4)} | conf: ${r.confidence} | raw_sr: ${r.raw_success_rate} | wsr: ${r.weighted_success_rate}`);
+    }
+  }
+  console.log();
+
+  // 5. Now hit get-scores API to see if scores differentiate
+  console.log('5️⃣  GET SCORES AFTER MV REFRESH');
+  const res = await fetch(`${LI_BASE_URL}/v1/get-scores?issue_type=sudoku_trivial&force_refresh=true`, {
+    headers: { 'X-API-Key': LI_API_KEY, 'Content-Type': 'application/json' },
+  });
+  const scores = await res.json() as any;
+  
+  if (scores.ranked_actions) {
+    console.log(`   cold_start: ${scores.cold_start}`);
+    console.log(`   outcomes_needed: ${scores.outcomes_needed}`);
+    console.log();
+    for (const a of scores.ranked_actions) {
+      console.log(`   ${a.action_name.padEnd(20)} | score: ${a.composite_score} | conf: ${a.confidence} | attempts: ${a.total_attempts} | cold: ${a.is_cold_start}`);
+    }
+  } else {
+    console.log(`   Response:`, JSON.stringify(scores, null, 2).slice(0, 1000));
+  }
+
+  // 6. Check durable queue state
+  console.log('\n6️⃣  DURABLE QUEUE STATE');
+  const { data: queuePending } = await supabase
+    .from('queue_outcome_ingress')
+    .select('status, ingress_id', { count: 'exact', head: true })
+    .eq('status', 'pending');
+  const { data: queueDead } = await supabase
+    .from('queue_outcome_ingress')
+    .select('status, ingress_id', { count: 'exact', head: true })
+    .eq('status', 'dead');
+  const { data: queueFailed } = await supabase
+    .from('queue_outcome_ingress')
+    .select('status, ingress_id', { count: 'exact', head: true })
+    .eq('status', 'failed');
+  
+  console.log(`   Pending: ${queuePending ?? '?'}`);
+  console.log(`   Failed: ${queueFailed ?? '?'}`);
+  console.log(`   Dead: ${queueDead ?? '?'}`);
+
+  console.log('\n═══════════════════════════════════════════════════');
+  console.log('  DONE');
+  console.log('═══════════════════════════════════════════════════');
+}
+
+main().catch(err => {
+  console.error('Fatal:', err);
+  process.exit(1);
+});

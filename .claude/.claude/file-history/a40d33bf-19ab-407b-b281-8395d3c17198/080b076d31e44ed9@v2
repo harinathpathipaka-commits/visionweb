@@ -1,0 +1,398 @@
+//! Page diff engine.
+//!
+//! Compares two [`DistilledPage`] snapshots using element-identity matching.
+//! Runs automatically after every action — the Goal Verifier consumes
+//! the diff to check sub-goal criteria.
+//!
+//! Algorithm: identity-key matching (not full Zhang-Shasha tree edit distance,
+//! which is O(n⁴) and wrong fit for DOM). Each element gets an identity label
+//! from its tag + text prefix + role. Elements are matched by identity across
+//! the two trees. Unmatched elements are added/removed; matched elements with
+//! different attributes are modified.
+
+use std::collections::HashMap;
+
+use ans_core::distill::DistilledPage;
+
+use crate::types::{identity_label, DiffOutput, ElementChange, ElementModification};
+
+/// The page differ. Created once, called after every action.
+pub struct PageDiffer;
+
+impl PageDiffer {
+    /// Compute the diff between two page snapshots.
+    ///
+    /// `before` is the page state before the action.
+    /// `after` is the page state after the action.
+    pub fn diff(&self, before: &DistilledPage, after: &DistilledPage) -> DiffOutput {
+        // URL change means navigation — entirely different page
+        if before.url != after.url {
+            return DiffOutput {
+                added: vec![],
+                removed: vec![],
+                modified: vec![],
+                visual_diff_pct: 1.0,
+                summary: "navigation".into(),
+                is_same_page: false,
+            };
+        }
+
+        let before_labels: Vec<String> = before.elements.iter().map(identity_label).collect();
+        let after_labels: Vec<String> = after.elements.iter().map(identity_label).collect();
+
+        // Build a frequency map of identity labels for matching
+        let _before_label_counts = label_counts(&before_labels);
+        let _after_label_counts = label_counts(&after_labels);
+
+        // Match by identity: elements whose label appears in both trees
+        // are "same" elements, possibly modified
+        let mut added: Vec<ElementChange> = Vec::new();
+        let mut removed: Vec<ElementChange> = Vec::new();
+        let mut modified: Vec<ElementModification> = Vec::new();
+
+        // Track which after-indices have been matched to avoid double-matching
+        let mut after_used: Vec<bool> = vec![false; after.elements.len()];
+
+        // For each "before" element, find a matching "after" element
+        for (i, label) in before_labels.iter().enumerate() {
+            let before_el = &before.elements[i];
+
+            // Try to find a matching element in the after set
+            if let Some(j) = find_match(label, &after_labels, &after_used) {
+                after_used[j] = true;
+                let after_el = &after.elements[j];
+
+                // Check for attribute modifications
+                let mods = compare_attributes(before_el, after_el);
+                modified.extend(mods);
+
+                // Check for text changes
+                if before_el.text != after_el.text {
+                    modified.push(ElementModification {
+                        selector: crate::types::element_selector(after_el),
+                        attribute_name: "text".into(),
+                        old_value: truncate_for_diff(&before_el.text),
+                        new_value: truncate_for_diff(&after_el.text),
+                    });
+                }
+            } else {
+                // No match — this element was removed
+                removed.push(ElementChange {
+                    tag: before_el.tag.clone(),
+                    text: before_el.text.clone(),
+                    selector: crate::types::element_selector(before_el),
+                    index: i as i32,
+                });
+            }
+        }
+
+        // Find elements that are in "after" but not in "before" (added)
+        for (j, used) in after_used.iter().enumerate() {
+            if !used {
+                let el = &after.elements[j];
+                // Skip elements that are so common they produce false positives
+                if skip_noise_element(el) {
+                    continue;
+                }
+                added.push(ElementChange {
+                    tag: el.tag.clone(),
+                    text: el.text.clone(),
+                    selector: crate::types::element_selector(el),
+                    index: j as i32,
+                });
+            }
+        }
+
+        // Also detect new distractions
+        let new_distractions = detect_new_distractions(before, after);
+        if !new_distractions.is_empty() {
+            added.extend(new_distractions);
+        }
+
+        let total = (before.elements.len() + after.elements.len()).max(1) as f32;
+        let changed = (added.len() + removed.len() + modified.len()) as f32;
+        let visual_diff_pct = (changed / total).clamp(0.0, 1.0);
+
+        // Classify the change
+        let summary = classify_change(&added, &removed, &modified, before, after);
+
+        DiffOutput {
+            added,
+            removed,
+            modified,
+            visual_diff_pct,
+            summary,
+            is_same_page: true,
+        }
+    }
+}
+
+/// Build a frequency count of labels.
+fn label_counts(labels: &[String]) -> HashMap<&str, usize> {
+    let mut counts = HashMap::new();
+    for label in labels {
+        *counts.entry(label.as_str()).or_insert(0) += 1;
+    }
+    counts
+}
+
+/// Find an unused match for `label` in the `after_labels` list.
+fn find_match(label: &str, after_labels: &[String], after_used: &[bool]) -> Option<usize> {
+    after_labels
+        .iter()
+        .enumerate()
+        .filter(|(j, _)| !after_used[*j])
+        .find(|(_, l)| l.as_str() == label)
+        .map(|(j, _)| j)
+}
+
+/// Compare attributes of two matched elements. Returns attribute-level modifications.
+fn compare_attributes(
+    before: &ans_core::distill::DistilledElement,
+    after: &ans_core::distill::DistilledElement,
+) -> Vec<ElementModification> {
+    let selector = crate::types::element_selector(after);
+    let mut mods = Vec::new();
+
+    for (key, before_val) in &before.attributes {
+        match after.attributes.get(key) {
+            Some(after_val) if after_val != before_val => {
+                mods.push(ElementModification {
+                    selector: selector.clone(),
+                    attribute_name: key.clone(),
+                    old_value: before_val.clone(),
+                    new_value: after_val.clone(),
+                });
+            }
+            None => {
+                mods.push(ElementModification {
+                    selector: selector.clone(),
+                    attribute_name: key.clone(),
+                    old_value: before_val.clone(),
+                    new_value: String::new(),
+                });
+            }
+            _ => {}
+        }
+    }
+    mods
+}
+
+/// Skip noise elements that are too generic to produce meaningful diff entries.
+fn skip_noise_element(el: &ans_core::distill::DistilledElement) -> bool {
+    // Skip empty text-less elements that appear and disappear with layout shifts
+    el.text.trim().is_empty()
+        && !["button", "input", "select", "textarea", "a"].contains(&el.tag.as_str())
+}
+
+/// Truncate text for diff display.
+fn truncate_for_diff(text: &str) -> String {
+    // Safe truncation — slice at char boundary, not raw byte offset
+    if text.len() > 100 {
+        let truncate_at = text
+            .char_indices()
+            .take_while(|&(i, _)| i < 100)
+            .map(|(i, c)| i + c.len_utf8())
+            .last()
+            .unwrap_or(100);
+        format!("{}...", &text[..truncate_at.min(text.len())])
+    } else {
+        text.to_string()
+    }
+}
+
+/// Detect distractions that appeared in the new page but not the old.
+fn detect_new_distractions(before: &DistilledPage, after: &DistilledPage) -> Vec<ElementChange> {
+    let before_has_ads = before
+        .semantic_blocks
+        .iter()
+        .any(|b| matches!(b.block_type, ans_core::distill::BlockType::Ad));
+    let after_has_ads = after
+        .semantic_blocks
+        .iter()
+        .any(|b| matches!(b.block_type, ans_core::distill::BlockType::Ad));
+
+    if !before_has_ads && after_has_ads {
+        // Find ad blocks in after
+        after
+            .semantic_blocks
+            .iter()
+            .filter(|b| matches!(b.block_type, ans_core::distill::BlockType::Ad))
+            .filter_map(|b| {
+                b.element_indices.first().and_then(|&i| {
+                    after.elements.get(i).map(|el| ElementChange {
+                        tag: el.tag.clone(),
+                        text: "Ad detected".into(),
+                        selector: crate::types::element_selector(el),
+                        index: i as i32,
+                    })
+                })
+            })
+            .collect()
+    } else {
+        vec![]
+    }
+}
+
+/// Classify the overall change type from the diff details.
+fn classify_change(
+    added: &[ElementChange],
+    removed: &[ElementChange],
+    modified: &[ElementModification],
+    _before: &DistilledPage,
+    after: &DistilledPage,
+) -> String {
+    let total_changes = added.len() + removed.len() + modified.len();
+
+    if total_changes == 0 {
+        return "no_change".into();
+    }
+
+    // Check for error states
+    let after_text: String = after
+        .elements
+        .iter()
+        .map(|el| el.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let after_lower = after_text.to_lowercase();
+
+    let error_patterns = [
+        "error",
+        "not found",
+        "404",
+        "500",
+        "access denied",
+        "forbidden",
+    ];
+    if error_patterns.iter().any(|p| after_lower.contains(p)) {
+        return "error_state".into();
+    }
+
+    // Check for distraction appearance
+    let distraction_added = added.iter().any(|c| {
+        c.text.contains("Ad detected") || c.text.contains("cookie") || c.text.contains("popup")
+    });
+    if distraction_added {
+        return "distraction_appeared".into();
+    }
+
+    // Check for form updates
+    let form_tags = ["input", "select", "textarea", "button", "form"];
+    let has_form_change = added.iter().any(|c| form_tags.contains(&c.tag.as_str()))
+        || removed.iter().any(|c| form_tags.contains(&c.tag.as_str()))
+        || modified.iter().any(|m| {
+            ["value", "checked", "selected", "disabled"].contains(&m.attribute_name.as_str())
+        });
+
+    if has_form_change {
+        return "form_update".into();
+    }
+
+    // Check if only cosmetic changes (style, class)
+    let only_cosmetic = modified.iter().all(|m| {
+        ["style", "class", "data-"]
+            .iter()
+            .any(|p| m.attribute_name.starts_with(p))
+    }) && added.is_empty()
+        && removed.is_empty();
+
+    if only_cosmetic {
+        return "cosmetic_change".into();
+    }
+
+    // Check for content text changes
+    let has_text_change = modified.iter().any(|m| m.attribute_name == "text");
+    if has_text_change {
+        return "content_update".into();
+    }
+
+    // Default
+    "content_update".into()
+}
+
+/// Compare [`DistillMode`] to string (re-export for convenience).
+pub use ans_core::distill::DistillMode;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ans_core::distill::{DistilledElement, DistilledPage};
+
+    fn make_page(url: &str, elements: Vec<DistilledElement>) -> DistilledPage {
+        DistilledPage {
+            mode: DistillMode::AllFields,
+            url: url.to_string(),
+            title: "Test".into(),
+            elements,
+            interactive: vec![],
+            semantic_blocks: vec![],
+            distraction_flags: vec![],
+            timestamp: chrono::Utc::now(),
+        }
+    }
+
+    fn make_el(tag: &str, text: &str) -> DistilledElement {
+        DistilledElement {
+            tag: tag.into(),
+            text: text.into(),
+            attributes: std::collections::HashMap::new(),
+            role: None,
+            is_visible: true,
+            bounding_box: None,
+            children: vec![],
+        }
+    }
+
+    #[test]
+    fn test_no_change() {
+        let page = make_page("https://example.com", vec![make_el("div", "hello")]);
+        let differ = PageDiffer;
+        let output = differ.diff(&page, &page);
+        assert_eq!(output.summary, "no_change");
+        assert_eq!(output.visual_diff_pct, 0.0);
+    }
+
+    #[test]
+    fn test_navigation_detected() {
+        let a = make_page("https://a.com", vec![]);
+        let b = make_page("https://b.com", vec![]);
+        let differ = PageDiffer;
+        let output = differ.diff(&a, &b);
+        assert_eq!(output.summary, "navigation");
+        assert!(!output.is_same_page);
+    }
+
+    #[test]
+    fn test_added_element() {
+        let a = make_page("https://x.com", vec![make_el("div", "hello")]);
+        let b = make_page(
+            "https://x.com",
+            vec![make_el("div", "hello"), make_el("span", "world")],
+        );
+        let differ = PageDiffer;
+        let output = differ.diff(&a, &b);
+        assert_eq!(output.added.len(), 1);
+        assert!(output.visual_diff_pct > 0.0);
+    }
+
+    #[test]
+    fn test_removed_element() {
+        let a = make_page(
+            "https://x.com",
+            vec![make_el("div", "hello"), make_el("span", "world")],
+        );
+        let b = make_page("https://x.com", vec![make_el("div", "hello")]);
+        let differ = PageDiffer;
+        let output = differ.diff(&a, &b);
+        assert_eq!(output.removed.len(), 1);
+    }
+
+    #[test]
+    fn test_identity_label_stability() {
+        let el = make_el("button", "Click me");
+        let label = identity_label(&el);
+        assert!(label.contains("button"));
+        assert!(label.contains("Click me"));
+    }
+}

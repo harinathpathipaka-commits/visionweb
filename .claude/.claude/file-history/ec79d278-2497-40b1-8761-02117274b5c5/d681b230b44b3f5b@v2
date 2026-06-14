@@ -1,0 +1,193 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
+# Pre-built mapping from Stripe objects → canonical SaaS ontology variables.
+STRIPE_VARIABLE_MAP: Dict[str, Dict[str, str]] = {
+    "charges": {
+        "amount": "revenue",
+        "amount_refunded": "revenue",
+        "created": "timestamp",
+    },
+    "subscriptions": {
+        "plan.amount": "mrr",
+        "quantity": "customers",
+        "created": "timestamp",
+        "canceled_at": "timestamp",
+        "current_period_start": "timestamp",
+        "current_period_end": "timestamp",
+    },
+    "invoices": {
+        "amount_paid": "revenue",
+        "subtotal": "revenue",
+        "tax": "tax",
+        "created": "timestamp",
+        "period_start": "timestamp",
+        "period_end": "timestamp",
+    },
+    "customers": {
+        "created": "timestamp",
+        "delinquent": "status_flag",
+    },
+}
+
+
+@dataclass(frozen=True)
+class StripeConfig:
+    api_key: str
+    api_version: str = "2023-10-16"
+    max_retries: int = 3
+    page_size: int = 100
+
+
+class StripeConnector:
+    """Reads Stripe objects and maps them to Equation Layer ontology variables.
+
+    Requires the `stripe` Python package. Uses cursor-based pagination.
+    """
+
+    def __init__(self, config: StripeConfig):
+        self.config = config
+        self._client = None
+
+    def _get_client(self):
+        if self._client is None:
+            try:
+                import stripe
+                stripe.api_key = self.config.api_key
+                stripe.api_version = self.config.api_version
+                stripe.max_network_retries = self.config.max_retries
+                self._client = stripe
+            except ImportError:
+                raise RuntimeError("stripe package is required for Stripe integration")
+        return self._client
+
+    def fetch_charges(
+        self,
+        since: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        stripe = self._get_client()
+        params: Dict[str, Any] = {"limit": limit}
+        if since:
+            params["created"] = {"gte": self._to_unix(since)}
+        charges = stripe.Charge.list(**params)
+        return self._map_charges(charges.data)
+
+    def fetch_subscriptions(
+        self,
+        since: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        stripe = self._get_client()
+        params: Dict[str, Any] = {"limit": limit, "status": "all"}
+        if since:
+            params["created"] = {"gte": self._to_unix(since)}
+        subscriptions = stripe.Subscription.list(**params)
+        return self._map_subscriptions(subscriptions.data)
+
+    def fetch_invoices(
+        self,
+        since: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        stripe = self._get_client()
+        params: Dict[str, Any] = {"limit": limit}
+        if since:
+            params["created"] = {"gte": self._to_unix(since)}
+        invoices = stripe.Invoice.list(**params)
+        return self._map_invoices(invoices.data)
+
+    def fetch_all(
+        self,
+        since: Optional[str] = None,
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        return {
+            "charges": self.fetch_charges(since),
+            "subscriptions": self.fetch_subscriptions(since),
+            "invoices": self.fetch_invoices(since),
+        }
+
+    def compute_mrr(self, subscriptions: List[Dict[str, Any]]) -> float:
+        total = 0.0
+        for sub in subscriptions:
+            plan = sub.get("plan", {})
+            amount = float(plan.get("amount", 0))
+            interval = plan.get("interval", "month")
+            qty = int(sub.get("quantity", 1))
+            unit_amount = amount / 100.0  # Stripe amounts are in cents
+            if interval == "year":
+                unit_amount /= 12.0
+            elif interval == "week":
+                unit_amount *= 4.33
+            total += unit_amount * qty
+        return total
+
+    def compute_churn_rate(
+        self,
+        cancelled: int,
+        active_start: int,
+    ) -> float:
+        if active_start == 0:
+            return 0.0
+        return cancelled / active_start
+
+    @staticmethod
+    def _to_unix(iso_str: str) -> int:
+        from datetime import datetime, timezone
+        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+        return int(dt.timestamp())
+
+    @staticmethod
+    def _map_charges(charges: List[Any]) -> List[Dict[str, Any]]:
+        return [{
+            "variable": "revenue",
+            "value": c.amount / 100.0,
+            "unit": "USD",
+            "timestamp": StripeConnector._ts(c.created),
+            "entity_id": c.customer,
+        } for c in charges]
+
+    @staticmethod
+    def _map_subscriptions(subs: List[Any]) -> List[Dict[str, Any]]:
+        results: List[Dict[str, Any]] = []
+        for s in subs:
+            plan = s.plan if hasattr(s, "plan") else {}
+            amt = float(getattr(plan, "amount", 0)) / 100.0
+            interval = getattr(plan, "interval", "month")
+            if interval == "year":
+                amt /= 12
+            elif interval == "week":
+                amt *= 4.33
+
+            results.append({
+                "variable": "mrr",
+                "value": amt * int(getattr(s, "quantity", 1)),
+                "unit": "USD",
+                "timestamp": StripeConnector._ts(s.created),
+                "entity_id": s.customer,
+            })
+            results.append({
+                "variable": "customers",
+                "value": 1.0,
+                "unit": "count",
+                "timestamp": StripeConnector._ts(s.created),
+                "entity_id": s.customer,
+            })
+        return results
+
+    @staticmethod
+    def _map_invoices(invoices: List[Any]) -> List[Dict[str, Any]]:
+        return [{
+            "variable": "revenue",
+            "value": inv.amount_paid / 100.0,
+            "unit": "USD",
+            "timestamp": StripeConnector._ts(inv.created),
+            "entity_id": inv.customer,
+        } for inv in invoices]
+
+    @staticmethod
+    def _ts(unix: int) -> str:
+        from datetime import datetime, timezone
+        return datetime.fromtimestamp(unix, tz=timezone.utc).isoformat()

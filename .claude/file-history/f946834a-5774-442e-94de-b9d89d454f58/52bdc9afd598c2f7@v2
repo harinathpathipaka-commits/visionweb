@@ -1,0 +1,49 @@
+from __future__ import annotations
+
+import pytest
+from unittest.mock import MagicMock, AsyncMock, patch
+
+from src.metrics import metrics_middleware, metrics_endpoint, METRICS_ENABLED
+
+
+class TestMetricsMiddleware:
+    @pytest.mark.asyncio
+    async def test_disabled_passthrough(self):
+        with patch("src.metrics.METRICS_ENABLED", False):
+            request = MagicMock()
+            request.url.path = "/v1/solve"
+            call_next = AsyncMock(return_value=MagicMock(status_code=200))
+            response = await metrics_middleware(request, call_next)
+            call_next.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_skip_metrics_endpoint(self):
+        request = MagicMock()
+        request.url.path = "/metrics"
+        call_next = AsyncMock(return_value=MagicMock(status_code=200))
+        response = await metrics_middleware(request, call_next)
+        call_next.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_tracks_requests(self):
+        request = MagicMock()
+        request.url.path = "/v1/solve"
+        request.method = "POST"
+        call_next = AsyncMock(return_value=MagicMock(status_code=200))
+        response = await metrics_middleware(request, call_next)
+        assert response is not None
+
+
+class TestMetricsEndpoint:
+    @pytest.mark.asyncio
+    async def test_disabled_message(self):
+        with patch("src.metrics.METRICS_ENABLED", False):
+            resp = await metrics_endpoint()
+            assert "disabled" in resp.body.decode()
+
+    @pytest.mark.asyncio
+    async def test_no_prom_available(self):
+        with patch("src.metrics.METRICS_ENABLED", True):
+            with patch("src.metrics._PROM_AVAILABLE", False):
+                resp = await metrics_endpoint()
+                assert "not installed" in resp.body.decode()

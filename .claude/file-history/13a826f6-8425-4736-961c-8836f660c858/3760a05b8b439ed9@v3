@@ -1,0 +1,543 @@
+//! CDP WebSocket client implementing [`ans_core::BrowserBackend`].
+//!
+//! Architecture:
+//! ```text
+//! CdpBackend
+//!   ├── ChromiumProcess (owns child process)
+//!   └── CdpConnection
+//!         ├── write_tx: mpsc::Sender<String>  (outgoing commands)
+//!         ├── pending: Arc<Mutex<HashMap<id, oneshot::Sender>>>
+//!         └── reader task (spawned, reads WS messages)
+//! ```
+
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
+
+use ans_core::backend::{BrowserError, ImageFormat, PageState};
+use ans_core::distill::{DistillMode, DistilledPage};
+use ans_core::session::ActionOutcome;
+use async_trait::async_trait;
+use futures_util::{SinkExt, StreamExt};
+use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio_tungstenite::tungstenite::Message;
+use tracing;
+
+use crate::command::{self, CdpCommand, CdpError, CdpMessage};
+use crate::process::ChromiumProcess;
+
+// ── CdpConnection ────────────────────────────────────────────────────
+
+type PendingMap = Arc<Mutex<HashMap<i64, oneshot::Sender<Result<serde_json::Value, CdpError>>>>>;
+
+struct CdpConnection {
+    write_tx: mpsc::Sender<String>,
+    pending: PendingMap,
+}
+
+impl CdpConnection {
+    /// Establish a WebSocket connection and spawn the reader task.
+    async fn connect(debug_url: &str) -> Result<Self, BrowserError> {
+        let (ws, _) = tokio_tungstenite::connect_async(debug_url)
+            .await
+            .map_err(|e| BrowserError::ConnectionLost(e.to_string()))?;
+
+        let (mut write, read) = ws.split();
+        let (write_tx, mut write_rx) = mpsc::channel::<String>(256);
+        let pending: PendingMap = Arc::new(Mutex::new(HashMap::new()));
+
+        // Writer task: pumps messages from the mpsc channel to the WebSocket
+        let writer_pending = pending.clone();
+        tokio::spawn(async move {
+            while let Some(msg) = write_rx.recv().await {
+                if let Err(e) = write.send(Message::Text(msg)).await {
+                    let _ = writer_pending.lock().await;
+                    tracing::error!(?e, "CDP write failed");
+                    break;
+                }
+            }
+        });
+
+        // Reader task: reads WebSocket messages, dispatches responses to pending
+        // commands, and forwards events to the broadcast channel
+        let reader_pending = pending.clone();
+        tokio::spawn(async move {
+            let mut read = read;
+            while let Some(msg) = read.next().await {
+                match msg {
+                    Ok(Message::Text(text)) => {
+                        let text_str = text.to_string();
+                        if let Some(cdp_msg) = command::parse_message(&text_str) {
+                            match cdp_msg {
+                                CdpMessage::Response(resp) => {
+                                    let id = resp.id;
+                                    let result = resp.into_result();
+                                    let mut map = reader_pending.lock().await;
+                                    if let Some(tx) = map.remove(&id) {
+                                        let _ = tx.send(result);
+                                    }
+                                }
+                                CdpMessage::Event(event) => {
+                                    tracing::trace!(
+                                        method = %event.method,
+                                        "CDP event"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    Ok(Message::Close(_)) | Ok(Message::Ping(_) | Message::Pong(_)) => {}
+                    Err(e) => {
+                        tracing::error!(?e, "CDP WebSocket read error");
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            tracing::debug!("CDP reader task exiting");
+        });
+
+        Ok(Self { write_tx, pending })
+    }
+
+    /// Send a CDP command and await its response with a timeout.
+    async fn send_command(
+        &self,
+        cmd: CdpCommand,
+        timeout: Duration,
+    ) -> Result<serde_json::Value, BrowserError> {
+        let (tx, rx) = oneshot::channel();
+        let id = cmd.id;
+
+        self.pending.lock().await.insert(id, tx);
+        let json = cmd.to_json();
+
+        self.write_tx
+            .send(json)
+            .await
+            .map_err(|e| BrowserError::ConnectionLost(e.to_string()))?;
+
+        tokio::time::timeout(timeout, rx)
+            .await
+            .map_err(|_| BrowserError::NavigationTimeout(timeout))?
+            .map_err(|_| BrowserError::ConnectionLost("sender dropped".into()))?
+            .map_err(|e| BrowserError::CdpProtocol(e.to_string()))
+    }
+}
+
+// ── CdpBackend ───────────────────────────────────────────────────────
+
+/// CDP-backed browser implementation.
+///
+/// Owns the Chromium child process and the WebSocket connection.
+pub struct CdpBackend {
+    // Held for RAII cleanup: Chromium is killed on Drop.
+    _process: ChromiumProcess,
+    connection: CdpConnection,
+    // Current page state, updated after navigations.
+    current_url: Mutex<String>,
+}
+
+impl CdpBackend {
+    /// Launch a new Chromium instance and establish a CDP connection.
+    pub async fn launch() -> Result<Self, BrowserError> {
+        let process = ChromiumProcess::launch()
+            .await
+            .map_err(|e| BrowserError::Internal(e.into()))?;
+
+        let debug_url = process.debug_url().to_string();
+        let connection = CdpConnection::connect(&debug_url).await?;
+
+        // Enable domains we need
+        connection
+            .send_command(command::page_enable(), Duration::from_secs(10))
+            .await?;
+        connection
+            .send_command(command::dom_enable(), Duration::from_secs(10))
+            .await?;
+        connection
+            .send_command(command::runtime_enable(), Duration::from_secs(10))
+            .await?;
+
+        tracing::info!("CDP backend ready");
+
+        Ok(Self {
+            _process: process,
+            connection,
+            current_url: Mutex::new(String::new()),
+        })
+    }
+
+    /// Send a command and drop the response (fire-and-forget).
+    async fn send_ignore(&self, cmd: CdpCommand) {
+        let json = cmd.to_json();
+        let _ = self.connection.write_tx.send(json).await;
+    }
+}
+
+#[async_trait]
+impl ans_core::BrowserBackend for CdpBackend {
+    async fn navigate(&self, url: &str, timeout: Duration) -> Result<PageState, BrowserError> {
+        tracing::info!(%url, "Navigating");
+
+        let cmd = command::page_navigate(url);
+        let result = self.connection.send_command(cmd, timeout).await?;
+        let _nav = command::parse_navigation_result(&result);
+
+        // Wait briefly for the page to start loading, then get frame tree
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        let frame_tree = self
+            .connection
+            .send_command(command::page_get_frame_tree(), timeout)
+            .await?;
+        let tree = command::parse_frame_tree(&frame_tree);
+        let info = command::parse_page_info(&tree);
+
+        // Try to get title via JS
+        let title = self
+            .connection
+            .send_command(
+                command::runtime_evaluate("document.title"),
+                Duration::from_secs(5),
+            )
+            .await
+            .ok()
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or_else(|| info.title.clone());
+
+        let dom_nodes = self
+            .connection
+            .send_command(
+                command::runtime_evaluate("document.querySelectorAll('*').length"),
+                Duration::from_secs(5),
+            )
+            .await
+            .ok()
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+
+        let visible_text = self
+            .connection
+            .send_command(
+                command::runtime_evaluate("document.body?.innerText?.slice(0, 2000) || ''"),
+                Duration::from_secs(5),
+            )
+            .await
+            .ok()
+            .and_then(|v| {
+                v.as_str().map(|s| {
+                    s.lines()
+                        .filter(|l| !l.trim().is_empty())
+                        .map(String::from)
+                        .take(50)
+                        .collect::<Vec<_>>()
+                })
+            })
+            .unwrap_or_default();
+
+        *self.current_url.lock().await = info.url.clone();
+
+        Ok(PageState {
+            url: info.url,
+            title,
+            loaded: info.loaded,
+            dom_node_count: dom_nodes,
+            visible_text,
+            timestamp: chrono::Utc::now(),
+        })
+    }
+
+    async fn get_distilled_dom(&self, mode: DistillMode) -> Result<DistilledPage, BrowserError> {
+        let doc_result = self
+            .connection
+            .send_command(command::dom_get_document(-1), Duration::from_secs(10))
+            .await?;
+
+        let title = self
+            .connection
+            .send_command(
+                command::runtime_evaluate("document.title"),
+                Duration::from_secs(3),
+            )
+            .await
+            .ok()
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or_default();
+
+        let url = self.current_url.lock().await.clone();
+        let distiller = ans_distill::Distiller;
+        Ok(distiller.process(&doc_result, mode, &url, &title))
+    }
+
+    async fn capture_screenshot(
+        &self,
+        format: ImageFormat,
+        full_page: bool,
+    ) -> Result<Vec<u8>, BrowserError> {
+        let (fmt_str, quality) = match format {
+            ImageFormat::Png => ("png", None),
+            ImageFormat::Jpeg { quality } => ("jpeg", Some(quality)),
+        };
+
+        let mut params = serde_json::json!({ "format": fmt_str });
+        if let Some(q) = quality {
+            params["quality"] = serde_json::json!(q);
+        }
+        if full_page {
+            params["captureBeyondViewport"] = serde_json::json!(true);
+        }
+
+        let cmd = CdpCommand::new("Page.captureScreenshot", params);
+        let result = self
+            .connection
+            .send_command(cmd, Duration::from_secs(15))
+            .await?;
+
+        command::parse_screenshot_result(&result)
+            .map_err(|e| BrowserError::CdpProtocol(e.to_string()))
+    }
+
+    async fn click(&self, selector: &str) -> Result<ActionOutcome, BrowserError> {
+        let start = std::time::Instant::now();
+
+        // 1. Get document root
+        let doc_result = self
+            .connection
+            .send_command(command::dom_get_document(0), Duration::from_secs(5))
+            .await?;
+        let root_id = command::parse_dom_node_id(&doc_result)
+            .map_err(|e| BrowserError::CdpProtocol(e.to_string()))?;
+
+        // 2. Query selector
+        let qs_result = self
+            .connection
+            .send_command(
+                command::dom_query_selector(root_id, selector),
+                Duration::from_secs(5),
+            )
+            .await
+            .map_err(|e| {
+                if matches!(e, BrowserError::CdpProtocol(_)) {
+                    BrowserError::SelectorNotFound(selector.to_string())
+                } else {
+                    e
+                }
+            })?;
+
+        let node_id = command::parse_query_selector_result(&qs_result)
+            .map_err(|_| BrowserError::SelectorNotFound(selector.to_string()))?;
+
+        // 3. Get box model for coordinates
+        let box_result = self
+            .connection
+            .send_command(command::dom_get_box_model(node_id), Duration::from_secs(5))
+            .await?;
+        let box_model = command::parse_box_model(&box_result)
+            .map_err(|_| BrowserError::NotInteractable(selector.to_string()))?;
+
+        let center_x = box_model.x + box_model.width / 2.0;
+        let center_y = box_model.y + box_model.height / 2.0;
+
+        // 4. Scroll element into view
+        let _ = self
+            .connection
+            .send_command(
+                command::dom_scroll_into_view(node_id),
+                Duration::from_secs(5),
+            )
+            .await;
+
+        // Brief delay for scroll animation
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // 5. Dispatch mouse events
+        self.send_ignore(command::input_dispatch_mouse_event(
+            "mousePressed",
+            center_x,
+            center_y,
+            "left",
+        ))
+        .await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        self.send_ignore(command::input_dispatch_mouse_event(
+            "mouseReleased",
+            center_x,
+            center_y,
+            "left",
+        ))
+        .await;
+
+        let elapsed = start.elapsed();
+
+        Ok(ActionOutcome {
+            success: true,
+            error_message: None,
+            execution_time_ms: elapsed.as_millis() as u64,
+            page_url_after: Some(self.current_url.lock().await.clone()),
+            dom_changed: true,
+        })
+    }
+
+    async fn type_text(&self, selector: &str, text: &str) -> Result<ActionOutcome, BrowserError> {
+        let start = std::time::Instant::now();
+
+        // Click the element first to focus it
+        let _ = self.click(selector).await;
+
+        // Insert text
+        self.send_ignore(command::input_insert_text(text)).await;
+
+        let elapsed = start.elapsed();
+
+        Ok(ActionOutcome {
+            success: true,
+            error_message: None,
+            execution_time_ms: elapsed.as_millis() as u64,
+            page_url_after: Some(self.current_url.lock().await.clone()),
+            dom_changed: true,
+        })
+    }
+
+    async fn select_option(
+        &self,
+        selector: &str,
+        value: &str,
+    ) -> Result<ActionOutcome, BrowserError> {
+        let start = std::time::Instant::now();
+
+        // Use JS to set the select value and dispatch a change event
+        let script = format!(
+            r#"
+            (function() {{
+                var el = document.querySelector('{}');
+                if (!el) return 'selector not found';
+                el.value = '{}';
+                el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                return 'ok';
+            }})()
+            "#,
+            escape_js_string(selector),
+            escape_js_string(value),
+        );
+
+        let cmd = command::runtime_evaluate(&script);
+        let result = self
+            .connection
+            .send_command(cmd, Duration::from_secs(5))
+            .await?;
+        let eval_result = command::parse_evaluate_result(&result)
+            .map_err(|e| BrowserError::CdpProtocol(e.to_string()))?;
+
+        let success = eval_result.as_str() == Some("ok");
+        let elapsed = start.elapsed();
+
+        Ok(ActionOutcome {
+            success,
+            error_message: if success {
+                None
+            } else {
+                eval_result.as_str().map(String::from)
+            },
+            execution_time_ms: elapsed.as_millis() as u64,
+            page_url_after: Some(self.current_url.lock().await.clone()),
+            dom_changed: true,
+        })
+    }
+
+    async fn scroll(
+        &self,
+        pixels: Option<i32>,
+        selector: Option<&str>,
+    ) -> Result<ActionOutcome, BrowserError> {
+        let start = std::time::Instant::now();
+
+        let script = if let Some(sel) = selector {
+            format!(
+                "document.querySelector('{}')?.scrollIntoView({{ behavior: 'instant', block: 'center' }});",
+                escape_js_string(sel)
+            )
+        } else if let Some(px) = pixels {
+            format!("window.scrollBy(0, {});", px)
+        } else {
+            "window.scrollBy(0, 300);".to_string()
+        };
+
+        let cmd = command::runtime_evaluate(&script);
+        let _ = self
+            .connection
+            .send_command(cmd, Duration::from_secs(5))
+            .await;
+
+        let elapsed = start.elapsed();
+
+        Ok(ActionOutcome {
+            success: true,
+            error_message: None,
+            execution_time_ms: elapsed.as_millis() as u64,
+            page_url_after: Some(self.current_url.lock().await.clone()),
+            dom_changed: false,
+        })
+    }
+
+    async fn wait_for_load(&self, timeout: Duration) -> Result<PageState, BrowserError> {
+        // Poll document.readyState until complete or timeout
+        let start = std::time::Instant::now();
+        loop {
+            let cmd = command::runtime_evaluate("document.readyState");
+            if let Ok(result) = self
+                .connection
+                .send_command(cmd, Duration::from_secs(3))
+                .await
+            {
+                if let Ok(val) = command::parse_evaluate_result(&result) {
+                    if val.as_str() == Some("complete") {
+                        break;
+                    }
+                }
+            }
+
+            if start.elapsed() > timeout {
+                return Err(BrowserError::NavigationTimeout(timeout));
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+
+        let current_url = self.current_url.lock().await.clone();
+        Ok(PageState {
+            url: current_url,
+            title: String::new(),
+            loaded: true,
+            dom_node_count: 0,
+            visible_text: vec![],
+            timestamp: chrono::Utc::now(),
+        })
+    }
+
+    async fn execute_script(&self, script: &str) -> Result<String, BrowserError> {
+        let cmd = command::runtime_evaluate(script);
+        let result = self
+            .connection
+            .send_command(cmd, Duration::from_secs(10))
+            .await?;
+        let val = command::parse_evaluate_result(&result)
+            .map_err(|e| BrowserError::CdpProtocol(e.to_string()))?;
+        Ok(val.to_string())
+    }
+
+    async fn close(&self) -> Result<(), BrowserError> {
+        tracing::info!("Closing CDP backend");
+        // The Chromium process is killed on drop, but we also close
+        // the WebSocket gracefully by dropping the sender.
+        // Process cleanup happens in ChromiumProcess::drop.
+        Ok(())
+    }
+}
+
+/// Escape a string for safe embedding in a JavaScript string literal.
+fn escape_js_string(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('\'', "\\'")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+}

@@ -1,0 +1,409 @@
+# Equation Layer — Product Documentation
+
+## Overview
+
+**Equation Layer** is a quantitative reasoning API for AI agents. It accepts natural-language queries and numeric data, fits mathematical relationships, and returns structured results with uncertainty quantification. The system discovers, stores, and validates equations across domains (finance, SaaS, e-commerce, general), building a persistent library that grows with usage.
+
+### Key capabilities
+
+- Natural-language query parsing with domain-aware variable extraction
+- Canonical equation fitting (linear, power, exponential, logarithmic, logistic, polynomial) + PySR symbolic regression
+- Library-based lookup with automatic drift detection and re-fitting
+- Probabilistic uncertainty quantification via Laplace approximation
+- Multi-stage gating with fallback routing for degraded results
+- CSV/Excel ingestion with automatic schema mapping
+- Structured audit ledger for every solve trace
+- Metrics, health checks, rate limiting, and API-key authentication
+
+---
+
+## Architecture
+
+### 7-Layer Pipeline
+
+Every `POST /v1/solve` request flows through seven sequential layers:
+
+```
+Domain Router → Epistemic Parser → Correlation/Drift → Library Lookup/Fit → Compute → Probabilistic → Gate → Fallback Router
+```
+
+| Layer | Module | Responsibility |
+|-------|--------|---------------|
+| **L0** | `domain_router.py` | Classifies the query into a domain (`finance.saas.smb`, `finance.ecommerce`, `general`) via keyword and regex pattern matching |
+| **L1** | `epistemic_parser.py` | Extracts variables, units, and assumptions from the natural-language query; resolves variables against the domain ontology |
+| **L2** | `correlation.py` | Computes Pearson and Spearman correlation; detects structural drift between historical and current data windows |
+| **L3** | `pipeline.py` + `storage.py` | Looks up the variable pair in the equation library; if missing or drift detected, fits all canonical families + runs PySR symbolic regression, then selects best by AIC |
+| **L4** | `compute.py` | Evaluates the fitted equation at the input point using SymPy; computes first and second derivatives, curvature, and elasticity |
+| **L5** | `probabilistic.py` | Runs Laplace approximation (multivariate normal sampling around fitted parameters) to produce credible intervals, standard deviation, and tail risk |
+| **L6** | `gating.py` | Four-stage gate: minimum observations (≥15), adjusted R² (≥0.6), holdout MAPE (≤20%), and residual randomness (Shapiro-Wilk + Durbin-Watson) |
+| **L7** | `fallback_router.py` | When the gate fails, routes to the appropriate degraded-mode action: data collection plan, human review queue, structural change alert, conflict resolution, or no-relationship flag |
+
+### API Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/metrics` | Prometheus-compatible metrics endpoint (requests, duration, in-flight) |
+| `GET` | `/v1/health` | Health check with component status (cache, queue, DB, equation library size) |
+| `POST` | `/v1/solve` | Main endpoint: accepts query + numeric arrays, returns fitted equation with uncertainty |
+| `POST` | `/v1/ingest` | CSV/Excel file upload with automatic column profiling and schema mapping |
+| `GET` | `/v1/equations/{id}` | Retrieve a stored equation by ID with stats and drift status |
+| `GET` | `/v1/equations/{id}/versions` | List all version history for an equation |
+| `GET` | `/v1/ledger/{trace_id}` | Retrieve the full epistemic audit trail for a solve trace |
+
+### Database Schema
+
+SQLite with WAL mode, 64MB mmap, 8MB cache, thread-local connections with retry logic. Eight tables:
+
+| Table | Purpose |
+|-------|---------|
+| `equation_library` | Canonical equation registry with active version, drift/confidence status |
+| `equation_versions` | Immutable version history with shadow deployment status |
+| `equation_shadow_evals` | Per-version evaluation records (MAPE, AIC, gate pass/fail) |
+| `equation_conflicts` | Tracks contradictory equations for the same variable pair |
+| `ingestion_files` | Uploaded file registry with checksums |
+| `ingestion_profiles` | Column type inference and sample values per upload |
+| `ingestion_mappings` | Column-to-variable schema mappings |
+| `ingestion_quality_issues` | Row-level data quality issues from ingestion |
+| `observation_ledger` | Time-series observation store with provenance |
+| `ingestion_jobs` | Ingestion run metadata (rows, observations created, issues) |
+| `epistemic_ledger` | Append-only audit trail for every solve trace event |
+
+---
+
+## Module Reference
+
+### Auth (`auth.py`)
+
+API-key authentication via `X-API-Key` header. Keys are loaded from the `EL_API_KEYS` environment variable (format: `key1:name1,key2:name2`). Uses constant-time comparison via `hmac.compare_digest`. When no keys are configured, all requests pass through unauthenticated. Applies to all `/v1/*` paths except `/v1/health`.
+
+### Rate Limiting (`rate_limit.py`)
+
+Token-bucket algorithm with configurable rate and window via `EL_RATE_LIMIT_REQUESTS` (default 120) and `EL_RATE_LIMIT_WINDOW_SEC` (default 60). Per-client tracking by IP or API client name. Includes periodic stale bucket cleanup (entries older than 2× window). The bucket is a module-level singleton; a `reset()` method exists for operational use.
+
+### Caching (`cache.py`)
+
+Valkey/Redis integration (`ValkeyCache` for key-value storage, `ValkeyQueue` for task queuing). Both classes fall back gracefully to in-memory storage when Valkey is unavailable, ensuring the system operates in degraded mode without crashing.
+
+### Database (`db.py`)
+
+Thread-local SQLite connections with WAL journal mode, NORMAL synchronous, 5-second busy timeout, foreign keys enforced, 8MB page cache, and 64MB memory-mapped I/O. The `transaction()` context manager provides retry logic (3 attempts with exponential backoff) for locked-database scenarios. A `readonly` mode sets `query_only=ON` for read operations.
+
+### Domain Router (`domain_router.py`)
+
+Classifies natural-language queries into domains using two strategies:
+1. **Regex pattern matching** — fast, high-precision patterns for domain-specific acronyms (`mrr`, `arr`, `gmv`, `aov`)
+2. **Keyword matching** — broader keyword lists for each domain
+
+Falls back to `"general"` when no domain matches. Ontologies are JSON files in `src/ontologies/` containing variable definitions, aliases, units, constraints, and common relationships. Domain ontologies are merged with `general.json` so all domains inherit base variable definitions.
+
+### Fitting (`fitting.py`)
+
+Fits six canonical equation families using SciPy's `least_squares` with the Trust Region Reflective algorithm and soft L1 loss:
+
+| Family | Form | Parameters |
+|--------|------|------------|
+| Linear | `y = a*x + b` | a, b |
+| Power | `y = a*x**b` | a, b |
+| Exponential | `y = a*exp(b*x)` | a, b |
+| Logarithmic | `y = a*ln(x) + b` | a, b |
+| Logistic | `y = L / (1 + exp(-k*(x - x0)))` | L, k, x0 |
+| Polynomial | `y = a + b*x + c*x**2` | a, b, c |
+
+Each family gets a sensible initial parameter guess (e.g., log-space linear fit for power/exponential). Data is split 80/20 train/holdout (random by default, temporal optional). Stats computed: adjusted R², holdout MAPE, AIC, and residual randomness (Durbin-Watson for autocorrelation + Shapiro-Wilk for normality). The `choose_best()` function selects the candidate with the lowest AIC.
+
+### PySR Discovery (`pysr_discovery.py`)
+
+Runs PySR symbolic regression as a complementary discovery path alongside canonical families. Handles the case where PySR is not installed by returning a fallback linear model. The best PySR equation competes with canonical candidates in the AIC-based selection.
+
+### Compute (`compute.py`)
+
+Evaluates the fitted equation at the query point using SymPy. Builds a symbolic expression, substitutes fitted parameter values, and computes:
+- **Answer**: `f(x)` at the query point
+- **First derivative**: `dY/dX` (rate of change)
+- **Second derivative**: `d²Y/dX²` (curvature)
+- **Elasticity**: `(dY/dX) * (x / y)` (percent change in Y per percent change in X)
+
+### Probabilistic (`probabilistic.py`)
+
+Two uncertainty quantification methods:
+
+**Laplace Approximation** — samples 10,000 draws from a multivariate normal distribution centered at the fitted parameters, maps each through the equation, and computes mean, standard deviation, and 95% credible interval from the empirical distribution. Handles NaN/overflow gracefully by filtering invalid samples.
+
+**Bayesian Model Averaging** — weights multiple candidate equations by their AIC-derived posterior probability and combines their predictions into a single weighted distribution.
+
+### Gating (`gating.py`)
+
+Four sequential checks that an equation must pass. If any check fails, the result is flagged and routed to fallback:
+
+1. **Minimum observations**: `n_obs >= 15`
+2. **Adjusted R²**: `r2_adj >= 0.6`
+3. **Holdout MAPE**: `holdout_mape <= 20%`
+4. **Residual randomness**: Shapiro-Wilk p > 0.05 AND Durbin-Watson between 1.5 and 2.5
+
+### Fallback Router (`fallback_router.py`)
+
+Maps failure modes to actionable guidance with suggested next steps:
+
+| Failure Mode | Action |
+|-------------|--------|
+| Drift detected | Structural change alert — suggest regime-change analysis |
+| Conflict exists | Conflict resolution workflow — queue for expert review |
+| Correlation too weak | No detectable relationship — suggest causal verification |
+| Insufficient observations | Data collection plan with required sample count |
+| Low R² / High MAPE | Human review queue with best-candidate stats |
+| Non-random residuals | Structural break flag — suggest transformation or missing variables |
+
+### Formatter (`formatter.py`)
+
+Produces human-readable prose from structured results. Two modes:
+- **Template mode** (default): rule-based prose generation from equation stats
+- **LLM mode**: delegates to a language model (Claude Haiku) for natural-language output, with template fallback on failure
+
+### Ingestion (`ingestion.py`)
+
+CSV/Excel ingestion pipeline:
+
+1. **Delimiter detection** — tests `,`, `\t`, `;`, `|` for consistency across header and data rows
+2. **Column profiling** — infers type (`number`, `date`, `string`) from sample values, computes null and uniqueness ratios
+3. **Number parsing** — handles percentages (`12.5%` → `0.125`), currency (`$1,234`), K/M/B/T suffixes (`2.3M`), and comma-formatted numbers
+4. **Date parsing** — 13 common formats including ISO 8601
+5. **Observation building** — applies schema mappings, collects valid observations and quality issues
+6. **Deduplication** — removes duplicate observations by `(variable, timestamp, entity_id)`
+
+Excel support uses `openpyxl` with automatic sheet detection.
+
+### Metrics (`metrics.py`)
+
+Prometheus-compatible metrics via `prometheus_client`:
+- `http_requests_in_flight` — gauge, active concurrent requests
+- `http_requests_total` — counter, labeled by method/path/status
+- `http_request_duration_seconds` — histogram, labeled by method/path
+
+Exposed at `GET /metrics` and excluded from the auth/rate-limit middleware.
+
+---
+
+## Configuration
+
+All configuration via environment variables:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `EL_DB_PATH` | `.el_data.db` | SQLite database file path |
+| `EL_API_KEYS` | (empty) | API keys: `key1:name1,key2:name2` |
+| `EL_RATE_LIMIT_REQUESTS` | `120` | Max requests per window |
+| `EL_RATE_LIMIT_WINDOW_SEC` | `60` | Rate-limit window in seconds |
+| `EL_MAX_ARRAY_LENGTH` | `100000` | Max values per input array |
+| `EL_MAX_UPLOAD_BYTES` | `50000000` | Max CSV upload size (50MB) |
+| `EL_MAX_QUERY_LENGTH` | `4000` | Max query string length |
+
+Internal thresholds (in `config.py`):
+- `min_obs`: 15
+- `min_r2_adj`: 0.6
+- `max_holdout_mape`: 20.0
+- `min_correlation`: 0.1
+- `drift_threshold`: 0.2
+- `laplace_samples`: 10000
+
+---
+
+## Testing
+
+### Test Suite Structure
+
+386 tests across 25 files, organized by layer and dimension:
+
+**Unit Tests (per module):**
+| File | Tests | Layer |
+|------|-------|-------|
+| `test_api.py` | ~40 | API endpoints, request validation, error handling |
+| `test_pipeline.py` | ~20 | Full pipeline orchestration, edge cases |
+| `test_fitting.py` | ~25 | Canonical family fitting, stats computation |
+| `test_compute.py` | ~15 | SymPy evaluation, derivatives |
+| `test_probabilistic.py` | ~15 | Laplace approximation, BMA |
+| `test_gate.py` | ~10 | Four-stage gate logic |
+| `test_fallback.py` | ~15 | Fallback routing per failure mode |
+| `test_parser.py` | ~25 | Natural-language variable extraction |
+| `test_correlation.py` | ~15 | Pearson, Spearman, drift detection |
+| `test_ingestion.py` | ~25 | CSV parsing, profiling, observation building |
+| `test_auth.py` | ~10 | API key authentication |
+| `test_rate_limit.py` | ~15 | Token bucket, rate limiting |
+| `test_db.py` | ~10 | Connection management, retries |
+| `test_metrics.py` | ~5 | Metrics endpoint |
+| `test_logging.py` | ~5 | Correlation IDs, structured logging |
+| `test_auto_mapper.py` | ~10 | Automatic column-to-variable mapping |
+| `test_temporal.py` | ~10 | Time-series handling, temporal split |
+| `test_connectors.py` | ~5 | Data connector interfaces |
+| `test_equation_graph.py` | ~10 | Graph-based equation relationships |
+
+**Multi-Dimensional Test Suites:**
+
+**D1 — Adversarial** (`test_d1_adversarial.py`, 46 tests): Malformed inputs, edge cases, and attack surfaces.
+- NaN/Inf in all float fields
+- Zero-variance inputs (all zeros, constant values)
+- Extreme values (underflow/overflow ranges)
+- Mismatched array lengths
+- Empty and whitespace-only queries
+- Special characters, SQL injection patterns in queries
+- Missing required fields
+- Malformed JSON bodies
+- CSV upload edge cases (binary data, empty files, non-CSV content types)
+- Varying column widths in CSV (ragged rows)
+- Unicode/binary content in uploads
+
+**D2 — Statistical** (`test_d2_statistical.py`): Statistical correctness of the fitting and probabilistic layers.
+- Known relationships (perfect linear, power, exponential, logarithmic, logistic, polynomial)
+- Noisy data recovery with controlled SNR
+- Holdout split consistency
+- R² and adjusted R² computation
+- AIC ordering correctness
+- MAPE computation on holdout sets
+- Residual diagnostics (Durbin-Watson, Shapiro-Wilk)
+- Correlation coefficient accuracy
+- Drift detection sensitivity/specificity
+
+**D3 — Reliability** (`test_d3_reliability.py`): System behavior under stress and edge conditions.
+- Concurrent request handling
+- Large input arrays (near MAX_ARRAY_LENGTH)
+- Repeated idempotent solve requests
+- Rapid sequential requests
+- Database connection exhaustion
+- Memory usage stability
+
+**D4 — Integrity** (`test_d4_integrity.py`): Data integrity and audit trail.
+- Epistemic ledger completeness per trace
+- Equation version history immutability
+- Ingestion deduplication correctness
+- Database schema integrity
+- Foreign key relationships
+- Ingestion quality issue tracking
+
+**D5 — Integration** (`test_d5_integration.py`, 75 tests): End-to-end workflows.
+- Full solve pipeline from query to answer
+- Historical comparison with drift detection
+- Library hit (cached equation reuse)
+- Library miss (fresh fitting)
+- CSV ingestion → observation creation → solve
+- Excel ingestion
+- Equation versioning across multiple fits
+- Health endpoint with all components
+- Metrics endpoint
+- Rate limiting behavior
+- Auth required/rejected flows
+- Ledger retrieval
+- Error response formats and content types
+
+---
+
+## Production Bugs Fixed
+
+Five product-grade bugs were discovered during adversarial testing and fixed:
+
+### Bug 1: NaN/Inf accepted as valid input
+**Root cause**: Pydantic v2's `float` type accepts IEEE 754 NaN and Inf as valid floats. There was no validator rejecting non-finite values.
+**Fix**: Added `_reject_non_finite` model validator to `SolveRequest` that checks `x_values`, `y_values`, `x_historical`, and `y_historical` with `math.isfinite()`, returning 422 for any non-finite entry.
+**Files**: `src/api.py`
+
+### Bug 2: Zero-variance inputs cause fitting failures
+**Root cause**: When all x-values or all y-values are identical, the variance is zero. `polyfit` and `least_squares` fail with divide-by-zero or singular matrix errors, producing a 500.
+**Fix**: Pre-fitting validation in `solve_endpoint` checks for unique value counts. If `len(set(x_values)) == 1` or `len(set(y_values)) == 1`, returns 422 with a clear message.
+**Files**: `src/api.py`
+
+### Bug 3: Ragged CSV rows cause TypeError in ingestion
+**Root cause**: Python's `csv.DictReader` sets `restval=None`. When a row has fewer columns than the header, `row.get(col_name)` returns `None` (not `""`). The code then called `raw[:50]` on `None`, crashing.
+**Fix**: Added explicit `None` check in `build_observations()` before the `raw[:50]` slice, recording a `missing_column` quality issue instead.
+**Files**: `src/ingestion.py`
+
+### Bug 4: Rate limiter has no reset mechanism
+**Root cause**: `TokenBucket` is a module-level singleton with no public method to clear state. This makes testing and operational recovery impossible — once a bucket is exhausted, you must wait for the window to expire.
+**Fix**: Added `reset()` method that clears `self._buckets` under the lock.
+**Files**: `src/rate_limit.py`
+
+### Bug 5: Extreme-range values cause numerical underflow/overflow
+**Root cause**: Values with range < ~1e-150 result in squared values that underflow IEEE 754 float64 to zero (e.g., `(1e-200)² = 1e-400 ≈ 0`). Values > 1e250 cause overflow to Inf. Both cause silent failures or incorrect results in the fitting layer.
+**Fix**: Pre-fitting validation computes the peak-to-peak range via `numpy.ptp()` and rejects ranges below `1e-150` or above `1e250`.
+**Files**: `src/api.py`
+
+### Cascading Fix: NaN in 422 error responses
+When Bug 1 was fixed (rejecting NaN inputs), FastAPI's default `JSONResponse` crashed trying to serialize the NaN value in the 422 error's `input` field, because `json.dumps` rejects non-finite floats. A custom `RequestValidationError` exception handler was added with `_sanitize_special_floats()` that recursively replaces NaN/Inf and non-serializable objects (like `ValueError` instances in `ctx`) before serialization.
+**Files**: `src/api.py`
+
+---
+
+## Data Flow
+
+### Solve Request Flow
+
+```
+POST /v1/solve
+  → Authenticate (X-API-Key header)
+  → Rate limit (token bucket)
+  → Validate (Pydantic + non-finite rejection + variance/range checks)
+  → Route domain (keyword/regex match)
+  → Parse query (extract variables, resolve ontology)
+  → Correlation analysis (Pearson r, drift detection)
+  → Library lookup (var_hash + domain)
+     ├─ Hit + no drift → reuse stored equation
+     ├─ Hit + drift    → re-fit and store new version
+     └─ Miss           → fit all families + PySR, store new equation
+  → Compute (SymPy evaluation at x_value)
+  → Probabilistic (Laplace approximation, 10K samples)
+  → Gate (4 checks: n, R², MAPE, residuals)
+  → Fallback routing (if gate failed or drift/correlation issues)
+  → Format prose (template or LLM)
+  → Log to epistemic ledger
+  → Return SolveResponse
+```
+
+### Ingestion Flow
+
+```
+POST /v1/ingest (multipart CSV/Excel)
+  → Validate content type and size
+  → Upload and checksum file
+  → Auto-map columns to variables
+  → Detect delimiter (CSV) / open sheet (Excel)
+  → Profile columns (type inference, null/unique stats)
+  → Build observations (parse numbers/dates, apply mappings)
+  → Log quality issues
+  → Save observations to ledger
+  → Deduplicate (variable + timestamp + entity_id)
+  → Enqueue for background processing
+  → Return IngestionResponse
+```
+
+---
+
+## Operational Notes
+
+### Startup
+```bash
+# Set required environment
+export EL_DB_PATH=/data/el.db
+export EL_API_KEYS="key1:service-a,key2:service-b"
+
+# Optional tuning
+export EL_RATE_LIMIT_REQUESTS=300
+export EL_MAX_UPLOAD_BYTES=100000000
+
+# Run
+uvicorn src.api:app --host 0.0.0.0 --port 8000
+```
+
+### Health Check
+```
+GET /v1/health → {"status": "healthy", "components": {"cache": "available", "queue": "available", "db": "available", "equations": "42"}, ...}
+```
+
+### Monitoring
+- `GET /metrics` — Prometheus scrape endpoint
+- Structured JSON logs with correlation IDs on every request
+- Epistemic ledger provides per-trace audit trail
+
+### Rate Limiting
+- Default: 120 requests per 60 seconds per client
+- Returns 429 with `Retry-After` header on exhaustion
+- Clients identified by `X-Forwarded-For` header or direct IP
+
+### Error Response Format
+All error responses return JSON with a `detail` field. Validation errors (422) include structured Pydantic error objects. Non-finite floats and non-serializable objects in error payloads are sanitized to prevent JSON encoding crashes.

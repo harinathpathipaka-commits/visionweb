@@ -1,0 +1,8 @@
+{
+  "id": "9",
+  "subject": "Phase 10-11: Valkey Cache + FastAPI + Worker",
+  "description": "Build cache.py (Valkey/Redis), api.py (FastAPI with all endpoints), worker.py (background queue processor).",
+  "status": "completed",
+  "blocks": [],
+  "blockedBy": []
+}

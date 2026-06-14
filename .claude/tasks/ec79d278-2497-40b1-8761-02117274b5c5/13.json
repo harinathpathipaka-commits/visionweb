@@ -1,0 +1,9 @@
+{
+  "id": "13",
+  "subject": "Phase 4: Rewrite pipeline.py and domain_router.py",
+  "description": "Rewrite pipeline.py to wire all real components through the 7-layer flow. Rewrite domain_router.py with ontology loading. Create src/ontologies/ directory with JSON files.",
+  "activeForm": "Rewriting pipeline and domain router",
+  "status": "completed",
+  "blocks": [],
+  "blockedBy": []
+}

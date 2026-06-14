@@ -1,0 +1,30 @@
+[package]
+name = "ans-bench"
+version.workspace = true
+edition.workspace = true
+description = "Performance benchmarks for the Agent Nervous System"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+ans-proto.workspace = true
+ans-core.workspace = true
+ans-distill = { path = "../ans-distill" }
+ans-diff = { path = "../ans-diff" }
+ans-immune = { path = "../ans-immune" }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "throughput"
+harness = false
+
+[[bench]]
+name = "concurrent"
+harness = false
+
+[lints]
+workspace = true

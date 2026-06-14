@@ -1,0 +1,78 @@
+//! WebSocket server for streaming events to external agents.
+//!
+//! Agents connect at `GET /ws` and receive real-time JSON events:
+//! goal progress updates, eye reports, and alerts.
+//!
+//! Upgrade from HTTP to WebSocket, then push events as they happen.
+
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::response::IntoResponse;
+use futures_util::{SinkExt, StreamExt};
+use serde_json::json;
+use tokio::sync::broadcast;
+
+use crate::client::InternalClient;
+
+/// WebSocket server state.
+#[derive(Clone)]
+pub struct WebSocketServer {
+    client: InternalClient,
+    /// Local event bus for forwarding to WS clients.
+    event_tx: broadcast::Sender<String>,
+}
+
+impl WebSocketServer {
+    pub fn new(client: InternalClient) -> Self {
+        let (event_tx, _) = broadcast::channel(256);
+        Self { client, event_tx }
+    }
+
+    /// Subscribe to internal events. Used by the daemon to push events
+    /// to the WebSocket layer.
+    pub fn event_sender(&self) -> broadcast::Sender<String> {
+        self.event_tx.clone()
+    }
+
+    /// Handle a WebSocket upgrade request. Called by the axum router.
+    pub async fn handle_upgrade(&self, ws: WebSocketUpgrade) -> impl IntoResponse {
+        let event_rx = self.event_tx.subscribe();
+        ws.on_upgrade(move |socket| handle_socket(socket, event_rx))
+    }
+}
+
+/// Run the WebSocket event loop.
+async fn handle_socket(socket: WebSocket, rx: broadcast::Receiver<String>) {
+    let (mut sender, mut receiver) = socket.split();
+
+    // Send a welcome message
+    let welcome = json!({
+        "type": "connected",
+        "message": "Connected to Agent Nervous System gateway",
+        "version": env!("CARGO_PKG_VERSION")
+    });
+    let _ = sender.send(Message::Text(welcome.to_string())).await;
+
+    // Spawn event forwarding from broadcast → WebSocket
+    let mut event_rx = rx;
+    let send_handle = tokio::spawn(async move {
+        while let Ok(event) = event_rx.recv().await {
+            if sender.send(Message::Text(event)).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    // Process incoming messages (keepalive pings)
+    while let Some(Ok(msg)) = receiver.next().await {
+        match msg {
+            Message::Ping(data) => {
+                // Pong handled automatically by axum
+                let _ = data;
+            }
+            Message::Close(_) => break,
+            _ => {}
+        }
+    }
+
+    send_handle.abort();
+}

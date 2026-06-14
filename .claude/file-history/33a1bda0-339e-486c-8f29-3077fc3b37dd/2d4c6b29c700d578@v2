@@ -1,0 +1,429 @@
+//! Chromium process lifecycle management.
+//!
+//! Spawns headless Chromium with `--remote-debugging-port`, monitors
+//! its health, and guarantees cleanup on drop.
+//!
+//! # Safety invariant
+//!
+//! When [`ChromiumProcess`] is dropped, the child process MUST be killed.
+//! Zombie Chromium processes are a hard bug.
+
+use std::net::TcpListener;
+use std::path::PathBuf;
+use std::time::Duration;
+
+use ans_stealth::StealthConfig;
+use tokio::process::{Child, Command};
+use tracing;
+
+/// Owns a running Chromium child process.
+///
+/// Created via [`ChromiumProcess::launch`]. On drop, the child is killed
+/// and the temporary user-data directory is removed.
+pub struct ChromiumProcess {
+    child: Option<Child>,
+    debug_port: u16,
+    debug_url: String,
+    /// WebSocket URL for the first page target (not the browser endpoint).
+    page_url: String,
+    user_data_dir: PathBuf,
+}
+
+impl ChromiumProcess {
+    /// Launch a headless Chromium instance with remote debugging enabled.
+    ///
+    /// Finds the Chromium executable on PATH (or common install locations),
+    /// allocates an ephemeral port, spawns the process, and waits for the
+    /// debug WebSocket URL to become available.
+    ///
+    /// When `stealth` is provided, anti-detection flags are merged into
+    /// the launch command.
+    pub async fn launch(stealth: Option<&StealthConfig>) -> Result<Self, LaunchError> {
+        let exe = find_or_download_chromium().await?;
+        let port = allocate_port()?;
+        let user_data_dir =
+            std::env::temp_dir().join(format!("ans-chromium-{}", uuid::Uuid::new_v4()));
+
+        std::fs::create_dir_all(&user_data_dir)?;
+
+        tracing::info!(
+            exe = %exe.display(),
+            port = port,
+            user_data_dir = %user_data_dir.display(),
+            stealth = stealth.is_some(),
+            "Launching Chromium"
+        );
+
+        let mut cmd = Command::new(&exe);
+        cmd.arg("--headless=new")
+            .arg(format!("--remote-debugging-port={port}"))
+            .arg(format!("--user-data-dir={}", user_data_dir.display()))
+            .arg("--no-sandbox")
+            .arg("--disable-gpu")
+            .arg("--disable-dev-shm-usage")
+            .arg("--disable-extensions")
+            .arg("--disable-background-networking")
+            .arg("--disable-sync")
+            .arg("--disable-translate")
+            .arg("--disable-default-apps")
+            .arg("--hide-scrollbars")
+            .arg("--metrics-recording-only")
+            .arg("--mute-audio")
+            .arg("--no-first-run")
+            .arg("--window-size=1280,720")
+            .arg("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.204 Safari/537.36")
+            .arg("about:blank");
+
+        // Merge stealth anti-detection flags
+        if let Some(config) = stealth {
+            for flag in config.chrome_flags() {
+                cmd.arg(flag);
+            }
+        }
+
+        let child = cmd
+            .kill_on_drop(true)
+            .spawn()
+            .map_err(|e| LaunchError::SpawnFailed {
+                exe: exe.clone(),
+                source: e,
+            })?;
+
+        let debug_url = discover_debug_url(port).await?;
+        let page_url = discover_page_url(port).await?;
+
+        tracing::info!(%debug_url, %page_url, "Chromium ready");
+
+        Ok(Self {
+            child: Some(child),
+            debug_port: port,
+            debug_url,
+            page_url,
+            user_data_dir,
+        })
+    }
+
+    /// The browser-level WebSocket URL (for Target.* commands only).
+    #[must_use] 
+    pub fn debug_url(&self) -> &str {
+        &self.debug_url
+    }
+
+    /// The page-level WebSocket URL (for Page.*, DOM.*, Runtime.* commands).
+    #[must_use] 
+    pub fn page_url(&self) -> &str {
+        &self.page_url
+    }
+
+    /// The TCP port Chromium is listening on for CDP connections.
+    #[must_use] 
+    pub const fn debug_port(&self) -> u16 {
+        self.debug_port
+    }
+}
+
+impl Drop for ChromiumProcess {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            tracing::debug!(pid = child.id(), "Killing Chromium child process");
+            // kill_on_drop(true) handles this, but explicitly kill for clarity
+            if let Err(e) = child.start_kill() {
+                tracing::warn!(pid = child.id(), ?e, "Failed to kill Chromium process");
+            }
+        }
+        if self.user_data_dir.exists() {
+            if let Err(e) = std::fs::remove_dir_all(&self.user_data_dir) {
+                tracing::warn!(dir = %self.user_data_dir.display(), ?e, "Failed to remove temp user-data dir");
+            }
+        }
+    }
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────
+
+/// Allocate an ephemeral TCP port by binding to port 0 and reading the assigned port.
+fn allocate_port() -> Result<u16, LaunchError> {
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    let port = listener.local_addr()?.port();
+    drop(listener);
+    Ok(port)
+}
+
+/// Discover the CDP WebSocket debug URL by polling Chromium's HTTP endpoint.
+async fn discover_debug_url(port: u16) -> Result<String, LaunchError> {
+    let url = format!("http://127.0.0.1:{port}/json/version");
+    let client = reqwest::Client::new();
+
+    // Chromium takes a moment to start. Retry with backoff.
+    let mut attempts = 0;
+    loop {
+        match client
+            .get(&url)
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+        {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    let json: serde_json::Value = resp.json().await?;
+                    return json["webSocketDebuggerUrl"]
+                        .as_str()
+                        .map(String::from)
+                        .ok_or(LaunchError::DebugUrlNotFound);
+                }
+            }
+            Err(_) if attempts < 20 => {
+                attempts += 1;
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
+            Err(e) => {
+                return Err(LaunchError::HttpConnectionFailed { url, source: e });
+            }
+        }
+    }
+}
+
+/// Discover the page-level CDP WebSocket URL by polling Chromium's `/json` endpoint.
+///
+/// The `/json/version` endpoint returns the browser-level WebSocket URL which only
+/// supports `Browser.*` and `Target.*` domains. For `Page.*`, `DOM.*`, and `Runtime.*`
+/// commands, we must connect to a specific page target's WebSocket URL.
+async fn discover_page_url(port: u16) -> Result<String, LaunchError> {
+    let url = format!("http://127.0.0.1:{port}/json");
+    let client = reqwest::Client::new();
+
+    let mut attempts = 0;
+    loop {
+        match client
+            .get(&url)
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+        {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    let targets: Vec<serde_json::Value> = resp.json().await?;
+                    // Find the first "page" type target (not "background_page", "worker", etc.)
+                    for target in &targets {
+                        let target_type = target["type"].as_str().unwrap_or("");
+                        if target_type == "page" {
+                            if let Some(page_url) =
+                                target["webSocketDebuggerUrl"].as_str()
+                            {
+                                return Ok(page_url.to_string());
+                            }
+                        }
+                    }
+                    // If no explicit "page" type, fall back to the first target with a debug URL
+                    for target in &targets {
+                        if let Some(page_url) = target["webSocketDebuggerUrl"].as_str() {
+                            return Ok(page_url.to_string());
+                        }
+                    }
+                    return Err(LaunchError::DebugUrlNotFound);
+                }
+            }
+            Err(_) if attempts < 20 => {
+                attempts += 1;
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
+            Err(e) => {
+                return Err(LaunchError::HttpConnectionFailed { url, source: e });
+            }
+        }
+    }
+}
+
+/// Locate a Chromium/Chrome executable on the system.
+async fn find_or_download_chromium() -> Result<PathBuf, LaunchError> {
+    // Try to find existing Chromium first
+    if let Some(path) = try_find_chromium() {
+        return Ok(path);
+    }
+
+    // Auto-download via Playwright
+    tracing::info!("Chromium not found, downloading automatically via playwright...");
+    download_chromium().await?;
+
+    // Search again after download
+    if let Some(path) = try_find_chromium() {
+        tracing::info!(path = %path.display(), "Chromium ready after download");
+        return Ok(path);
+    }
+
+    Err(LaunchError::ChromiumNotFound {
+        message: "auto-download also failed. Install Node.js and run: npx playwright install chromium".into(),
+    })
+}
+
+fn try_find_chromium() -> Option<PathBuf> {
+    // 0. CHROMIUM_OVERRIDE env var
+    if let Ok(override_path) = std::env::var("CHROMIUM_OVERRIDE") {
+        let pb = PathBuf::from(&override_path);
+        if pb.is_file() {
+            tracing::info!(path = %pb.display(), "Using CHROMIUM_OVERRIDE");
+            return Some(pb);
+        }
+    }
+
+    // 1. Playwright cache
+    if let Some(pw) = find_playwright_chromium() {
+        return Some(pw);
+    }
+
+    // 2. PATH
+    let exe_names: &[&str] = if cfg!(target_os = "windows") {
+        &["chromium.exe", "chrome.exe"]
+    } else {
+        &["chromium", "chromium-browser", "chrome", "google-chrome"]
+    };
+    if let Ok(path_var) = std::env::var("PATH") {
+        for dir in std::env::split_paths(&path_var) {
+            for name in exe_names {
+                let candidate = dir.join(name);
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+
+    // 3. macOS bundles
+    #[cfg(target_os = "macos")]
+    {
+        for p in &["/Applications/Chromium.app/Contents/MacOS/Chromium",
+                    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"] {
+            let pb = PathBuf::from(p);
+            if pb.is_file() { return Some(pb); }
+        }
+    }
+
+    // 4. Windows install dirs
+    #[cfg(target_os = "windows")]
+    {
+        let locals = [
+            std::env::var("LOCALAPPDATA"),
+            std::env::var("ProgramFiles"),
+            std::env::var("ProgramFiles(x86)"),
+        ];
+        for local_var in locals.iter().flatten() {
+            for sub in &["Chromium\\Application\\chrome.exe", "Google\\Chrome\\Application\\chrome.exe"] {
+                let p = PathBuf::from(local_var).join(sub);
+                if p.is_file() { return Some(p); }
+            }
+        }
+    }
+
+    None
+}
+
+async fn download_chromium() -> Result<(), LaunchError> {
+    let output = tokio::process::Command::new("npx")
+        .args(["playwright", "install", "chromium"])
+        .kill_on_drop(true)
+        .output()
+        .await
+        .map_err(|e| LaunchError::DownloadFailed {
+            message: format!("Failed to run npx: {e}"),
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(LaunchError::DownloadFailed {
+            message: format!("npx playwright install chromium failed: {stderr}"),
+        });
+    }
+
+    Ok(())
+}
+
+fn find_playwright_chromium() -> Option<PathBuf> {
+    let cache_root = playwright_cache_root()?;
+    let exe_subpath: &str = if cfg!(target_os = "windows") {
+        "chrome-win\\chrome.exe"
+    } else if cfg!(target_os = "macos") {
+        "chrome-mac/Chromium.app/Contents/MacOS/Chromium"
+    } else {
+        "chrome-linux/chrome"
+    };
+
+    let mut candidates: Vec<PathBuf> = cache_root
+        .read_dir().ok()?
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let name = entry.file_name();
+            let name_s = name.to_string_lossy();
+            if name_s.starts_with("chromium-") || name_s.starts_with("chrome-") {
+                Some(entry.path())
+            } else { None }
+        })
+        .collect();
+
+    candidates.sort_by(|a, b| {
+        let a_name = a.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let b_name = b.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        b_name.cmp(&a_name)
+    });
+
+    for dir in &candidates {
+        let candidate = dir.join(exe_subpath);
+        if candidate.is_file() {
+            tracing::info!(path = %candidate.display(), "Found Chromium in Playwright cache");
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn playwright_cache_root() -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        Some(PathBuf::from(std::env::var("LOCALAPPDATA").ok()?).join("ms-playwright"))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Some(PathBuf::from(std::env::var("HOME").ok()?).join("Library/Caches/ms-playwright"))
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let home = std::env::var("XDG_CACHE_HOME")
+            .unwrap_or_else(|_| format!("{}/.cache", std::env::var("HOME").unwrap_or_default()));
+        Some(PathBuf::from(home).join("ms-playwright"))
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    { None }
+}
+
+// ── Error type ───────────────────────────────────────────────────────
+
+#[derive(Debug, thiserror::Error)]
+pub enum LaunchError {
+    #[error("chromium not found — {message}")]
+    ChromiumNotFound { message: String },
+
+    #[error("chromium download failed: {message}")]
+    DownloadFailed { message: String },
+
+    #[error("failed to allocate ephemeral port: {0}")]
+    PortAllocation(#[from] std::io::Error),
+
+    #[error("failed to spawn {exe}: {source}")]
+    SpawnFailed {
+        exe: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("webSocketDebuggerUrl not found in /json/version response")]
+    DebugUrlNotFound,
+
+    #[error("HTTP request to {url} failed: {source}")]
+    HttpConnectionFailed {
+        url: String,
+        #[source]
+        source: reqwest::Error,
+    },
+
+    #[error("HTTP response parse error: {0}")]
+    HttpParse(#[from] reqwest::Error),
+}

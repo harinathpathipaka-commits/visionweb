@@ -1,0 +1,11 @@
+LayerInfinite uses a Webhook Callback system anchored by the Decision ID.
+
+Because the gateway only sees the immediate tool execution, it needs external systems (like GitHub Actions, Zendesk, or Salesforce) to report back later.
+
+Here is the step-by-step of how it works:
+
+The Anchor (Decision ID): When the agent decides to use a tool (e.g., trigger a deployment), LI generates a unique decision_id (like dec_123). LI logs that the tool call was technically successful right away.
+The Handshake: The payload sent to the external system includes that ID. For example, the agent tags the CI/CD deployment run with dec_123.
+The Callback (Webhook): Twenty minutes later, the deployment crashes in production. Your CI/CD system (like GitHub Actions or Datadog) sends a simple POST request back to LayerInfinite's Webhook API:
+{"decision_id": "dec_123", "business_success": false, "reason": "memory_leak"}
+The Score Update: LI finds the original record for dec_123. It overwrites the success score. It now knows that while the tool execution worked perfectly, the business result was a failure.

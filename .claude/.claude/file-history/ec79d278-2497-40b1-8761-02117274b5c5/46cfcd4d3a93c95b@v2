@@ -1,0 +1,93 @@
+import pytest
+from fastapi.testclient import TestClient
+from src.api import app
+
+
+@pytest.fixture
+def client():
+    return TestClient(app)
+
+
+def _make_x_y():
+    x = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+    y = [3.0, 5.0, 7.0, 9.0, 11.0, 13.0, 15.0, 17.0]
+    return x, y
+
+
+class TestHealthEndpoint:
+    def test_health_returns_200(self, client):
+        response = client.get("/v1/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "healthy"
+        assert "version" in data
+        assert "components" in data
+
+
+class TestSolveEndpoint:
+    def test_solve_linear_relationship(self, client):
+        x, y = _make_x_y()
+        response = client.post(
+            "/v1/solve",
+            json={"query": "What is the relationship between x and y?", "x_values": x, "y_values": y},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "trace_id" in data
+
+    def test_solve_idempotency(self, client):
+        x = [float(i) for i in range(20)]
+        y = [float(i * 2) for i in range(20)]
+        body = {"query": "relation?", "x_values": x, "y_values": y}
+        first = client.post(
+            "/v1/solve", json=body,
+            headers={"Idempotency-Key": "test-key-123"},
+        )
+        second = client.post(
+            "/v1/solve", json=body,
+            headers={"Idempotency-Key": "test-key-123"},
+        )
+        assert first.status_code == second.status_code
+
+    def test_solve_empty_observations(self, client):
+        response = client.post(
+            "/v1/solve",
+            json={"query": "What is the relationship?", "x_values": [1.0], "y_values": [1.0]},
+        )
+        # Single point still works
+        assert response.status_code == 422 or response.status_code == 200
+
+
+class TestIngestEndpoint:
+    def test_ingest_csv(self, client):
+        csv_content = "date,revenue,customers\n2024-01-01,1000,50\n2024-01-02,1200,55\n"
+        response = client.post(
+            "/v1/ingest",
+            files={"file": ("test.csv", csv_content.encode(), "text/csv")},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "job_id" in data or "status" in data
+
+    def test_ingest_empty_file(self, client):
+        response = client.post(
+            "/v1/ingest",
+            files={"file": ("empty.csv", b"", "text/csv")},
+        )
+        assert response.status_code in (200, 400, 422)
+
+
+class TestEquationsEndpoint:
+    def test_get_nonexistent_equation(self, client):
+        response = client.get("/v1/equations/99999")
+        assert response.status_code == 404
+
+    def test_get_equation_versions(self, client):
+        response = client.get("/v1/equations/1/versions")
+        assert response.status_code in (200, 404)
+
+
+class TestLedgerEndpoint:
+    def test_get_nonexistent_trace(self, client):
+        response = client.get("/v1/ledger/nonexistent-id")
+        assert response.status_code == 404

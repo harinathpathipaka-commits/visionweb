@@ -1,0 +1,445 @@
+from __future__ import annotations
+
+import csv
+import hashlib
+import io
+import json
+import re
+import sqlite3
+from datetime import datetime, timezone
+from typing import Dict, List, Optional, Tuple
+
+from .models import ColumnProfile, IngestionSummary, ObservationDraft, SchemaMapping
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _checksum_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# File registry
+# ---------------------------------------------------------------------------
+
+def save_file(db_path: str, filename: str, content_type: str, data: bytes) -> int:
+    checksum = _checksum_bytes(data)
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.execute(
+            "INSERT INTO ingestion_files (filename, content_type, size_bytes, checksum, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (filename, content_type, len(data), checksum, _now()),
+        )
+        return cursor.lastrowid
+
+
+# ---------------------------------------------------------------------------
+# Delimiter detection
+# ---------------------------------------------------------------------------
+
+def detect_delimiter(raw_bytes: bytes, sample_lines: int = 10) -> str:
+    candidates = [",", "\t", ";", "|"]
+    text = raw_bytes.decode("utf-8", errors="ignore")
+    lines = text.splitlines()[:sample_lines]
+    if not lines:
+        return ","
+    header = lines[0]
+    scores: Dict[str, int] = {}
+    for delim in candidates:
+        count = header.count(delim)
+        if count > 0:
+            consistent = all(
+                len(line.split(delim)) == len(header.split(delim))
+                for line in lines[1:] if line.strip()
+            )
+            scores[delim] = count + (5 if consistent else 0)
+    if not scores:
+        return ","
+    return max(scores, key=lambda k: scores[k])
+
+
+# ---------------------------------------------------------------------------
+# Number parsing
+# ---------------------------------------------------------------------------
+
+_PCT_RE = re.compile(r"^([\-\d.,]+)\s*%$")
+_CURRENCY_RE = re.compile(r"^[$€£¥]\s*([\-\d.,]+)$")
+_KMG_RE = re.compile(r"^([\-\d.,]+)\s*([KMBT])\s*$", re.IGNORECASE)
+
+_KMG_MAP = {"K": 1_000, "M": 1_000_000, "B": 1_000_000_000, "T": 1_000_000_000_000}
+
+
+def _clean_numeric(raw: str) -> str:
+    return raw.replace(",", "").replace(" ", "")
+
+
+def _parse_number(value: str) -> Optional[float]:
+    if not value or not value.strip():
+        return None
+    v = value.strip()
+
+    # Percentage: "12.5%" → 0.125
+    m = _PCT_RE.match(v)
+    if m:
+        try:
+            return float(_clean_numeric(m.group(1))) / 100.0
+        except ValueError:
+            return None
+
+    # Currency: "$1,234.56" → 1234.56
+    m = _CURRENCY_RE.match(v)
+    if m:
+        try:
+            return float(_clean_numeric(m.group(1)))
+        except ValueError:
+            return None
+
+    # Suffixed: "2.3M" → 2300000, "1.2K" → 1200
+    m = _KMG_RE.match(v)
+    if m:
+        try:
+            return float(_clean_numeric(m.group(1))) * _KMG_MAP[m.group(2).upper()]
+        except ValueError:
+            return None
+
+    # Plain number: "1234.56" or "1,234.56"
+    try:
+        return float(_clean_numeric(v))
+    except ValueError:
+        return None
+
+
+def _looks_number(value: str) -> bool:
+    return _parse_number(value) is not None
+
+
+# ---------------------------------------------------------------------------
+# Date parsing
+# ---------------------------------------------------------------------------
+
+_DATE_FORMATS = [
+    "%Y-%m-%d",
+    "%Y/%m/%d",
+    "%m/%d/%Y",
+    "%d/%m/%Y",
+    "%m-%d-%Y",
+    "%d-%m-%Y",
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%dT%H:%M:%SZ",
+    "%b %d, %Y",
+    "%d %b %Y",
+    "%B %d, %Y",
+    "%d %B %Y",
+]
+
+
+def _parse_date(value: str) -> Optional[str]:
+    if not value or not value.strip():
+        return None
+    v = value.strip()
+    for fmt in _DATE_FORMATS:
+        try:
+            dt = datetime.strptime(v, fmt)
+            return dt.strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Column profiling
+# ---------------------------------------------------------------------------
+
+def _is_date_column(samples: List[str]) -> bool:
+    if not samples:
+        return False
+    parsed = sum(1 for s in samples if _parse_date(s) is not None)
+    return parsed >= max(1, len(samples) // 2)
+
+
+def profile_csv(file_bytes: bytes, max_rows: int = 50) -> List[ColumnProfile]:
+    decoded = file_bytes.decode("utf-8", errors="ignore")
+    delimiter = detect_delimiter(file_bytes)
+    reader = csv.reader(decoded.splitlines(), delimiter=delimiter)
+    rows = list(reader)
+    if not rows:
+        return []
+    headers = rows[0]
+    data_rows = rows[1:max_rows + 1]
+    profiles: List[ColumnProfile] = []
+    for col_idx, header in enumerate(headers):
+        col_values = [r[col_idx] for r in data_rows if len(r) > col_idx]
+        non_empty = [v for v in col_values if v.strip()]
+        nulls = len(col_values) - len(non_empty)
+        unique = len(set(non_empty)) if non_empty else 0
+
+        if non_empty and _is_date_column(non_empty[:20]):
+            inferred_type = "date"
+        elif non_empty and all(_looks_number(v) for v in non_empty):
+            inferred_type = "number"
+        else:
+            inferred_type = "string"
+
+        profiles.append(
+            ColumnProfile(
+                column_name=header.strip(),
+                inferred_type=inferred_type,
+                null_pct=nulls / max(len(col_values), 1),
+                unique_pct=unique / max(len(col_values), 1),
+                sample_values=col_values[:5],
+            )
+        )
+    return profiles
+
+
+def save_profile(db_path: str, file_id: int, profiles: List[ColumnProfile]) -> None:
+    columns_json = json.dumps([p.__dict__ for p in profiles])
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO ingestion_profiles (file_id, columns_json, created_at) VALUES (?, ?, ?)",
+            (file_id, columns_json, _now()),
+        )
+
+
+def save_mappings(db_path: str, file_id: int, mappings: List[SchemaMapping]) -> None:
+    mappings_json = json.dumps([m.__dict__ for m in mappings])
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO ingestion_mappings (file_id, mappings_json, created_at) VALUES (?, ?, ?)",
+            (file_id, mappings_json, _now()),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Observation building
+# ---------------------------------------------------------------------------
+
+def _detect_time_column(mappings: List[SchemaMapping]) -> str:
+    for mapping in mappings:
+        if mapping.time_column:
+            return mapping.column_name
+    return ""
+
+
+def build_observations(
+    file_bytes: bytes,
+    mappings: List[SchemaMapping],
+) -> Tuple[List[ObservationDraft], List[Tuple[int, str, str, str]]]:
+    decoded = file_bytes.decode("utf-8", errors="ignore")
+    delimiter = detect_delimiter(file_bytes)
+    reader = csv.DictReader(decoded.splitlines(), delimiter=delimiter)
+    if not reader.fieldnames:
+        return [], []
+
+    obs: List[ObservationDraft] = []
+    issues: List[Tuple[int, str, str, str]] = []
+    mapping_by_col = {m.column_name: m for m in mappings}
+    time_col = _detect_time_column(mappings)
+
+    for row_index, row in enumerate(reader, start=1):
+        raw_ts = row.get(time_col, "") if time_col else ""
+        ts = _parse_date(raw_ts) if raw_ts else None
+
+        for col_name, mapping in mapping_by_col.items():
+            if mapping.time_column:
+                continue
+            raw = row.get(col_name, "")
+            value = _parse_number(raw)
+            if value is None:
+                issues.append((row_index, col_name, "invalid_number", raw[:50]))
+                continue
+            obs.append(
+                ObservationDraft(
+                    variable=mapping.variable,
+                    value=value,
+                    unit=mapping.unit,
+                    timestamp=ts,
+                    entity_id=mapping.entity_key,
+                    row_index=row_index,
+                )
+            )
+    return obs, issues
+
+
+# ---------------------------------------------------------------------------
+# Persistence
+# ---------------------------------------------------------------------------
+
+def save_quality_issues(
+    db_path: str,
+    file_id: int,
+    issues: List[Tuple[int, str, str, str]],
+) -> None:
+    with sqlite3.connect(db_path) as conn:
+        for row_index, col_name, code, detail in issues:
+            conn.execute(
+                "INSERT INTO ingestion_quality_issues "
+                "(file_id, row_index, column_name, code, severity, message, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (file_id, row_index, col_name, code, "high", f"{code}: {detail}", _now()),
+            )
+
+
+def save_observations(db_path: str, observations: List[ObservationDraft]) -> int:
+    with sqlite3.connect(db_path) as conn:
+        count = 0
+        for obs in observations:
+            if obs.value is None or obs.timestamp is None:
+                continue
+            conn.execute(
+                "INSERT INTO observation_ledger "
+                "(variable, value, unit, timestamp, entity_id, quality_score, provenance_json, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    obs.variable, obs.value, obs.unit, obs.timestamp,
+                    obs.entity_id, 1.0, json.dumps({"source": "csv"}), _now(),
+                ),
+            )
+            count += 1
+    return count
+
+
+def create_job(
+    db_path: str, file_id: int, total_rows: int,
+    observations_created: int, issues_count: int,
+) -> int:
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.execute(
+            "INSERT INTO ingestion_jobs "
+            "(file_id, status, total_rows, observations_created, issues_count, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (file_id, "completed", total_rows, observations_created, issues_count, _now()),
+        )
+        return cursor.lastrowid
+
+
+# ---------------------------------------------------------------------------
+# Deduplication
+# ---------------------------------------------------------------------------
+
+def deduplicate_observations(db_path: str) -> int:
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.execute(
+            """
+            DELETE FROM observation_ledger
+            WHERE observation_id NOT IN (
+                SELECT MIN(observation_id)
+                FROM observation_ledger
+                GROUP BY variable, timestamp, COALESCE(entity_id, '')
+            )
+            """
+        )
+        return cursor.rowcount
+
+
+# ---------------------------------------------------------------------------
+# Main ingest flow
+# ---------------------------------------------------------------------------
+
+def ingest_csv(
+    db_path: str,
+    file_id: int,
+    file_bytes: bytes,
+    mappings: List[SchemaMapping],
+) -> IngestionSummary:
+    profiles = profile_csv(file_bytes)
+    total_rows = max(
+        len(file_bytes.decode("utf-8", errors="ignore").splitlines()) - 1, 0
+    )
+    save_profile(db_path, file_id, profiles)
+    save_mappings(db_path, file_id, mappings)
+    observations, issues = build_observations(file_bytes, mappings)
+    save_quality_issues(db_path, file_id, issues)
+    created = save_observations(db_path, observations)
+    deduplicate_observations(db_path)
+    create_job(db_path, file_id, total_rows, created, len(issues))
+    return IngestionSummary(
+        total_rows=total_rows,
+        observations_created=created,
+        issues_count=len(issues),
+        status="completed",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Excel support
+# ---------------------------------------------------------------------------
+
+def ingest_excel(
+    db_path: str,
+    file_id: int,
+    file_bytes: bytes,
+    mappings: List[SchemaMapping],
+    sheet_name: str = "Sheet1",
+) -> IngestionSummary:
+    try:
+        import openpyxl
+    except ImportError:
+        return IngestionSummary(
+            total_rows=0, observations_created=0, issues_count=1,
+            status="failed: openpyxl not installed",
+        )
+
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    if sheet_name not in wb.sheetnames:
+        sheet_name = wb.sheetnames[0]
+    ws = wb[sheet_name]
+
+    rows_iter = ws.iter_rows(values_only=True, min_row=1)
+    headers_raw = next(rows_iter, None)
+    if not headers_raw:
+        return IngestionSummary(total_rows=0, observations_created=0, issues_count=0, status="empty")
+    headers = [str(h).strip() if h else f"col_{i}" for i, h in enumerate(headers_raw)]
+
+    mapping_by_col = {m.column_name: m for m in mappings}
+    time_col = _detect_time_column(mappings)
+
+    obs: List[ObservationDraft] = []
+    issues: List[Tuple[int, str, str, str]] = []
+    row_count = 0
+
+    for row_index, row in enumerate(rows_iter, start=1):
+        row_count += 1
+        row_dict = dict(zip(headers, row))
+        raw_ts = str(row_dict.get(time_col, "")) if time_col else ""
+        ts = _parse_date(raw_ts) if raw_ts else None
+
+        for col_name, mapping in mapping_by_col.items():
+            if mapping.time_column:
+                continue
+            raw = str(row_dict.get(col_name, ""))
+            value = _parse_number(raw)
+            if value is None:
+                issues.append((row_index, col_name, "invalid_number", raw[:50]))
+                continue
+            obs.append(
+                ObservationDraft(
+                    variable=mapping.variable, value=value, unit=mapping.unit,
+                    timestamp=ts, entity_id=mapping.entity_key, row_index=row_index,
+                )
+            )
+
+    # Profile (lightweight)
+    profiles: List[ColumnProfile] = []
+    for h in headers:
+        col_vals = [str(r[i]) for r in [headers] if i < len(r)]
+        profiles.append(ColumnProfile(
+            column_name=h, inferred_type="string",
+            null_pct=0.0, unique_pct=1.0, sample_values=col_vals[:3],
+        ))
+
+    save_profile(db_path, file_id, profiles)
+    save_mappings(db_path, file_id, mappings)
+    save_quality_issues(db_path, file_id, issues)
+    created = save_observations(db_path, obs)
+    deduplicate_observations(db_path)
+    create_job(db_path, file_id, row_count, created, len(issues))
+
+    wb.close()
+    return IngestionSummary(
+        total_rows=row_count, observations_created=created,
+        issues_count=len(issues), status="completed",
+    )

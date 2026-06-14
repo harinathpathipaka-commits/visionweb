@@ -1,0 +1,14 @@
+[package]
+name = "ans-distill"
+version.workspace = true
+edition.workspace = true
+description = "DOM distillation engine — 3 modes (text_only, input_fields, all_fields)"
+
+[dependencies]
+ans-proto.workspace = true
+ans-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+chrono.workspace = true

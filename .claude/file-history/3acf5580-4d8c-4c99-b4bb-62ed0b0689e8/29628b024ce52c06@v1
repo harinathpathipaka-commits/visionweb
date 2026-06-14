@@ -1,0 +1,115 @@
+/**
+ * diagnose.ts — Deep diagnosis of LI integration issues.
+ * Checks: API health, outcome logging, score retrieval, MV state.
+ */
+
+const LI_BASE_URL = 'https://layerinfinite.me';
+const LI_API_KEY = 'layerinfinite_60a7e2729d358205f2f2433e4e4cf78d';
+
+const headers = {
+  'X-API-Key': LI_API_KEY,
+  'Content-Type': 'application/json',
+};
+
+async function apiCall(method: string, path: string, body?: any, params?: Record<string, string>) {
+  const url = new URL(`${LI_BASE_URL}${path}`);
+  if (params) for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+
+  const opts: RequestInit = { method, headers };
+  if (body) opts.body = JSON.stringify(body);
+
+  const res = await fetch(url.toString(), opts);
+  const text = await res.text();
+  let data: any;
+  try { data = JSON.parse(text); } catch { data = text; }
+  return { status: res.status, ok: res.ok, data, headers: Object.fromEntries(res.headers.entries()) };
+}
+
+async function main() {
+  console.log('═══════════════════════════════════════════════════');
+  console.log('  LAYERINFINITE INTEGRATION DIAGNOSIS');
+  console.log('═══════════════════════════════════════════════════\n');
+
+  // 1. Health check
+  console.log('1️⃣  HEALTH CHECK');
+  const health = await apiCall('GET', '/health');
+  console.log(`   Status: ${health.status}`);
+  console.log(`   Response:`, JSON.stringify(health.data, null, 2));
+  console.log();
+
+  // 2. Auth / identity check
+  console.log('2️⃣  AUTH / IDENTITY CHECK');
+  const me = await apiCall('GET', '/v1/me');
+  console.log(`   Status: ${me.status}`);
+  console.log(`   Response:`, JSON.stringify(me.data, null, 2));
+  console.log();
+
+  // 3. Log a single test outcome
+  console.log('3️⃣  LOG A TEST OUTCOME');
+  const logResult = await apiCall('POST', '/v1/log-outcome', {
+    action_name: 'diagnose_test_action',
+    issue_type: 'diagnose_test_task',
+    success: true,
+    outcome_score: 1.0,
+    response_ms: 100,
+    metadata: { test: true, timestamp: new Date().toISOString() },
+  });
+  console.log(`   Status: ${logResult.status}`);
+  console.log(`   Response:`, JSON.stringify(logResult.data, null, 2).slice(0, 2000));
+  console.log();
+
+  // 4. Get scores for the test task
+  console.log('4️⃣  GET SCORES — diagnose_test_task');
+  const scores1 = await apiCall('GET', '/v1/get-scores', undefined, { issue_type: 'diagnose_test_task' });
+  console.log(`   Status: ${scores1.status}`);
+  console.log(`   Response:`, JSON.stringify(scores1.data, null, 2).slice(0, 3000));
+  console.log();
+
+  // 5. Get scores for sudoku tasks (from benchmark)
+  console.log('5️⃣  GET SCORES — sudoku_trivial (from benchmark)');
+  const scores2 = await apiCall('GET', '/v1/get-scores', undefined, { issue_type: 'sudoku_trivial' });
+  console.log(`   Status: ${scores2.status}`);
+  console.log(`   Response:`, JSON.stringify(scores2.data, null, 2).slice(0, 3000));
+  console.log();
+
+  // 6. Get scores with force refresh
+  console.log('6️⃣  GET SCORES — sudoku_trivial (force_refresh=true)');
+  const scores3 = await apiCall('GET', '/v1/get-scores', undefined, {
+    issue_type: 'sudoku_trivial',
+    force_refresh: 'true'
+  });
+  console.log(`   Status: ${scores3.status}`);
+  console.log(`   Response:`, JSON.stringify(scores3.data, null, 2).slice(0, 3000));
+  console.log();
+
+  // 7. Get scores WITHOUT issue_type filter (all actions)
+  console.log('7️⃣  GET SCORES — no filter (all actions)');
+  const scores4 = await apiCall('GET', '/v1/get-scores');
+  console.log(`   Status: ${scores4.status}`);
+  console.log(`   Response keys:`, Object.keys(scores4.data || {}));
+  if (scores4.data?.scores) {
+    console.log(`   Scores count: ${scores4.data.scores.length}`);
+    console.log(`   First 3 scores:`, JSON.stringify(scores4.data.scores.slice(0, 3), null, 2));
+  } else if (scores4.data?.actions) {
+    console.log(`   Actions count: ${scores4.data.actions.length}`);
+    console.log(`   First 3 actions:`, JSON.stringify(scores4.data.actions.slice(0, 3), null, 2));
+  }
+  console.log();
+
+  // 8. Check deep health
+  console.log('8️⃣  DEEP HEALTH CHECK');
+  const deepHealth = await apiCall('GET', '/health/deep');
+  console.log(`   Status: ${deepHealth.status}`);
+  console.log(`   Response:`, JSON.stringify(deepHealth.data, null, 2));
+  console.log();
+
+  // Summary
+  console.log('═══════════════════════════════════════════════════');
+  console.log('  DIAGNOSIS COMPLETE');
+  console.log('═══════════════════════════════════════════════════');
+}
+
+main().catch(err => {
+  console.error('Fatal:', err);
+  process.exit(1);
+});

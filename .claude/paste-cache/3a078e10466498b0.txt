@@ -1,0 +1,24 @@
+PS C:\Users\kusta\ILabs\visionweb\nerves> .\.venv\Scripts\python.exe -m ans_nerves run "Navigate to https://github.com/browser-use/browser-use and read the README" --max-steps 10
+usage: ans-nerves [-h] {config,health,serve,decompose,run} ...
+ans-nerves: error: unrecognized arguments: --max-steps 10
+PS C:\Users\kusta\ILabs\visionweb\nerves> .\.venv\Scripts\python.exe -m ans_nerves run "Navigate to https://github.com/browser-use/browser-use and read the README"
+{"module": "ans_nerves.planner.loop", "positional_args": ["Navigate to https://github.com/browser-use/browser-use and read the README", "59408003"], "event": "agent_loop: starting goal='%s' session=%s", "level": "info", "logger": "ans_nerves.planner.loop", "timestamp": "2026-05-30T02:38:46.547143Z"}
+{"module": "ans_nerves.grpc_client", "positional_args": ["127.0.0.1:50051"], "event": "grpc_client: connected to %s", "level": "info", "logger": "ans_nerves.grpc_client", "timestamp": "2026-05-30T02:38:46.554948Z"}
+{"module": "ans_nerves.planner.loop", "positional_args": ["afcddf1f-17f4-40db-8670-1d6597ec3386"], "event": "agent_loop: browser session=%s", "level": "info", "logger": "ans_nerves.planner.loop", "timestamp": "2026-05-30T02:38:47.135793Z"}
+HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+{"module": "ans_nerves.planner.loop", "positional_args": [1, 2, "Navigate to https://github.com/browser-use/browser-use"], "event": "agent_loop: sub_goal %d/%d: '%s'", "level": "info", "logger": "ans_nerves.planner.loop", "timestamp": "2026-05-30T02:38:57.124628Z"}
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+{"module": "ans_nerves.scoring.store", "positional_args": ["C:\\Users\\kusta\\.ans\\decisions"], "event": "LanceDB opened at %s", "level": "info", "logger": "ans_nerves.scoring.store", "timestamp": "2026-05-30T02:39:04.004259Z"}
+{"module": "ans_nerves.planner.loop", "positional_args": ["TypeError(\"'coroutine' object is not subscriptable\")"], "event": "agent_loop: failed: %s", "level": "warning", "logger": "ans_nerves.planner.loop", "timestamp": "2026-05-30T02:39:04.014686Z"}
+C:\Users\kusta\ILabs\visionweb\nerves\ans_nerves\planner\loop.py:154: RuntimeWarning: coroutine 'DecisionIntelligence.query_best_actions' was never awaited
+  result = LoopResult(
+RuntimeWarning: Enable tracemalloc to get the object allocation traceback
+
+============================================================
+Session: 59408003
+Success: False
+Steps: 0
+Sub-goals: 0/0
+Errors: 0
+Summary: Failed: 'coroutine' object is not subscriptable

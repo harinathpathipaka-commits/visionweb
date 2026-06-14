@@ -1,0 +1,26 @@
+pub mod parser;
+pub mod schema;
+pub mod dedup;
+pub mod quality;
+pub mod temporal;
+pub mod server;
+
+pub mod ingestion {
+    tonic::include_proto!("ingestion");
+}
+
+use ingestion::ingestion_service_server::IngestionServiceServer;
+use server::IngestionGrpc;
+use tonic::transport::Server;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let addr = "0.0.0.0:50051".parse()?;
+    let svc = IngestionGrpc::default();
+    println!("Ingestion gRPC server listening on {}", addr);
+    Server::builder()
+        .add_service(IngestionServiceServer::new(svc))
+        .serve(addr)
+        .await?;
+    Ok(())
+}

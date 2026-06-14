@@ -1,0 +1,52 @@
+---
+name: product-status-may-2026
+description: "Full ANS Nerves product status: Python layer (32 files, 252 tests) and Rust daemon (14 crates) as of 2026-05-25"
+metadata: 
+  node_type: memory
+  type: project
+  originSessionId: 5d717524-6e7c-413b-b5ce-0144db49d4b7
+---
+
+## Python Intelligence Layer (ans_nerves) — 32 source files, 252 tests
+
+- **5 Eyes**: DOM Reader (deterministic), Vision (LLM), Page Diff (LLM), Goal Verifier (LLM), Error Detector (LLM) — all with fallback paths
+- **Cross-Eye Coordinator**: Synthesizes 5 reports via LLM, 5-level contradiction resolution, produces RoutedSignal
+- **Goal Decomposer**: LLM-driven goal→SubGoal DAG with criteria + action descriptions
+- **Agent Planner**: Cold-start (LLM) + warm-start (memory-validated LANCE_DB), selects best scored actions
+- **Decision Intelligence**: Records action→outcome pairs, LanceDB with 1536-dim OpenAI embeddings, composite score query
+- **Scorer**: Multi-factor composite: 0.40×outcome + 0.333×result - 0.133×error + 0.133×business
+- **Agent Loop**: Decompose → plan → execute → verify → score → repeat with max-steps gating
+- **LLM Client**: OpenAI GPT-4o-mini with tenacity retry, token tracking, JSON structured output
+- **gRPC Client**: Circuit breaker (3-state) + retry on transient errors
+- **CLI**: config, health, decompose, serve subcommands
+- **Health**: /health + /ready endpoints with gRPC+LanceDB dependency checks
+- **Logging**: structlog, JSON default, dev mode with ANS_LOG_DEV=1
+- **Config**: pydantic BaseSettings, ANS_ env prefix, TOML support, full validation
+
+## Rust Daemon (crates/) — 14 crates
+
+- ans-cdp: Chromium launch, CDP WebSocket, all browser actions
+- ans-distill: 3 DOM distillation modes
+- ans-diff: Before/after page comparison
+- ans-goal: Goal tracking
+- ans-ipc: gRPC server, session management (SessionManager::create() → CdpBackend::launch())
+- ans-gateway: MCP server (10 tools), REST (8 endpoints), WebSocket
+- ans-signal: Signal router with contradiction resolution
+- ans-immune: Injection defense, auth
+- ans-budget: Credit/token tracking
+- ans-storage: Persistence
+- ans-daemon: Main orchestrator
+- ans-proto: Protobuf definitions
+- ans-core: Shared types
+- ans-bench: Criterion benchmarks
+
+## Known Gaps
+
+- Daemon binary may predate CDP commits — needs rebuild
+- Chromium must be installed on host for real browser testing
+- No Docker/containerization on Rust side
+- Budget E2E, load testing, Chrome version matrix not started
+
+**Why:** User asked for full product conclusion across both Python and Rust layers.
+
+**How to apply:** Reference when assessing what's built vs. what remains. Python layer is feature-complete and well-tested. Rust daemon is fully coded but needs rebuild + Chromium for E2E validation.

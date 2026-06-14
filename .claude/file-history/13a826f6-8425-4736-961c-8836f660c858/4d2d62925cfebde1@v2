@@ -1,0 +1,30 @@
+//! Decision record CRUD and vector search.
+//!
+//! Stores [`DecisionRecord`]s in LanceDB with IVF_PQ vector index
+//! on the `context_embedding` column. Supports cosine similarity
+//! search for "best action given this context" queries.
+
+use ans_core::decision::DecisionRecord;
+
+/// The decision store — wraps a LanceDB table.
+pub struct DecisionStore;
+
+impl DecisionStore {
+    /// Open or create the decisions table.
+    pub fn open(_path: &str) -> Self {
+        Self
+    }
+
+    /// Insert a decision record with its embedding.
+    pub fn insert(&self, _record: DecisionRecord) {}
+
+    /// Query top-k decisions by cosine similarity to the given embedding.
+    pub fn query_similar(
+        &self,
+        _embedding: &[f32],
+        _k: usize,
+        _min_score: f32,
+    ) -> Vec<DecisionRecord> {
+        Vec::new()
+    }
+}

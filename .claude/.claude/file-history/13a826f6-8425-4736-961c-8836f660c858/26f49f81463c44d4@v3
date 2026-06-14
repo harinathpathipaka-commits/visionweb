@@ -1,0 +1,13 @@
+/// Compile ans.proto at build time.
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Use vendored protoc so users don't need to install it separately.
+    std::env::set_var("PROTOC", protoc_bin_vendored::protoc_bin_path().unwrap());
+
+    tonic_build::configure()
+        .build_server(true)
+        .build_client(true)
+        .protoc_arg("--experimental_allow_proto3_optional")
+        .compile_protos(&["../../proto/ans.proto"], &["../../proto"])?;
+    println!("cargo:rerun-if-changed=../../proto/ans.proto");
+    Ok(())
+}

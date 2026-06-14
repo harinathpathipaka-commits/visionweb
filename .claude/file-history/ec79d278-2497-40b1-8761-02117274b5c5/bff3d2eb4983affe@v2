@@ -1,0 +1,104 @@
+from __future__ import annotations
+
+import json
+from dataclasses import asdict
+from typing import Any, Dict, List, Optional
+
+from ..domain_router import load_ontology, resolve_variable
+from ..models import SchemaMapping
+from . import TableSchema
+
+
+class SchemaInterpreter:
+    """Maps external table columns to canonical ontology variables using LLM assistance.
+
+    Falls back to pure string-matching when no LLM client is available.
+    """
+
+    def __init__(self, domain: str, llm_client: Optional[Any] = None):
+        self.domain = domain
+        self.ontology = load_ontology(domain)
+        self.llm_client = llm_client
+
+    def map_columns(self, table: TableSchema) -> List[SchemaMapping]:
+        """Map all columns in a table to ontology variables."""
+        mappings: List[SchemaMapping] = []
+        for col in table.columns:
+            mapping = self._map_single_column(col)
+            if mapping:
+                mappings.append(mapping)
+        return mappings
+
+    def _map_single_column(self, col: Dict[str, Any]) -> Optional[SchemaMapping]:
+        col_name = str(col.get("name", "")).lower().strip()
+        col_type = str(col.get("type", "")).lower()
+
+        # Check if this is a temporal column
+        if any(t in col_name for t in ("date", "timestamp", "created", "updated", "time")):
+            return SchemaMapping(
+                column_name=col["name"], variable=col_name, unit="",
+                confidence=0.9, time_column=True, entity_key=None,
+            )
+
+        # Direct ontology match
+        resolved = resolve_variable(col_name, self.ontology)
+        if resolved:
+            return SchemaMapping(
+                column_name=col["name"], variable=col_name, unit=resolved.get("unit", ""),
+                confidence=0.85, time_column=False, entity_key=None,
+            )
+
+        # Try numeric columns with generic names
+        if col_type in ("number", "numeric", "integer", "float", "double", "real", "bigint", "decimal"):
+            return SchemaMapping(
+                column_name=col["name"], variable=col_name, unit="",
+                confidence=0.3, time_column=False, entity_key=None,
+            )
+
+        return None
+
+    def map_with_llm(self, table: TableSchema) -> List[SchemaMapping]:
+        """LLM-powered mapping for ambiguous columns."""
+        if self.llm_client is None or not hasattr(self.llm_client, "messages"):
+            return self.map_columns(table)
+
+        ontology_vars = list(self.ontology.get("variables", {}).keys())
+
+        prompt = f"""Domain: {self.domain}
+Known variables: {', '.join(ontology_vars)}
+
+Table: {table.name}
+Columns:
+"""
+        for col in table.columns:
+            prompt += f"  - {col['name']} ({col['type']})\n"
+
+        prompt += """
+Return a JSON array of mappings. Each mapping must have:
+{
+  "column_name": "string",
+  "variable": "string or null",
+  "unit": "string",
+  "confidence": 0.0-1.0,
+  "time_column": false,
+  "entity_key": null
+}
+Only include columns that map to known variables or are clearly numeric."""
+        try:
+            response = self.llm_client.messages.create(
+                model="claude-haiku-4-5",
+                max_tokens=1024,
+                system="You are a schema interpreter. Map database columns to ontology variables.",
+                messages=[{"role": "user", "content": prompt}],
+            )
+            content = response.content[0].text if isinstance(response.content, list) else response.content
+            parsed = json.loads(content)
+            return [SchemaMapping(**m) for m in parsed]
+        except Exception:
+            return self.map_columns(table)
+
+    def suggest_mappings(self, table_schemas: List[TableSchema]) -> Dict[str, List[SchemaMapping]]:
+        result: Dict[str, List[SchemaMapping]] = {}
+        for table in table_schemas:
+            result[table.name] = self.map_with_llm(table)
+        return result

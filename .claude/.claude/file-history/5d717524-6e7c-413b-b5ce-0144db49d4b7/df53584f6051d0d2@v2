@@ -1,0 +1,91 @@
+"""Error Detector Eye — failure classification via GPT-4o-mini.
+
+Runs only when an action fails. Classifies failures and produces
+ordered recovery strategies.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from ans_nerves.eyes.base import BaseEye, EyeReport
+from ans_nerves.llm.client import get_llm_client
+from ans_nerves.llm.prompts import (
+    ERROR_DETECTOR_SYSTEM,
+    ERROR_JSON_SCHEMA,
+    build_error_detector_user_prompt,
+)
+
+_ERROR_DEFAULTS: dict[str, Any] = {
+    "failure_type": "silent_fail",
+    "description": "",
+    "should_retry": False,
+    "max_retries": 1,
+    "recovery_actions": [],
+    "escalation_needed": False,
+}
+
+
+class ErrorDetectorEye(BaseEye):
+    """Detects and classifies action failures, suggests recovery."""
+
+    name = "error_detector"
+
+    async def observe(self, session_id: str, page_data: dict[str, Any]) -> EyeReport:
+        action_desc = page_data.get("action_description", "")
+        error_msg = page_data.get("error_message", "")
+
+        if not action_desc:
+            return EyeReport(
+                eye_name=self.name,
+                confidence=0.0,
+                content={
+                    **_ERROR_DEFAULTS,
+                    "description": "No action_description provided",
+                },
+            )
+
+        page_url = page_data.get("page_url", page_data.get("url", ""))
+        page_title = page_data.get("page_title", page_data.get("title", ""))
+        visible_text = page_data.get("visible_text", [])
+        goal_context = page_data.get("goal_context", "")
+
+        user_prompt = build_error_detector_user_prompt(
+            action_description=action_desc,
+            error_message=error_msg,
+            page_url=page_url,
+            page_title=page_title,
+            visible_text=visible_text,
+            goal_context=goal_context,
+        )
+
+        try:
+            response = await get_llm_client().complete_structured(
+                system_prompt=ERROR_DETECTOR_SYSTEM,
+                user_prompt=user_prompt,
+                json_schema=ERROR_JSON_SCHEMA,
+            )
+        except Exception:
+            return EyeReport(
+                eye_name=self.name,
+                confidence=0.3,
+                content={
+                    **_ERROR_DEFAULTS,
+                    "failure_type": "silent_fail",
+                    "description": f"LLM call failed while classifying: {error_msg[:200]}",
+                    "recovery_actions": ["Retry the action", "Check page state manually"],
+                },
+            )
+
+        if response.parsed is None:
+            return EyeReport(
+                eye_name=self.name,
+                confidence=0.3,
+                content={**_ERROR_DEFAULTS, "raw_response": response.content[:500]},
+            )
+
+        return EyeReport(
+            eye_name=self.name,
+            confidence=0.85,
+            content=response.parsed,
+        )

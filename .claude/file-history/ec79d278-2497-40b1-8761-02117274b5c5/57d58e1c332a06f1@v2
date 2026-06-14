@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: equation-layer-worker
+  labels:
+    app: equation-layer
+    component: worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: equation-layer
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: equation-layer
+        component: worker
+    spec:
+      containers:
+        - name: worker
+          image: equation-layer-worker:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: equation-layer-config
+            - secretRef:
+                name: equation-layer-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 1
+              memory: 512Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: el-data-pvc

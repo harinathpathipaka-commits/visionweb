@@ -1,0 +1,50 @@
+/// Parse CSV bytes and return (headers, rows of strings).
+pub fn parse_csv(data: &[u8], delimiter: u8) -> Result<(Vec<String>, Vec<Vec<String>>), String> {
+    let mut rdr = csv::ReaderBuilder::new()
+        .delimiter(delimiter)
+        .flexible(true)
+        .from_reader(data);
+
+    let headers: Vec<String> = rdr
+        .headers()
+        .map_err(|e| format!("header error: {}", e))?
+        .iter()
+        .map(|h| h.to_string())
+        .collect();
+
+    let mut rows: Vec<Vec<String>> = Vec::new();
+    for result in rdr.records() {
+        let record = result.map_err(|e| format!("row error: {}", e))?;
+        let values: Vec<String> = record.iter().map(|v| v.to_string()).collect();
+        rows.push(values);
+    }
+    Ok((headers, rows))
+}
+
+/// Detect CSV delimiter by scoring candidates on consistency.
+pub fn detect_delimiter(data: &[u8]) -> (u8, f64) {
+    let candidates: [(u8, &str); 4] = [(b',', ","), (b'\t', "tab"), (b';', ";"), (b'|', "|")];
+    let sample = std::str::from_utf8(data).unwrap_or("");
+    let lines: Vec<&str> = sample.lines().take(10).collect();
+    if lines.is_empty() {
+        return (b',', 1.0);
+    }
+
+    let mut best_delim = b',';
+    let mut best_score = 0.0;
+
+    for (byte, _name) in &candidates {
+        let counts: Vec<usize> = lines.iter().map(|l| l.matches(*byte as char).count()).collect();
+        if counts.is_empty() || counts[0] == 0 {
+            continue;
+        }
+        let mode = counts[0];
+        let consistent = counts.iter().filter(|&&c| c == mode).count();
+        let score = consistent as f64 / counts.len() as f64;
+        if score > best_score {
+            best_score = score;
+            best_delim = *byte;
+        }
+    }
+    (best_delim, best_score)
+}

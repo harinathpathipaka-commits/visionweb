@@ -1,0 +1,76 @@
+from __future__ import annotations
+
+from typing import Dict, List
+
+import sympy as sp
+
+from .models import ComputeResult, EquationFit
+
+
+def _build_sympy_expr(equation: EquationFit) -> sp.Expr:
+    sympy_str = equation.sympy_expr.replace("y = ", "").replace("^", "**")
+    expr = sp.sympify(sympy_str)
+    subs_map = {}
+    for param_name, param_val in equation.parameters.items():
+        subs_map[sp.Symbol(param_name)] = param_val
+    return expr.subs(subs_map)
+
+
+def evaluate_equation(equation: EquationFit, x_value: float) -> ComputeResult:
+    sympy_str = equation.sympy_expr.replace("y = ", "")
+    expr = sp.sympify(sympy_str)
+
+    param_symbols = {sp.Symbol(k): v for k, v in equation.parameters.items()}
+    x_sym = sp.Symbol("x")
+    expr_with_params = expr.subs(param_symbols)
+
+    f_eval = sp.lambdify(x_sym, expr_with_params, "numpy")
+    answer = float(f_eval(x_value))
+
+    first_deriv = sp.diff(expr_with_params, x_sym)
+    second_deriv = sp.diff(first_deriv, x_sym)
+
+    f_d1 = sp.lambdify(x_sym, first_deriv, "numpy")
+    f_d2 = sp.lambdify(x_sym, second_deriv, "numpy")
+
+    derivatives: Dict[str, float] = {"dY/dX": float(f_d1(x_value))}
+    curvature: Dict[str, float] = {"d2Y/dX2": float(f_d2(x_value))}
+
+    return ComputeResult(answer=answer, derivatives=derivatives, curvature=curvature)
+
+
+def symbolic_derivatives(equation: EquationFit) -> Dict[str, str]:
+    sympy_str = equation.sympy_expr.replace("y = ", "")
+    expr = sp.sympify(sympy_str)
+    param_symbols = {sp.Symbol(k): v for k, v in equation.parameters.items()}
+    expr_with_params = expr.subs(param_symbols)
+    x_sym = sp.Symbol("x")
+    return {
+        "expression": str(expr_with_params),
+        "first_derivative": str(sp.diff(expr_with_params, x_sym)),
+        "second_derivative": str(sp.diff(expr_with_params, x_sym, 2)),
+    }
+
+
+def sensitivity_map(equation: EquationFit, x_value: float) -> Dict[str, float]:
+    sympy_str = equation.sympy_expr.replace("y = ", "")
+    expr = sp.sympify(sympy_str)
+    param_symbols = {sp.Symbol(k): v for k, v in equation.parameters.items()}
+    expr_with_params = expr.subs(param_symbols)
+    x_sym = sp.Symbol("x")
+
+    deriv = sp.diff(expr_with_params, x_sym)
+    f_d1 = sp.lambdify(x_sym, deriv, "numpy")
+    f_val = sp.lambdify(x_sym, expr_with_params, "numpy")
+
+    d1 = float(f_d1(x_value))
+    val = float(f_val(x_value))
+    epsilon = 0.01 * x_value if x_value != 0 else 0.01
+    f_up = float(f_val(x_value + epsilon))
+    pct_change = (f_up - val) / val * 100 if val != 0 else 0.0
+
+    return {
+        "derivative_at_point": d1,
+        "elasticity_approx": float(d1 * x_value / val) if val != 0 else 0.0,
+        "pct_change_approx": pct_change,
+    }

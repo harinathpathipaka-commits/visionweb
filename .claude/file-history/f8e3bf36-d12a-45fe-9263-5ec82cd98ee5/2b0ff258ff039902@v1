@@ -1,0 +1,21 @@
+//! Inter-process communication layer.
+//!
+//! **gRPC server** (loopback:50051): Implements the [`AgentNervousSystem`]
+//! service defined in `ans-proto`. Python intelligence workers connect as
+//! gRPC clients.
+//!
+//! **Arrow IPC bridge**: Bulk data (screenshots, large DOM trees) travel
+//! via platform-abstracted memory-mapped Arrow arrays, not gRPC payloads.
+//! The gRPC message carries only the shared-memory key; the actual bytes
+//! are read directly from the mmap region.
+//!
+//! **Internal pub/sub**: `tokio::broadcast` channels fan out events
+//! (goal updates, eye reports) to all subscribers within the Rust process.
+
+pub mod arrow_ipc;
+pub mod server;
+pub mod session;
+pub mod subscriber;
+
+pub use server::IpcServer;
+pub use session::SessionManager;

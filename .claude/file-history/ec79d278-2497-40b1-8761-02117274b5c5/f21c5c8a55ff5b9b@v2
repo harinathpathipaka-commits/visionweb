@@ -1,0 +1,36 @@
+use std::collections::HashSet;
+
+use crate::ingestion::ObservationDraft;
+
+/// Deduplicate observations by (variable, timestamp, entity_id, value).
+/// Returns the unique observations and the count of removed duplicates.
+pub fn deduplicate(observations: &[ObservationDraft]) -> (Vec<ObservationDraft>, i32) {
+    let mut seen: HashSet<(String, String, String, i64)> = HashSet::new();
+    let mut unique: Vec<ObservationDraft> = Vec::new();
+    let mut removed = 0i32;
+
+    for obs in observations {
+        // Round value to 6 decimal places for comparison
+        let val_key = (obs.value * 1_000_000.0).round() as i64;
+        let key = (
+            obs.variable.clone(),
+            obs.timestamp.clone(),
+            obs.entity_id.clone(),
+            val_key,
+        );
+        if seen.contains(&key) {
+            removed += 1;
+        } else {
+            seen.insert(key);
+            unique.push(ObservationDraft {
+                variable: obs.variable.clone(),
+                value: obs.value,
+                unit: obs.unit.clone(),
+                timestamp: obs.timestamp.clone(),
+                entity_id: obs.entity_id.clone(),
+                row_index: obs.row_index,
+            });
+        }
+    }
+    (unique, removed)
+}

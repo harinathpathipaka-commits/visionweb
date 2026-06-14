@@ -1,0 +1,45 @@
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from typing import Dict, List
+
+from .models import EquationFit, FitStats
+
+
+@dataclass(frozen=True)
+class Candidate:
+    family: str
+    params: Dict[str, float]
+    stats: FitStats
+    expr: str
+
+
+def _mock_fit_stats(n_obs: int) -> FitStats:
+    return FitStats(
+        r2_adj=0.75,
+        holdout_mape=0.1,
+        aic=120.0,
+        residual_random=True,
+        n_obs=n_obs,
+    )
+
+
+def fit_canonical_families(x: List[float], y: List[float]) -> List[Candidate]:
+    n_obs = len(x)
+    stats = _mock_fit_stats(n_obs)
+    return [
+        Candidate("linear", {"a": 1.0, "b": 0.0}, stats, "y=a*x+b"),
+        Candidate("power", {"a": 1.0, "b": -1.0}, stats, "y=a*x**b"),
+        Candidate("exponential", {"a": 1.0, "b": 0.01}, stats, "y=a*exp(b*x)"),
+    ]
+
+
+def choose_best(candidates: List[Candidate]) -> EquationFit:
+    winner = min(candidates, key=lambda c: c.stats.aic)
+    return EquationFit(
+        family=winner.family,
+        parameters=winner.params,
+        stats=winner.stats,
+        sympy_expr=winner.expr,
+    )

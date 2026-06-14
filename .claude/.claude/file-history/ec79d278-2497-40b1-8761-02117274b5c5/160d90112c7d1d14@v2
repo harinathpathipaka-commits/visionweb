@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: equation-layer-config
+  labels:
+    app: equation-layer
+data:
+  EL_DB_PATH: "/data/el_data.db"
+  VALKEY_URL: "redis://valkey:6379"
+  LOG_LEVEL: "info"
+  WORKER_POLL_INTERVAL: "5"
+  WORKER_BATCH_SIZE: "100"
+  PYSRI_ITERATIONS: "40"
+  GATE_MIN_R2_ADJ: "0.6"
+  GATE_MAX_HOLDOUT_MAPE: "0.15"
+  GATE_MIN_OBSERVATIONS: "15"
+  GATE_MIN_CORRELATION: "0.3"
+  DRIFT_THRESHOLD: "0.2"
+  MAX_FREQ_RANK_GAP: "2"

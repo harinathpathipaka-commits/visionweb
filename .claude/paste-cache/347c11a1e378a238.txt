@@ -1,0 +1,16 @@
+Here’s the straight answer.
+
+Without ANS (first pass)
+
+I used a non‑browser fetch approach to read README and key docs directly; it was fast and reliable.
+The analysis was doc‑level only — no code or full tree traversal. So it wasn’t a true “full repo” inspection.
+With ANS (MCP browser)
+
+It could navigate and extract content, but it wasn’t smooth: the GitHub UI page was heavy and not useful for text, and raw GitHub content didn’t render cleanly in text_only.
+I had to manually switch to view-source: URLs to get readable content. That’s a workaround, not an ideal flow.
+It didn’t auto‑discover files or crawl the repo; I still had to know which URLs to open.
+Net: it worked for basic navigation + DOM extraction, but it was slower and more manual than a direct fetch.
+Did it work as designed?
+
+Partially. ANS did the core browser tasks (navigate, extract DOM), but in this use case it didn’t feel like a purpose‑built “agent browser” advantage. It didn’t reduce effort; it added steps.
+I didn’t exercise the deeper ANS stack (goal checking, multi‑step action loop, perception/diff/immune, etc.), so I can’t claim it performed there.

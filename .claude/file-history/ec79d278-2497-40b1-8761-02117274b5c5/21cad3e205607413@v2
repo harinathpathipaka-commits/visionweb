@@ -1,0 +1,234 @@
+from __future__ import annotations
+
+import json
+from typing import Any, Dict, List, Optional, Tuple
+
+import networkx as nx
+
+from .models import GraphEdge, GraphPath
+
+
+class EquationGraph:
+    """Directed graph of equations for multi-hop reasoning and uncertainty propagation.
+
+    Nodes = variable names (strings). Directed edges from each input variable to
+    the output variable, labeled with equation metadata.
+    """
+
+    def __init__(self):
+        self._g = nx.DiGraph()
+
+    def add_equation(
+        self,
+        output_variable: str,
+        input_variables: List[str],
+        equation_id: int,
+        family: str,
+        sympy_expr: str,
+        uncertainty: float = 0.0,
+    ) -> None:
+        """Add an equation as edges from each input variable to the output variable."""
+        for iv in input_variables:
+            if not self._g.has_node(iv):
+                self._g.add_node(iv)
+            if not self._g.has_node(output_variable):
+                self._g.add_node(output_variable)
+            self._g.add_edge(
+                iv,
+                output_variable,
+                equation_id=equation_id,
+                family=family,
+                sympy_expr=sympy_expr,
+                uncertainty=uncertainty,
+            )
+
+    def find_path(
+        self,
+        source_var: str,
+        target_var: str,
+    ) -> Optional[GraphPath]:
+        """Find shortest derivation path from source to target variable."""
+        if source_var not in self._g or target_var not in self._g:
+            return None
+        try:
+            node_path = nx.shortest_path(self._g, source=source_var, target=target_var)
+        except nx.NetworkXNoPath:
+            return None
+
+        edges: List[GraphEdge] = []
+        cumulative = 0.0
+        for i in range(len(node_path) - 1):
+            u, v = node_path[i], node_path[i + 1]
+            edge_data = self._g.edges[u, v]
+            edges.append(GraphEdge(
+                source=u,
+                target=v,
+                equation_id=edge_data["equation_id"],
+                family=edge_data["family"],
+                sympy_expr=edge_data["sympy_expr"],
+            ))
+            cumulative += edge_data.get("uncertainty", 0.0)
+
+        return GraphPath(
+            nodes=node_path,
+            edges=edges,
+            cumulative_uncertainty=cumulative,
+        )
+
+    def find_all_paths(
+        self,
+        source_var: str,
+        target_var: str,
+        max_paths: int = 5,
+    ) -> List[GraphPath]:
+        """Return up to `max_paths` shortest derivation paths."""
+        if source_var not in self._g or target_var not in self._g:
+            return []
+        try:
+            raw_paths = list(nx.shortest_simple_paths(
+                self._g, source=source_var, target=target_var, weight=None,
+            ))[:max_paths]
+        except nx.NetworkXNoPath:
+            return []
+
+        results: List[GraphPath] = []
+        for node_path in raw_paths:
+            edges: List[GraphEdge] = []
+            cumulative = 0.0
+            for i in range(len(node_path) - 1):
+                u, v = node_path[i], node_path[i + 1]
+                edge_data = self._g.edges[u, v]
+                edges.append(GraphEdge(
+                    source=u,
+                    target=v,
+                    equation_id=edge_data["equation_id"],
+                    family=edge_data["family"],
+                    sympy_expr=edge_data["sympy_expr"],
+                ))
+                cumulative += edge_data.get("uncertainty", 0.0)
+            results.append(GraphPath(
+                nodes=node_path,
+                edges=edges,
+                cumulative_uncertainty=cumulative,
+            ))
+        return results
+
+    def propagate_uncertainty(self, path: GraphPath) -> float:
+        """Multiplicative uncertainty propagation along a derivation chain.
+
+        Returns the combined uncertainty factor (>= 0). Higher = less certain.
+        """
+        if not path.edges:
+            return 0.0
+        combined = 1.0
+        for edge in path.edges:
+            u_val = self._g.edges[edge.source, edge.target].get("uncertainty", 0.0)
+            combined *= (1.0 + u_val)
+        return combined - 1.0
+
+    def multi_hop_solve(
+        self,
+        source_var: str,
+        target_var: str,
+        point: Dict[str, float],
+    ) -> Optional[Dict[str, Any]]:
+        """Chain equations along a derivation path to compute target from source.
+
+        Evaluates each equation along the shortest path, feeding outputs forward.
+        Returns {value, path, uncertainty, edge_equations}.
+        """
+        path = self.find_path(source_var, target_var)
+        if path is None:
+            return None
+
+        ctx = dict(point)
+        edge_results: List[Dict[str, Any]] = []
+        for edge in path.edges:
+            expr_str = edge.sympy_expr
+            if not expr_str:
+                continue
+            try:
+                import sympy
+                sym_expr = sympy.sympify(expr_str)
+                free = sorted(str(s) for s in sym_expr.free_symbols)
+                subs = {sympy.Symbol(k): ctx.get(k, 0.0) for k in free}
+                val = float(sym_expr.evalf(subs=subs))
+                ctx[edge.target] = val
+                edge_results.append({
+                    "source": edge.source,
+                    "target": edge.target,
+                    "value": val,
+                    "equation_id": edge.equation_id,
+                })
+            except Exception:
+                return None
+
+        uncertainty = self.propagate_uncertainty(path)
+        return {
+            "value": ctx.get(target_var),
+            "path": path,
+            "uncertainty": uncertainty,
+            "edge_results": edge_results,
+        }
+
+    def remove_equation(self, equation_id: int) -> None:
+        """Remove all edges associated with an equation ID."""
+        to_remove: List[Tuple[str, str]] = []
+        for u, v, data in self._g.edges(data=True):
+            if data.get("equation_id") == equation_id:
+                to_remove.append((u, v))
+        self._g.remove_edges_from(to_remove)
+
+    @property
+    def nodes(self) -> List[str]:
+        return list(self._g.nodes)
+
+    @property
+    def edge_count(self) -> int:
+        return self._g.number_of_edges()
+
+    def has_variable(self, name: str) -> bool:
+        return self._g.has_node(name)
+
+    def reachable_from(self, source: str) -> List[str]:
+        if source not in self._g:
+            return []
+        return list(nx.descendants(self._g, source))
+
+
+def import_library_to_graph(
+    db_path: str,
+    var_mapping: Dict[str, Tuple[str, List[str]]],
+) -> EquationGraph:
+    """Load active equations from the equation library into a graph.
+
+    Args:
+        db_path: SQLite database path.
+        var_mapping: dict of var_hash → (output_variable, [input_variables]).
+                     Only equations whose var_hash is in this mapping are loaded.
+    """
+    import sqlite3
+
+    graph = EquationGraph()
+    with sqlite3.connect(db_path) as conn:
+        for var_hash, (out_var, in_vars) in var_mapping.items():
+            row = conn.execute(
+                """SELECT e.equation_id, ev.form_family, ev.sympy_ast, ev.stats_json
+                   FROM equation_library e
+                   JOIN equation_versions ev ON e.active_version_id = ev.version_id
+                   WHERE e.var_hash = ? AND e.active_version_id IS NOT NULL""",
+                (var_hash,),
+            ).fetchone()
+            if not row:
+                continue
+            stats = json.loads(row[3]) if row[3] else {}
+            uncertainty = stats.get("holdout_mape", 0.0)
+            graph.add_equation(
+                output_variable=out_var,
+                input_variables=in_vars,
+                equation_id=row[0],
+                family=row[1],
+                sympy_expr=row[2],
+                uncertainty=uncertainty,
+            )
+    return graph

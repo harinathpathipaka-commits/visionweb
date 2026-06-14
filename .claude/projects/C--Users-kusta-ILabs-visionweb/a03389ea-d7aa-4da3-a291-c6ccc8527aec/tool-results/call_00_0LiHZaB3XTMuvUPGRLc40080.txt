@@ -1,0 +1,252 @@
+nerves\ans_nerves\coordinator\coordinator.py:56:    Uses GPT-4o-mini to resolve contradictions and produce a natural-language
+nerves\ans_nerves\config.py:21:    provider: str = "openai"
+nerves\ans_nerves\config.py:22:    model: str = "gpt-4o-mini"
+nerves\ans_nerves\config.py:34:    model: str = "gpt-4o-mini"
+nerves\ans_nerves\config.py:42:    model: str = "gpt-4o-mini"
+nerves\ans_nerves\config.py:49:    model: str = "gpt-4o-mini"
+nerves\ans_nerves\config.py:154:    key = os.getenv("OPENAI_API_KEY", "")
+nerves\ans_nerves\config.py:157:            "OPENAI_API_KEY environment variable is not set. "
+nerves\ans_nerves\config.py:158:            "Set it via: $env:OPENAI_API_KEY='sk-...' (PowerShell) "
+nerves\ans_nerves\config.py:159:            "or export OPENAI_API_KEY=sk-... (bash)"
+nerves\tests\test_config.py:25:        assert cfg.model == "gpt-4o-mini"
+nerves\tests\test_config.py:110:        old = os.getenv("OPENAI_API_KEY")
+nerves\tests\test_config.py:112:            del os.environ["OPENAI_API_KEY"]
+nerves\tests\test_config.py:114:            with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
+nerves\tests\test_config.py:118:                os.environ["OPENAI_API_KEY"] = old
+nerves\tests\test_config.py:122:        old = os.getenv("OPENAI_API_KEY")
+nerves\tests\test_config.py:123:        os.environ["OPENAI_API_KEY"] = "sk-test-12345"
+nerves\tests\test_config.py:128:                os.environ["OPENAI_API_KEY"] = old
+nerves\tests\test_config.py:130:                del os.environ["OPENAI_API_KEY"]
+nerves\ans_nerves\__init__.py:8:- llm/         — Shared GPT-4o-mini client, prompt templates for all Eyes
+nerves\ans_nerves\eyes\vision.py:1:"""Vision Eye — screenshot-based visual understanding via GPT-4o-mini.
+nerves\ans_nerves\eyes\vision.py:3:Receives screenshots as base64-encoded PNG, calls GPT-4o-mini for visual
+nerves\ans_nerves\eyes\vision.py:33:    """Analyses screenshots using GPT-4o-mini vision capabilities."""
+nerves\ans_nerves\eyes\page_diff.py:1:"""Page Diff Eye — semantic interpretation of page changes via GPT-4o-mini.
+nerves\ans_nerves\eyes\page_diff.py:33:    """Detects and interprets page changes using GPT-4o-mini."""
+nerves\ans_nerves\eyes\goal_verifier.py:1:"""Goal Verifier Eye — checks sub-goal criteria via GPT-4o-mini.
+nerves\ans_nerves\eyes\error_detector.py:1:"""Error Detector Eye — failure classification via GPT-4o-mini.
+nerves\ans_nerves\decomposer\decomposer.py:52:    """Decomposes goals into verifiable sub-goals using GPT-4o-mini."""
+nerves\tests\test_llm.py:3:Set OPENAI_API_KEY to run the live tests. Without it, only unit tests
+nerves\tests\test_llm.py:154:# ── Integration tests (require OPENAI_API_KEY) ─────────────
+nerves\tests\test_llm.py:157:    not os.getenv("OPENAI_API_KEY"),
+nerves\tests\test_llm.py:158:    reason="OPENAI_API_KEY not set — skipping live LLM tests",
+nerves\tests\test_llm.py:161:    """Live tests against GPT-4o-mini. Requires OPENAI_API_KEY env var."""
+nerves\ans_nerves\llm\__init__.py:4:- LLMClient: shared async GPT-4o-mini client with retry, token tracking, structured output
+nerves\ans_nerves\llm\client.py:1:"""Shared LLM client — GPT-4o-mini via OpenAI SDK.
+nerves\ans_nerves\llm\client.py:19:from openai import AsyncOpenAI
+nerves\ans_nerves\llm\client.py:20:from openai.types.chat import (
+nerves\ans_nerves\llm\client.py:56:    """Async client for GPT-4o-mini with structured output and budget tracking."""
+nerves\ans_nerves\llm\client.py:215:        """Send a screenshot + prompt to GPT-4o-mini for visual analysis.
+nerves\ans_nerves\scoring\embeddings.py:15:from openai import AsyncOpenAI
+nerves\ans_nerves\scoring\embeddings.py:55:    async def _call_openai(self, texts: list[str]) -> list[list[float]]:
+nerves\ans_nerves\scoring\embeddings.py:99:            results = await self._call_openai([text])
+nerves\ans_nerves\scoring\embeddings.py:116:            return await self._call_openai(non_empty)
+nerves\.venv\Lib\site-packages\lancedb\rerankers\__init__.py:9:from .openai import OpenaiReranker
+nerves\.venv\Lib\site-packages\lancedb\rerankers\voyageai.py:35:        The API key to use. If None, will use the OPENAI_API_KEY environment variable.
+nerves\.venv\Lib\site-packages\lancedb\rerankers\openai.py:31:        The API key to use. If None, will use the OPENAI_API_KEY environment variable.
+nerves\.venv\Lib\site-packages\lancedb\rerankers\openai.py:124:        openai = attempt_import_or_raise(
+nerves\.venv\Lib\site-packages\lancedb\rerankers\openai.py:125:            "openai"
+nerves\.venv\Lib\site-packages\lancedb\rerankers\openai.py:127:        if os.environ.get("OPENAI_API_KEY") is None and self.api_key is None:
+nerves\.venv\Lib\site-packages\lancedb\rerankers\openai.py:129:                "OPENAI_API_KEY not set. Either set it in your environment or \
+nerves\.venv\Lib\site-packages\lancedb\rerankers\openai.py:132:        return openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY") or self.api_key)
+nerves\.venv\Lib\site-packages\lancedb\embeddings\__init__.py:13:from .openai import OpenAIEmbeddings
+nerves\.venv\Lib\site-packages\lancedb\embeddings\registry.py:206:    openai = registry.get("openai").create()
+nerves\.venv\Lib\site-packages\lancedb\embeddings\openai.py:16:@register("openai")
+nerves\.venv\Lib\site-packages\lancedb\embeddings\openai.py:21:    https://platform.openai.com/docs/guides/embeddings
+nerves\.venv\Lib\site-packages\lancedb\embeddings\openai.py:35:    openai = get_registry().get("openai")
+nerves\.venv\Lib\site-packages\lancedb\embeddings\openai.py:36:    embedding_function = openai.create(
+nerves\.venv\Lib\site-packages\lancedb\embeddings\openai.py:91:        openai = attempt_import_or_raise("openai")
+nerves\.venv\Lib\site-packages\lancedb\embeddings\openai.py:109:            rs = self._openai_client.embeddings.create(**kwargs)
+nerves\.venv\Lib\site-packages\lancedb\embeddings\openai.py:113:        except openai.AuthenticationError:
+nerves\.venv\Lib\site-packages\lancedb\embeddings\openai.py:116:        except openai.BadRequestError:
+nerves\.venv\Lib\site-packages\lancedb\embeddings\openai.py:125:    def _openai_client(self):
+nerves\.venv\Lib\site-packages\lancedb\embeddings\openai.py:126:        openai = attempt_import_or_raise("openai")
+nerves\.venv\Lib\site-packages\lancedb\embeddings\openai.py:138:            return openai.AzureOpenAI(**kwargs)
+nerves\.venv\Lib\site-packages\lancedb\embeddings\openai.py:140:            return openai.OpenAI(**kwargs)
+nerves\.venv\Lib\site-packages\openai\__init__.py:113:# openai._exceptions.NotFoundError -> openai.NotFoundError
+nerves\.venv\Lib\site-packages\openai\__init__.py:118:            __locals[__name].__module__ = "openai"
+nerves\.venv\Lib\site-packages\openai\__init__.py:153:_ApiType = _te.Literal["openai", "azure"]
+nerves\.venv\Lib\site-packages\openai\__init__.py:300:            "Ambiguous use of module client; please set `openai.api_type` or the `OPENAI_API_TYPE` environment variable to `openai` or `azure`"
+nerves\.venv\Lib\site-packages\openai\__init__.py:304:def _has_openai_credentials() -> bool:
+nerves\.venv\Lib\site-packages\openai\__init__.py:305:    return _os.environ.get("OPENAI_API_KEY") is not None
+nerves\.venv\Lib\site-packages\openai\__init__.py:309:    return azure_endpoint is not None or _os.environ.get("AZURE_OPENAI_API_KEY") is not None
+nerves\.venv\Lib\site-packages\openai\__init__.py:339:            has_openai = _has_openai_credentials()
+nerves\.venv\Lib\site-packages\openai\__init__.py:343:            if has_openai and (has_azure or has_azure_ad):
+nerves\.venv\Lib\site-packages\openai\__init__.py:347:                "AZURE_OPENAI_API_KEY"
+nerves\.venv\Lib\site-packages\openai\__init__.py:354:                api_type = "openai"
+nerves\.venv\Lib\site-packages\openai\_version.py:3:__title__ = "openai"
+nerves\.venv\Lib\site-packages\openai\_utils\_resources_proxy.py:10:    """A proxy for the `openai.resources` module.
+nerves\.venv\Lib\site-packages\openai\_utils\_resources_proxy.py:12:    This is used so that we can lazily import `openai.resources` only when
+nerves\.venv\Lib\site-packages\openai\_utils\_resources_proxy.py:13:    needed *and* so that users can just import `openai` and reference `openai.resources`
+nerves\.venv\Lib\site-packages\openai\_utils\_resources_proxy.py:20:        mod = importlib.import_module("openai.resources")
+nerves\.venv\Lib\site-packages\openai\_utils\_logs.py:7:logger: logging.Logger = logging.getLogger("openai")
+nerves\.venv\Lib\site-packages\openai\_utils\_logs.py:15:    # e.g. [2023-10-05 14:12:26 - openai._base_client:818 - DEBUG] HTTP Request: POST http://127.0.0.1:4010/foo/bar "200 OK"
+nerves\.venv\Lib\site-packages\openai\_types.py:108:# from openai import NoneType
+nerves\.venv\Lib\site-packages\openai\_response.py:227:            raise TypeError("Pydantic models must subclass our base model type, e.g. `from openai import BaseModel`")
+nerves\.venv\Lib\site-packages\openai\_response.py:297:        from openai import BaseModel
+nerves\.venv\Lib\site-packages\openai\_response.py:406:        from openai import BaseModel
+nerves\.venv\Lib\site-packages\openai\_response.py:580:            "The `stream` argument was set to `True` but the `stream_cls` argument was not given. See `openai._streaming` for reference",
+nerves\.venv\Lib\site-packages\openai\_legacy_response.py:111:        from openai import BaseModel
+nerves\.venv\Lib\site-packages\openai\_legacy_response.py:294:            raise TypeError("Pydantic models must subclass our base model type, e.g. `from openai import BaseModel`")
+nerves\.venv\Lib\site-packages\openai\_legacy_response.py:351:            "The `stream` argument was set to `True` but the `stream_cls` argument was not given. See `openai._streaming` for reference",
+nerves\.venv\Lib\site-packages\openai\_files.py:39:            f"{prefix} to be bytes, an io.IOBase instance, PathLike or a tuple but received {type(obj)} instead. See https://github.com/openai/openai-python/tree/main#file-uploads"
+nerves\.venv\Lib\site-packages\openai\_extras\_common.py:11:    $ pip install openai[{extra}]
+nerves\.venv\Lib\site-packages\openai\_client.py:155:        - `api_key` from `OPENAI_API_KEY`
+nerves\.venv\Lib\site-packages\openai\_client.py:174:                api_key = os.environ.get("OPENAI_API_KEY")
+nerves\.venv\Lib\site-packages\openai\_client.py:195:                "Missing credentials. Please pass an `api_key`, `workload_identity`, `admin_api_key`, or set the `OPENAI_API_KEY` or `OPENAI_ADMIN_KEY` environment variable."
+nerves\.venv\Lib\site-packages\openai\_client.py:215:            base_url = f"https://api.openai.com/v1"
+nerves\.venv\Lib\site-packages\openai\_client.py:661:        - `api_key` from `OPENAI_API_KEY`
+nerves\.venv\Lib\site-packages\openai\_client.py:680:                api_key = os.environ.get("OPENAI_API_KEY")
+nerves\.venv\Lib\site-packages\openai\_client.py:701:                "Missing credentials. Please pass an `api_key`, `workload_identity`, `admin_api_key`, or set the `OPENAI_API_KEY` or `OPENAI_ADMIN_KEY` environment variable."
+nerves\.venv\Lib\site-packages\openai\_client.py:721:            base_url = f"https://api.openai.com/v1"
+nerves\.venv\Lib\site-packages\openai\_base_client.py:399:                "max_retries cannot be None. If you want to disable retries, pass `0`; if you want unlimited retries, pass `math.inf` or a very high number; if you want the default behavior, pass `openai.DEFAULT_MAX_RETRIES`"
+nerves\.venv\Lib\site-packages\openai\lib\_validators.py:244:        immediate_msg = "\n- Your data does not contain a common separator at the end of your prompts. Having a separator string appended to the end of the prompt makes it clearer to the fine-tuned model where the completion should begin. See https://platform.openai.com/docs/guides/fine-tuning/preparing-your-dataset for more detail and examples. If you intend to do open-ended generation, then you should leave the prompts empty"
+nerves\.venv\Lib\site-packages\openai\lib\_validators.py:387:        immediate_msg = "\n- Your data does not contain a common ending at the end of your completions. Having a common ending string appended to the end of the completion makes it clearer to the fine-tuned model where the completion should end. See https://platform.openai.com/docs/guides/fine-tuning/preparing-your-dataset for more detail and examples."
+nerves\.venv\Lib\site-packages\openai\lib\_validators.py:418:        immediate_msg = "\n- The completion should start with a whitespace character (` `). This tends to produce better results due to the tokenization we use. See https://platform.openai.com/docs/guides/fine-tuning/preparing-your-dataset for more details"
+nerves\.venv\Lib\site-packages\openai\lib\_validators.py:444:            immediate_msg=f"\n- More than a third of your `{column}` column/key is uppercase. Uppercase {column}s tends to perform worse than a mixture of case encountered in normal language. We recommend to lower case the data if that makes sense in your domain. See https://platform.openai.com/docs/guides/fine-tuning/preparing-your-dataset for more details",
+nerves\.venv\Lib\site-packages\openai\lib\_validators.py:668:            f'\nYou can use your file for fine-tuning:\n> openai api fine_tunes.create -t "{fname}"{additional_params}\n\nAfter you’ve fine-tuned a model, remember that your prompt has to end with the indicator string `{common_prompt_suffix_new_line_handled}` for the model to start generating completions, rather than continuing with the prompt.{optional_ending_string}\n'
+nerves\.venv\Lib\site-packages\openai\lib\_validators.py:708:            f'\nWrote modified file{files_string}`\nFeel free to take a look!\n\nNow use that file when fine-tuning:\n> openai api fine_tunes.create -t "{fnames[0]}"{valid_string}{additional_params}\n\n{separator_reminder}{optional_ending_string}\n'
+nerves\.venv\Lib\site-packages\openai\lib\_realtime.py:8:from openai import _legacy_response
+nerves\.venv\Lib\site-packages\openai\lib\_realtime.py:9:from openai._types import Body, Omit, Query, Headers, NotGiven, omit, not_given
+nerves\.venv\Lib\site-packages\openai\lib\_realtime.py:10:from openai._utils import maybe_transform, async_maybe_transform
+nerves\.venv\Lib\site-packages\openai\lib\_realtime.py:11:from openai._base_client import make_request_options
+nerves\.venv\Lib\site-packages\openai\lib\_realtime.py:12:from openai.resources.realtime.calls import Calls, AsyncCalls
+nerves\.venv\Lib\site-packages\openai\lib\_realtime.py:13:from openai.types.realtime.realtime_session_create_request_param import RealtimeSessionCreateRequestParam
+nerves\.venv\Lib\site-packages\openai\lib\_parsing\_completions.py:40:log: logging.Logger = logging.getLogger("openai.lib.parsing")
+nerves\.venv\Lib\site-packages\openai\lib\_old_api.py:11:You tried to access openai.{symbol}, but this is no longer supported in openai>=1.0.0 - see the README at https://github.com/openai/openai-python for the API.
+nerves\.venv\Lib\site-packages\openai\lib\_old_api.py:13:You can run `openai migrate` to automatically upgrade your codebase to use the 1.0.0 interface. 
+nerves\.venv\Lib\site-packages\openai\lib\_old_api.py:15:Alternatively, you can pin your installation to the old version, e.g. `pip install openai==0.28`
+nerves\.venv\Lib\site-packages\openai\lib\_old_api.py:17:A detailed migration guide is available here: https://github.com/openai/openai-python/discussions/742
+nerves\.venv\Lib\site-packages\openai\lib\_old_api.py:62:# in `openai/__init__.py` they aren't added to the auto-complete
+nerves\.venv\Lib\site-packages\openai\lib\azure.py:90:                    self._azure_endpoint.raw_path.rstrip(b"/") + b"/openai/" + merge_url.raw_path.lstrip(b"/")
+nerves\.venv\Lib\site-packages\openai\lib\azure.py:192:        """Construct a new synchronous azure openai client instance.
+nerves\.venv\Lib\site-packages\openai\lib\azure.py:195:        - `api_key` from `AZURE_OPENAI_API_KEY`
+nerves\.venv\Lib\site-packages\openai\lib\azure.py:203:            azure_endpoint: Your Azure endpoint, including the resource, e.g. `https://example-resource.azure.openai.com/`
+nerves\.venv\Lib\site-packages\openai\lib\azure.py:213:            api_key = os.environ.get("AZURE_OPENAI_API_KEY")
+nerves\.venv\Lib\site-packages\openai\lib\azure.py:220:                "Missing credentials. Please pass one of `api_key`, `azure_ad_token`, `azure_ad_token_provider`, or the `AZURE_OPENAI_API_KEY` or `AZURE_OPENAI_AD_TOKEN` environment variables."
+nerves\.venv\Lib\site-packages\openai\lib\azure.py:246:                base_url = f"{azure_endpoint.rstrip('/')}/openai/deployments/{azure_deployment}"
+nerves\.venv\Lib\site-packages\openai\lib\azure.py:248:                base_url = f"{azure_endpoint.rstrip('/')}/openai"
+nerves\.venv\Lib\site-packages\openai\lib\azure.py:512:        """Construct a new asynchronous azure openai client instance.
+nerves\.venv\Lib\site-packages\openai\lib\azure.py:515:        - `api_key` from `AZURE_OPENAI_API_KEY`
+nerves\.venv\Lib\site-packages\openai\lib\azure.py:523:            azure_endpoint: Your Azure endpoint, including the resource, e.g. `https://example-resource.azure.openai.com/`
+nerves\.venv\Lib\site-packages\openai\lib\azure.py:533:            api_key = os.environ.get("AZURE_OPENAI_API_KEY")
+nerves\.venv\Lib\site-packages\openai\lib\azure.py:540:                "Missing credentials. Please pass one of `api_key`, `azure_ad_token`, `azure_ad_token_provider`, or the `AZURE_OPENAI_API_KEY` or `AZURE_OPENAI_AD_TOKEN` environment variables."
+nerves\.venv\Lib\site-packages\openai\lib\azure.py:566:                base_url = f"{azure_endpoint.rstrip('/')}/openai/deployments/{azure_deployment}"
+nerves\.venv\Lib\site-packages\openai\lib\azure.py:568:                base_url = f"{azure_endpoint.rstrip('/')}/openai"
+nerves\.venv\Lib\site-packages\openai\lib\streaming\chat\_completions.py:52:    https://platform.openai.com/docs/api-reference/streaming
+nerves\.venv\Lib\site-packages\openai\lib\streaming\chat\_completions.py:175:    https://platform.openai.com/docs/api-reference/streaming
+nerves\.venv\Lib\site-packages\openai\lib\streaming\chat\_completions.py:298:    from openai.lib.streaming.chat import ChatCompletionStreamState
+nerves\.venv\Lib\site-packages\openai\auth\_workload.py:15:DEFAULT_TOKEN_EXCHANGE_URL = "https://auth.openai.com/oauth/token"
+nerves\.venv\Lib\site-packages\openai\auth\_workload.py:129:    audience: str = "https://api.openai.com/v1",
+nerves\.venv\Lib\site-packages\openai\auth\_workload.py:141:            the instance's identity. Defaults to `https://api.openai.com/v1`.
+nerves\.venv\Lib\site-packages\openai\types\batch_create_params.py:44:    See [upload file](https://platform.openai.com/docs/api-reference/files/create)
+nerves\.venv\Lib\site-packages\openai\types\batch_create_params.py:48:    [JSONL file](https://platform.openai.com/docs/api-reference/batch/request-input),
+nerves\.venv\Lib\site-packages\openai\types\batch.py:89:    [model guide](https://platform.openai.com/docs/models) to browse and compare
+nerves\.venv\Lib\site-packages\openai\types\audio_model.py:10:    "gpt-4o-mini-transcribe",
+nerves\.venv\Lib\site-packages\openai\types\audio_model.py:11:    "gpt-4o-mini-transcribe-2025-12-15",
+nerves\.venv\Lib\site-packages\openai\types\batch_usage.py:14:    [More on prompt caching](https://platform.openai.com/docs/guides/prompt-caching).
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant.py:17:    A list of [file](https://platform.openai.com/docs/api-reference/files) IDs made
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant.py:27:    [vector store](https://platform.openai.com/docs/api-reference/vector-stores/object)
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant.py:76:    [List models](https://platform.openai.com/docs/api-reference/models/list) API to
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant.py:78:    [Model overview](https://platform.openai.com/docs/models) for descriptions of
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant.py:98:    Compatible with [GPT-4o](https://platform.openai.com/docs/models#gpt-4o),
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant.py:99:    [GPT-4 Turbo](https://platform.openai.com/docs/models#gpt-4-turbo-and-gpt-4),
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant.py:105:    [Structured Outputs guide](https://platform.openai.com/docs/guides/structured-outputs).
+nerves\.venv\Lib\site-packages\openai\types\chat\chat_completion.py:76:    - If set to '[flex](https://platform.openai.com/docs/guides/flex-processing)' or
+nerves\.venv\Lib\site-packages\openai\types\chat\chat_completion.py:77:      '[priority](https://openai.com/api-priority-processing/)', then the request
+nerves\.venv\Lib\site-packages\openai\types\completion_create_params.py:19:    [List models](https://platform.openai.com/docs/api-reference/models/list) API to
+nerves\.venv\Lib\site-packages\openai\types\completion_create_params.py:21:    [Model overview](https://platform.openai.com/docs/models) for descriptions of
+nerves\.venv\Lib\site-packages\openai\types\completion_create_params.py:57:    [See more information about frequency and presence penalties.](https://platform.openai.com/docs/guides/text-generation)
+nerves\.venv\Lib\site-packages\openai\types\completion_create_params.py:92:    [Example Python code](https://cookbook.openai.com/examples/how_to_count_tokens_with_tiktoken)
+nerves\.venv\Lib\site-packages\openai\types\completion_create_params.py:110:    [See more information about frequency and presence penalties.](https://platform.openai.com/docs/guides/text-generation)
+nerves\.venv\Lib\site-packages\openai\types\completion_create_params.py:161:    [Learn more](https://platform.openai.com/docs/guides/safety-best-practices#end-user-ids).
+nerves\.venv\Lib\site-packages\openai\types\completion_create_params.py:173:    [Example Python code](https://cookbook.openai.com/examples/how_to_stream_completions).
+nerves\.venv\Lib\site-packages\openai\types\completion_create_params.py:185:    [Example Python code](https://cookbook.openai.com/examples/how_to_stream_completions).
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_create_params.py:33:    [List models](https://platform.openai.com/docs/api-reference/models/list) API to
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_create_params.py:35:    [Model overview](https://platform.openai.com/docs/models) for descriptions of
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_create_params.py:64:    [reasoning models](https://platform.openai.com/docs/guides/reasoning). Currently
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_create_params.py:81:    Compatible with [GPT-4o](https://platform.openai.com/docs/models#gpt-4o),
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_create_params.py:82:    [GPT-4 Turbo](https://platform.openai.com/docs/models#gpt-4-turbo-and-gpt-4),
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_create_params.py:88:    [Structured Outputs guide](https://platform.openai.com/docs/guides/structured-outputs).
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_create_params.py:137:    A list of [file](https://platform.openai.com/docs/api-reference/files) IDs made
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_create_params.py:189:    A list of [file](https://platform.openai.com/docs/api-reference/files) IDs to
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_create_params.py:210:    [vector store](https://platform.openai.com/docs/api-reference/vector-stores/object)
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_create_params.py:218:    [vector store](https://platform.openai.com/docs/api-reference/vector-stores/object)
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:47:    Occurs when a new [thread](https://platform.openai.com/docs/api-reference/threads/object) is created.
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:53:    [messages](https://platform.openai.com/docs/api-reference/messages).
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:64:    Occurs when a new [run](https://platform.openai.com/docs/api-reference/runs/object) is created.
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:70:    [thread](https://platform.openai.com/docs/api-reference/threads).
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:78:    Occurs when a [run](https://platform.openai.com/docs/api-reference/runs/object) moves to a `queued` status.
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:84:    [thread](https://platform.openai.com/docs/api-reference/threads).
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:92:    Occurs when a [run](https://platform.openai.com/docs/api-reference/runs/object) moves to an `in_progress` status.
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:98:    [thread](https://platform.openai.com/docs/api-reference/threads).
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:106:    Occurs when a [run](https://platform.openai.com/docs/api-reference/runs/object) moves to a `requires_action` status.
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:112:    [thread](https://platform.openai.com/docs/api-reference/threads).
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:120:    Occurs when a [run](https://platform.openai.com/docs/api-reference/runs/object) is completed.
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:126:    [thread](https://platform.openai.com/docs/api-reference/threads).
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:134:    Occurs when a [run](https://platform.openai.com/docs/api-reference/runs/object) ends with status `incomplete`.
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:140:    [thread](https://platform.openai.com/docs/api-reference/threads).
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:148:    Occurs when a [run](https://platform.openai.com/docs/api-reference/runs/object) fails.
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:154:    [thread](https://platform.openai.com/docs/api-reference/threads).
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:162:    Occurs when a [run](https://platform.openai.com/docs/api-reference/runs/object) moves to a `cancelling` status.
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:168:    [thread](https://platform.openai.com/docs/api-reference/threads).
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:176:    Occurs when a [run](https://platform.openai.com/docs/api-reference/runs/object) is cancelled.
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:182:    [thread](https://platform.openai.com/docs/api-reference/threads).
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:190:    Occurs when a [run](https://platform.openai.com/docs/api-reference/runs/object) expires.
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:196:    [thread](https://platform.openai.com/docs/api-reference/threads).
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:204:    Occurs when a [run step](https://platform.openai.com/docs/api-reference/run-steps/step-object) is created.
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:215:    Occurs when a [run step](https://platform.openai.com/docs/api-reference/run-steps/step-object) moves to an `in_progress` state.
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:226:    Occurs when parts of a [run step](https://platform.openai.com/docs/api-reference/run-steps/step-object) are being streamed.
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:240:    Occurs when a [run step](https://platform.openai.com/docs/api-reference/run-steps/step-object) is completed.
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:251:    Occurs when a [run step](https://platform.openai.com/docs/api-reference/run-steps/step-object) fails.
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:262:    Occurs when a [run step](https://platform.openai.com/docs/api-reference/run-steps/step-object) is cancelled.
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:273:    Occurs when a [run step](https://platform.openai.com/docs/api-reference/run-steps/step-object) expires.
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:284:    Occurs when a [message](https://platform.openai.com/docs/api-reference/messages/object) is created.
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:290:    [thread](https://platform.openai.com/docs/api-reference/threads).
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:298:    Occurs when a [message](https://platform.openai.com/docs/api-reference/messages/object) moves to an `in_progress` state.
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:304:    [thread](https://platform.openai.com/docs/api-reference/threads).
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:312:    Occurs when parts of a [Message](https://platform.openai.com/docs/api-reference/messages/object) are being streamed.
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:326:    Occurs when a [message](https://platform.openai.com/docs/api-reference/messages/object) is completed.
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:332:    [thread](https://platform.openai.com/docs/api-reference/threads).
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:340:    Occurs when a [message](https://platform.openai.com/docs/api-reference/messages/object) ends before it is completed.
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:346:    [thread](https://platform.openai.com/docs/api-reference/threads).
+nerves\.venv\Lib\site-packages\openai\types\beta\assistant_stream_event.py:354:    Occurs when an [error](https://platform.openai.com/docs/guides/error-codes#api-errors) occurs. This can happen due to an internal server error or a timeout.
+nerves\.venv\Lib\site-packages\openai\types\chat\chat_completion_assistant_message_param.py:18:    [Learn more](https://platform.openai.com/docs/guides/audio).
+nerves\.venv\Lib\site-packages\openai\types\chat\chat_completion_assistant_message_param.py:55:    [Learn more](https://platform.openai.com/docs/guides/audio).
+nerves\.venv\Lib\site-packages\openai\types\embedding_create_params.py:22:    [Example Python code](https://cookbook.openai.com/examples/how_to_count_tokens_with_tiktoken)
+nerves\.venv\Lib\site-packages\openai\types\embedding_create_params.py:32:    [List models](https://platform.openai.com/docs/api-reference/models/list) API to
+nerves\.venv\Lib\site-packages\openai\types\embedding_create_params.py:34:    [Model overview](https://platform.openai.com/docs/models) for descriptions of
+nerves\.venv\Lib\site-packages\openai\types\embedding_create_params.py:54:    [Learn more](https://platform.openai.com/docs/guides/safety-best-practices#end-user-ids).
+nerves\.venv\Lib\site-packages\openai\types\embedding.py:18:    [embedding guide](https://platform.openai.com/docs/guides/embeddings).
+nerves\.venv\Lib\site-packages\openai\types\audio\translation_create_params.py:32:    The [prompt](https://platform.openai.com/docs/guides/speech-to-text#prompting)
+nerves\.venv\Lib\site-packages\openai\types\audio\transcription_text_segment_event.py:12:    Emitted when a diarized transcription returns a completed segment with speaker information. Only emitted when you [create a transcription](https://platform.openai.com/docs/api-reference/audio/create-transcription) with `stream` set to `true` and `response_format` set to `diarized_json`.
+nerves\.venv\Lib\site-packages\openai\types\audio\transcription_text_done_event.py:54:    Contains the complete transcription text. Only emitted when you [create a transcription](https://platform.openai.com/docs/api-reference/audio/create-transcription) with the `Stream` parameter set to `true`.
+nerves\.venv\Lib\site-packages\openai\types\audio\transcription_text_done_event.py:67:    [create a transcription](https://platform.openai.com/docs/api-reference/audio/create-transcription)
+nerves\.venv\Lib\site-packages\openai\types\audio\transcription_text_delta_event.py:25:    This is also the first event emitted when the transcription starts. Only emitted when you [create a transcription](https://platform.openai.com/docs/api-reference/audio/create-transcription) with the `Stream` parameter set to `true`.
+nerves\.venv\Lib\site-packages\openai\types\audio\transcription_text_delta_event.py:38:    [create a transcription](https://platform.openai.com/docs/api-reference/audio/create-transcription)
+nerves\.venv\Lib\site-packages\openai\types\audio\transcription_create_params.py:32:    The options are `gpt-4o-transcribe`, `gpt-4o-mini-transcribe`,
+nerves\.venv\Lib\site-packages\openai\types\audio\transcription_create_params.py:33:    `gpt-4o-mini-transcribe-2025-12-15`, `whisper-1` (which is powered by our open
+nerves\.venv\Lib\site-packages\openai\types\audio\transcription_create_params.py:53:    `gpt-4o-mini-transcribe`, and `gpt-4o-mini-transcribe-2025-12-15`. This field is
+nerves\.venv\Lib\site-packages\openai\types\audio\transcription_create_params.py:85:    The [prompt](https://platform.openai.com/docs/guides/speech-to-text#prompting)
+nerves\.venv\Lib\site-packages\openai\types\audio\transcription_create_params.py:94:    `gpt-4o-mini-transcribe`, the only supported format is `json`. For
+nerves\.venv\Lib\site-packages\openai\types\audio\transcription_create_params.py:151:    [Streaming section of the Speech-to-Text guide](https://platform.openai.com/docs/guides/speech-to-text?lang=curl#streaming-transcriptions)
+nerves\.venv\Lib\site-packages\openai\types\audio\transcription_create_params.py:165:    [Streaming section of the Speech-to-Text guide](https://platform.openai.com/docs/guides/speech-to-text?lang=curl#streaming-transcriptions)
+nerves\.venv\Lib\site-packages\openai\types\audio\transcription.py:76:    Only returned with the models `gpt-4o-transcribe` and `gpt-4o-mini-transcribe`
+nerves\.venv\Lib\site-packages\openai\types\audio\speech_model.py:7:SpeechModel: TypeAlias = Literal["tts-1", "tts-1-hd", "gpt-4o-mini-tts", "gpt-4o-mini-tts-2025-12-15"]
+nerves\.venv\Lib\site-packages\openai\types\audio\speech_create_params.py:19:    One of the available [TTS models](https://platform.openai.com/docs/models#tts):
+nerves\.venv\Lib\site-packages\openai\types\audio\speech_create_params.py:20:    `tts-1`, `tts-1-hd`, `gpt-4o-mini-tts`, or `gpt-4o-mini-tts-2025-12-15`.
+nerves\.venv\Lib\site-packages\openai\types\audio\speech_create_params.py:30:    [Text to speech guide](https://platform.openai.com/docs/guides/text-to-speech#voice-options).
+nerves\.venv\Lib\site-packages\openai\types\evals\run_retrieve_response.py:108:    [reasoning models](https://platform.openai.com/docs/guides/reasoning). Currently
+nerves\.venv\Lib\site-packages\openai\types\evals\run_retrieve_response.py:247:    - [Text inputs and outputs](https://platform.openai.com/docs/guides/text)
+nerves\.venv\Lib\site-packages\openai\types\evals\run_retrieve_response.py:248:    - [Structured Outputs](https://platform.openai.com/docs/guides/structured-outputs)
+nerves\.venv\Lib\site-packages\openai\types\evals\run_retrieve_response.py:256:    [Structured Outputs guide](https://platform.openai.com/docs/guides/structured-outputs).
+nerves\.venv\Lib\site-packages\openai\types\evals\run_retrieve_response.py:275:    [reasoning models](https://platform.openai.com/docs/guides/reasoning). Currently
+nerves\.venv\Lib\site-packages\openai\types\evals\run_retrieve_response.py:300:    - [Text inputs and outputs](https://platform.openai.com/docs/guides/text)
+nerves\.venv\Lib\site-packages\openai\types\evals\run_retrieve_response.py:301:    - [Structured Outputs](https://platform.openai.com/docs/guides/structured-outputs)
+nerves\.venv\Lib\site-packages\openai\types\evals\run_retrieve_response.py:313:      [web search](https://platform.openai.com/docs/guides/tools-web-search) or
+nerves\.venv\Lib\site-packages\openai\types\evals\run_retrieve_response.py:314:      [file search](https://platform.openai.com/docs/guides/tools-file-search).
+nerves\.venv\Lib\site-packages\openai\types\evals\run_retrieve_response.py:316:      [built-in tools](https://platform.openai.com/docs/guides/tools).
+nerves\.venv\Lib\site-packages\openai\types\evals\run_retrieve_response.py:319:      [function calling](https://platform.openai.com/docs/guides/function-calling).
+nerves\.venv\Lib\site-packages\openai\types\evals\run_list_response.py:108:    [reasoning models](https://platform.openai.com/docs/guides/reasoning). Currently
+
+[Showing results with pagination = limit: 250]

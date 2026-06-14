@@ -1,0 +1,43 @@
+//! Budget tracker — per-goal and per-API-key spend tracking.
+//!
+//! Before any LLM/Vision API call, the tracker:
+//! 1. Checks remaining budget → updates circuit breaker mode
+//! 2. If mode disallows the call → returns cached/fallback response
+//! 3. If allowed → tracks actual token usage from API response
+//! 4. Updates spend counters and persists to LanceDB
+
+use crate::circuit_breaker::CircuitBreaker;
+use ans_core::budget::BudgetMode;
+
+/// Tracks spend for a single goal.
+pub struct BudgetTracker {
+    breaker: CircuitBreaker,
+    budget_cents: u32,
+    spent_cents: u32,
+}
+
+impl BudgetTracker {
+    pub fn new(budget_cents: u32) -> Self {
+        Self {
+            breaker: CircuitBreaker::new(),
+            budget_cents,
+            spent_cents: 0,
+        }
+    }
+
+    pub fn remaining_pct(&self) -> f32 {
+        if self.budget_cents == 0 {
+            return 0.0;
+        }
+        ((self.budget_cents - self.spent_cents) as f32 / self.budget_cents as f32) * 100.0
+    }
+
+    pub fn mode(&self) -> BudgetMode {
+        self.breaker.current_mode()
+    }
+
+    pub fn track_spend(&mut self, cost_cents: u32) {
+        self.spent_cents = self.spent_cents.saturating_add(cost_cents);
+        self.breaker.update(self.remaining_pct());
+    }
+}

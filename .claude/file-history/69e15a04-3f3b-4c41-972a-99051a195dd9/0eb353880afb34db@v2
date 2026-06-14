@@ -1,0 +1,298 @@
+# Equation Layer — Critical Issues Analysis
+
+> **Senior Developer / Architect Review**
+> All four identified issues are valid and severe. Three additional systemic issues are identified below.
+
+---
+
+## Issue 1: LLM Proposing Equation Forms Is Dangerous
+
+**Severity: CRITICAL**
+
+### The Problem
+The constraint "LLM extracts variables AND proposes equations" reinserts the LLM into the exact reasoning step the architecture is designed to remove. An LLM-proposed `exponential` form that happens to fit noise will pass Layer 3 validation (R², holdout MAPE) and produce a confident, precisely wrong answer.
+
+**Why validation does not save you:**
+- Holdout MAPE checks predictive accuracy, not structural validity.
+- A misspecified model can predict well in-sample and near-sample yet fail catastrophically on extrapolation.
+- Patterned residual rejection catches some cases, but random-looking residuals on a structurally wrong model are common with small n.
+
+### The Correct Design
+
+**LLM role: variable extraction ONLY.**
+
+**Equation form selection: systematic canonical families + empirical selection.**
+
+```
+Layer 3 — Fitter + Validator (Revised)
+
+Input: variables from Layer 1, correlation map from Layer 2
+
+Step 1: Retrieve existing equation from library (variable set + domain match)
+  → If found and not drifted: use it. Skip to Layer 4.
+
+Step 2: If no existing equation, try canonical forms systematically:
+  Family A: Linear        y = a·x + b
+  Family B: Power         y = a·x^b
+  Family C: Exponential   y = a·exp(b·x)
+  Family D: Logarithmic   y = a·ln(x) + b
+  Family E: Logistic      y = L / (1 + exp(-k·(x - x₀)))
+  Family F: Polynomial    y = a + b·x + c·x² (degree capped at 2)
+  
+  For each family:
+    - Fit parameters via nonlinear least squares
+    - Compute: R²_adj, holdout MAPE, residual randomness test
+    - Check structural validity (e.g., elasticity sign matches domain theory)
+  
+  Select winner by: lowest AIC among those passing all thresholds.
+
+Step 3: If NO canonical family passes → trigger fallback:
+  - Return "insufficient structural model" to user
+  - Queue PySR discovery as background job (future implementation)
+  - Do NOT guess.
+```
+
+**Why this is correct:**
+- The LLM never proposes forms. It cannot hallucinate a relationship shape.
+- Canonical families cover 95% of business quantitative relationships.
+- AIC-based selection is principled and reproducible.
+- PySR is a fallback, not a primary path.
+
+---
+
+## Issue 2: "No Pre-Defined Library" Removes the Moat
+
+**Severity: CRITICAL**
+
+### The Problem
+Starting every customer with an empty equation library means:
+- First 10–20 queries return "insufficient data" repeatedly.
+- No cross-customer learning. The system never gets smarter.
+- The product feels broken on first use.
+
+### The Correct Design
+
+**The Equation Library is the product.** It must exist, persist, and compound.
+
+```
+Layer 3 — Library-First Design
+
+On every query:
+  1. Hash the variable set + domain tag.
+  2. Query library: SELECT equation WHERE var_hash = ? AND domain = ? AND confidence = 'HIGH'.
+  3. If found:
+       - Check drift flag. If drifted: refit, do not retrieve blindly.
+       - If not drifted: retrieve parameters, skip fitting, go to Layer 4.
+  4. If not found:
+       - Fit new equation from observations.
+       - Validate on holdout.
+       - If passes: INSERT into library.
+       - If fails: reject, do not store.
+
+Library schema:
+  equation_id, var_hash, domain, form_family, sympy_ast,
+  parameters_json, stats_json, n_obs, created_at, last_fitted_at,
+  drift_status, confidence_level, provenance_list
+```
+
+**Cold Start Mitigation:**
+- **Cross-domain transfer**: `finance.saas.smb` inherits posterior-initialized parameters from `finance.saas.enterprise` if no local data exists.
+- **Human seeding**: Onboarding wizard allows domain expert to seed 3–5 known relationships.
+- **Bootstrap mode**: Below n=15, return "insufficient data" with explicit progress bar: "Need 7 more observations to fit Revenue vs. Price."
+
+---
+
+## Issue 3: Three Missing Pieces
+
+### 3A. Domain Router — MISSING
+
+**Where it belongs:** Before Layer 1.
+
+**Function:**
+```
+Input: raw query string
+Output: domain_tag (e.g., "finance.saas.smb"), extractor_schema_version
+
+Implementation:
+  - Fast classifier (regex + keyword + light LLM call)
+  - Loads the correct variable ontology for that domain
+  - Loads the correct equation library partition
+  - Routes to the right extractor schema
+```
+
+**Why it matters:** Without domain routing, the LLM extractor has no schema context. It must guess whether "CAC" means customer acquisition cost or something else. A router removes ambiguity.
+
+### 3B. Data Ingestion Pipeline — MISSING FROM MAIN ARCHITECTURE
+
+**Where it belongs:** Parallel to the query pipeline, feeding the library.
+
+The `equation_layer_connector.md` document describes this, but it is not integrated into the 6-layer architecture diagram. The architecture implies data exists. It does not explain how it arrives.
+
+**Integration point:**
+```
+┌─────────────────────────────────────────┐
+│  OBSERVATION INGESTION PIPELINE         │
+│  (runs continuously, independent of     │
+│   query pipeline)                       │
+│                                         │
+│  Connectors → Adapters → Schema Mapper  │
+│  → Observation Factory → Quality Gate   │
+│  → Observation Ledger → triggers        │
+│    equation refit queue                 │
+└─────────────────────────────────────────┘
+              │
+              ▼
+        ┌─────────────┐
+        │  EQUATION   │
+        │  LIBRARY    │
+        │  (Layer 3)  │
+        └─────────────┘
+```
+
+### 3C. Fallback Router — MISSING
+
+**Where it belongs:** After Layer 6 (Confidence Gate).
+
+**Current behavior:** Gate fails → return "insufficient data."
+**Production behavior:** Gate fails → route to appropriate fallback.
+
+```
+Fallback Router
+
+IF gate fails due to:
+  - n < threshold        → Route to: "Collect more data" action plan
+                             (suggest which observations are needed)
+  - No equation fits     → Route to: "Human review queue"
+                             (domain expert validates proposed form)
+  - Drift detected       → Route to: "Structural change alert"
+                             (notify user, show before/after comparison)
+  - Conflict exists      → Route to: "Resolution workflow"
+                             (present conflicting equations, ask user)
+  - Correlation too weak → Route to: "No detectable relationship"
+                             (explain which variables were checked)
+  - System error         → Route to: "Degraded mode"
+                             (return LLM-generated answer with explicit
+                              "not derived" warning — never silent)
+```
+
+**Critical rule:** The product NEVER silently fails. Every gate rejection produces an actionable, explainable response.
+
+---
+
+## Issue 4: NetworkX and Epistemic Ledger in Stack but Not in Layers
+
+**Severity: MODERATE (scope creep risk)**
+
+### The Problem
+If a component is in the stack table, it must have a defined role in the pipeline. Otherwise it is either:
+- Not needed for v1 (remove from stack), or
+- Needed but undocumented (add to architecture).
+
+### Resolution
+
+**Epistemic Ledger:** Keep, but define its position.
+```
+Position: Cross-cutting infrastructure layer (runs parallel to all layers)
+Function: Immutable append-only log of every significant event
+  - Layer 1: extraction result
+  - Layer 2: correlation matrix snapshot
+  - Layer 3: fit result or rejection reason
+  - Layer 4: computation result
+  - Layer 5: uncertainty distribution
+  - Layer 6: gate decision
+  - Ingestion: every observation batch
+```
+
+**NetworkX:** Keep, but define its position.
+```
+Position: Layer 3 extension (Equation Graph)
+Function: Multi-hop inference
+  - When a query requires chaining equations (Price → Revenue → Growth),
+    the graph query runs within Layer 3 before fitting/retrieval.
+  - If single-hop equation exists: use it.
+  - If only multi-hop path exists: traverse graph, propagate uncertainty.
+```
+
+**Alternative:** Remove both from the v1 stack table and add them to the "Future Advancement Map" document. This keeps v1 scope tight.
+
+**Recommendation:** Remove NetworkX from v1 stack. Multi-hop inference is valuable but not launch-blocking. Add it to the roadmap. Keep Epistemic Ledger as a cross-cutting concern — it is cheap to implement and critical for auditability.
+
+---
+
+## Additional Issues Identified
+
+### Issue 5: Model Uncertainty Is Ignored
+
+**Severity: HIGH**
+
+Layer 5 (Integrator) computes parameter uncertainty assuming the equation form is correct. It does NOT account for **model uncertainty** — uncertainty about which equation family is the right one.
+
+**Example:**
+- Linear fit: R²_adj = 0.78, holdout MAPE = 12%
+- Power fit: R²_adj = 0.81, holdout MAPE = 10%
+
+The architecture selects the power fit and computes uncertainty around its parameters. But the linear fit is nearly as good. The true uncertainty should include the possibility that the linear form is correct.
+
+**Fix:** Bayesian model averaging (BMA) or simple model ensemble. Compute a weighted average of predictions across all passing candidate families, weighted by exp(-AIC/2). This is standard statistical practice and easy to implement.
+
+### Issue 6: No Equation Versioning or Shadow Mode
+
+**Severity: HIGH**
+
+When the ingestion pipeline triggers an equation refit, the new parameters replace the old ones. There is no:
+- Version history (what did the equation look like last month?)
+- Shadow evaluation (is the new fit actually better on recent data?)
+- Rollback capability
+
+**Fix:**
+```
+Equation versions:
+  equation_id → has many → equation_versions
+  Each version: parameters, stats, n_obs, fitted_at, active_flag
+
+Refit workflow:
+  1. Fit new version in shadow.
+  2. Evaluate on last N observations (not used in fit).
+  3. If new version MAPE < old version MAPE: activate.
+  4. If not: keep old version, log rejection reason.
+```
+
+### Issue 7: Temporal Granularity Mismatch Is Unaddressed
+
+**Severity: MODERATE**
+
+A user connects:
+- Stripe (daily transactions)
+- QuickBooks (monthly P&L)
+- Salesforce (opportunity-level, irregular dates)
+
+The observation ledger stores them all. But fitting `Revenue = f(Price)` requires aligned time series. Daily revenue vs. monthly price is undefined.
+
+**Fix:** Add a **Temporal Alignment Engine** to the ingestion pipeline:
+- Roll up to common granularity (monthly is the safe default for business data).
+- Tag each observation with its native frequency.
+- Block fits that mix incompatible frequencies, or require explicit aggregation.
+
+---
+
+## Summary of All Issues and Fixes
+
+| Issue | Severity | Fix |
+|---|---|---|
+| 1. LLM proposes equation forms | CRITICAL | LLM extracts variables only. Canonical families tried systematically. PySR is fallback only. |
+| 2. No pre-defined library | CRITICAL | Library is core. Retrieve first, fit second. Cross-domain transfer for cold start. |
+| 3A. Missing Domain Router | HIGH | Add before Layer 1. Classifies query, loads correct ontology and library partition. |
+| 3B. Missing Ingestion Pipeline | HIGH | Integrate connector architecture into main pipeline diagram. Runs continuously, feeds library. |
+| 3C. Missing Fallback Router | HIGH | Add after Layer 6. Every gate failure routes to actionable response. Never silent. |
+| 4. NetworkX / Ledger scope creep | MODERATE | Remove NetworkX from v1 stack (roadmap it). Keep Ledger as cross-cutting infrastructure. |
+| 5. Model uncertainty ignored | HIGH | Add Bayesian model averaging across candidate families in Layer 5. |
+| 6. No equation versioning | HIGH | Version every equation. Shadow evaluation before activation. Rollback capability. |
+| 7. Temporal granularity mismatch | MODERATE | Add Temporal Alignment Engine to ingestion pipeline. Block incompatible frequency fits. |
+
+---
+
+## The Single Most Important Fix
+
+**Remove the LLM from equation form selection.**
+
+Everything else is engineering. This is architectural. If the LLM proposes forms, the product is a dressed-up LLM with statistical validation — not a reasoning infrastructure. The entire value proposition depends on the LLM being confined to extraction and formatting, with mathematical rigor handling everything in between.

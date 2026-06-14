@@ -1,0 +1,179 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+
+HUBSPOT_VARIABLE_MAP: Dict[str, Dict[str, str]] = {
+    "deals": {
+        "amount": "pipeline",
+        "closedate": "timestamp",
+        "createdate": "timestamp",
+        "dealstage": "status",
+        "hs_deal_stage_probability": "conversion",
+    },
+    "contacts": {
+        "createdate": "timestamp",
+        "lifecyclestage": "status_flag",
+    },
+    "companies": {
+        "createdate": "timestamp",
+        "numberofemployees": "customers",
+    },
+}
+
+
+@dataclass(frozen=True)
+class HubSpotConfig:
+    access_token: str
+    page_size: int = 100
+
+
+class HubSpotConnector:
+    """Reads HubSpot CRM objects via HubSpot API v3 and maps to Equation Layer variables."""
+
+    BASE_URL = "https://api.hubapi.com"
+
+    def __init__(self, config: HubSpotConfig):
+        self.config = config
+
+    def _headers(self) -> Dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.config.access_token}",
+            "Content-Type": "application/json",
+        }
+
+    def _get(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        import urllib.request
+        import json as json_mod
+        import urllib.parse
+
+        qs = ""
+        if params:
+            qs = "?" + urllib.parse.urlencode(params)
+
+        req = urllib.request.Request(
+            f"{self.BASE_URL}{endpoint}{qs}",
+            headers=self._headers(),
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return json_mod.loads(resp.read().decode("utf-8"))
+        except Exception as exc:
+            raise ConnectionError(f"HubSpot API call failed: {exc}") from exc
+
+    def _paginate(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        if params is None:
+            params = {}
+        params.setdefault("limit", self.config.page_size)
+
+        all_results: List[Dict[str, Any]] = []
+        after: Optional[str] = None
+
+        while True:
+            p = dict(params)
+            if after:
+                p["after"] = after
+
+            raw = self._get(endpoint, p)
+            all_results.extend(raw.get("results", []))
+            paging = raw.get("paging", {})
+            after = paging.get("next", {}).get("after")
+            if not after:
+                break
+
+        return all_results
+
+    def fetch_deals(
+        self,
+        since: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        properties = ["amount", "closedate", "createdate", "dealstage", "hs_deal_stage_probability"]
+        params: Dict[str, Any] = {
+            "properties": ",".join(properties),
+            "limit": min(limit, self.config.page_size),
+            "archived": "false",
+        }
+        deals = self._paginate("/crm/v3/objects/deals", params)
+        return self._map_deals(deals)
+
+    def fetch_contacts(self, limit: int = 100) -> List[Dict[str, Any]]:
+        properties = ["email", "createdate", "lifecyclestage"]
+        contacts = self._paginate("/crm/v3/objects/contacts", {
+            "properties": ",".join(properties),
+            "limit": min(limit, self.config.page_size),
+        })
+        return contacts
+
+    def fetch_companies(self, limit: int = 100) -> List[Dict[str, Any]]:
+        properties = ["name", "createdate", "numberofemployees"]
+        companies = self._paginate("/crm/v3/objects/companies", {
+            "properties": ",".join(properties),
+            "limit": min(limit, self.config.page_size),
+        })
+        return companies
+
+    def compute_pipeline_value(self, deals: List[Dict[str, Any]]) -> float:
+        return sum(d.get("value", 0.0) for d in deals)
+
+    def compute_win_rate(self, deals: List[Dict[str, Any]]) -> float:
+        closed = [d for d in deals if d.get("stage") == "closedwon"]
+        if not deals:
+            return 0.0
+        return len(closed) / len(deals)
+
+    def _map_deals(self, deals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        obs: List[Dict[str, Any]] = []
+        for deal in deals:
+            props = deal.get("properties", {})
+            amt_str = props.get("amount", "0")
+            try:
+                amt = float(amt_str)
+            except (ValueError, TypeError):
+                amt = 0.0
+
+            if amt > 0:
+                obs.append({
+                    "variable": "pipeline",
+                    "value": amt,
+                    "unit": "USD",
+                    "timestamp": self._parse_ts(props.get("createdate")),
+                    "entity_id": deal.get("id"),
+                })
+
+            prob_str = props.get("hs_deal_stage_probability", "0")
+            try:
+                prob = float(prob_str) / 100.0
+            except (ValueError, TypeError):
+                prob = 0.0
+
+            if prob > 0:
+                obs.append({
+                    "variable": "conversion",
+                    "value": prob,
+                    "unit": "percentage",
+                    "timestamp": self._parse_ts(props.get("createdate")),
+                    "entity_id": deal.get("id"),
+                })
+
+            obs.append({
+                "variable": "customers",
+                "value": 1.0,
+                "unit": "count",
+                "timestamp": self._parse_ts(props.get("createdate")),
+                "entity_id": deal.get("id"),
+            })
+        return obs
+
+    @staticmethod
+    def _parse_ts(val: Optional[str]) -> Optional[str]:
+        if not val:
+            return None
+        try:
+            dt = datetime.fromisoformat(val.replace("Z", "+00:00"))
+            return dt.strftime("%Y-%m-%d")
+        except ValueError:
+            return val[:10]

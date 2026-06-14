@@ -1,0 +1,60 @@
+from src.ingestion import build_observations, ingest_csv, profile_csv
+from src.models import SchemaMapping
+
+
+def test_profile_csv() -> None:
+    content = b"date,value\n2024-01-01,10\n2024-01-02,12\n"
+    profiles = profile_csv(content)
+    assert profiles
+
+
+def test_build_observations() -> None:
+    content = b"date,value\n2024-01-01,10\n"
+    mappings = [
+        SchemaMapping(
+            column_name="date",
+            variable="date",
+            unit="",
+            confidence=1.0,
+            time_column=True,
+            entity_key=None,
+        ),
+        SchemaMapping(
+            column_name="value",
+            variable="revenue",
+            unit="USD",
+            confidence=1.0,
+            time_column=False,
+            entity_key=None,
+        ),
+    ]
+    observations, issues = build_observations(content, mappings)
+    assert observations
+    assert issues == []
+
+
+def test_ingest_csv_creates_summary(tmp_path) -> None:
+    db_path = str(tmp_path / "ingest.db")
+    from src.storage import init_storage
+    init_storage(db_path)
+    content = b"date,value\n2024-01-01,10\n"
+    mappings = [
+        SchemaMapping(
+            column_name="date",
+            variable="date",
+            unit="",
+            confidence=1.0,
+            time_column=True,
+            entity_key=None,
+        ),
+        SchemaMapping(
+            column_name="value",
+            variable="revenue",
+            unit="USD",
+            confidence=1.0,
+            time_column=False,
+            entity_key=None,
+        ),
+    ]
+    summary = ingest_csv(db_path, 1, content, mappings)
+    assert summary.observations_created >= 1

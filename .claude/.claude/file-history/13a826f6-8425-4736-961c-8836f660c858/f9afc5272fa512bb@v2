@@ -1,0 +1,915 @@
+# Agent Nervous System — Production Implementation Plan
+
+## Architecture Overview
+
+A 4-layer AI browser agent system. The web doesn't change — the layer that receives and processes it does.
+
+```
+THE REAL WEB (websites unchanged)
+        │
+        ▼
+┌──────────────────────────────────────────────────────────┐
+│  LAYER 2: AGENT WEB — Purpose-built browser for agents   │
+│  Renders for agent perception, not human eyes            │
+│                                                          │
+│  INTAKE: distraction classification on arrival, DOM     │
+│  distillation at render time, goal relevance scored     │
+│  before agent sees content, vision pipeline auto-fired   │
+│                                                          │
+│  SESSIONS: organized by GOAL, not tabs. Parallel        │
+│  sessions share goal state + memory + nervous system     │
+│                                                          │
+│  INFRASTRUCTURE: browser control, vision pipeline,      │
+│  distillation, diff, goal state — ALL native, not bolted │
+└──────────────────────────────────────────────────────────┘
+        │  agent perceives clean, goal-relevant,
+        │  distraction-free structured view
+        ▼
+┌──────────────────────────────────────────────────────────┐
+│  LAYER 3: NERVOUS SYSTEM + 5 EYES                        │
+│                                                          │
+│  5 Eyes: DOM Reader | Vision Model | Page Diff |         │
+│  Goal Verifier | Error Detector                          │
+│                                                          │
+│  Shared Nervous System: cross-eye awareness (lateral     │
+│  info sharing), signal router (suppress/amplify),        │
+│  immune system (distraction firewall), goal broadcast    │
+└──────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌──────────────────────────────────────────────────────────┐
+│  LAYER 4: DECISION INTELLIGENCE LAYER                    │
+│  Inbuilt feedback loop — NOT middleware                  │
+│                                                          │
+│  Score(action, tool, context) = f(outcome, results,      │
+│  error_message, business_outcome)                        │
+│                                                          │
+│  Picks highest-scoring (action, tool) from memory        │
+└──────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Language Split
+
+| Language | Role | What It Owns |
+|----------|------|-------------|
+| **Rust** | System Skeleton | AgentWeb Core, DOM Distillation, Page Diff, Immune System, Goal State Manager, Signal Router, IPC Bridge (gRPC server), LanceDB storage |
+| **Python** | Intelligence Layer | Vision Model Eye, Goal Verifier, Error Detector, Cross-Eye Coordinator, Goal Decomposer, Decision Scoring Engine |
+| **TypeScript** | Human Interface | Developer Dashboard, CLI Tools, Debug Visualizer — ZERO in critical path |
+
+### Why Rust for Infrastructure
+- Zero-cost abstractions — DOM distillation and page diff run on every page load
+- Memory safety without GC — goal state shared across parallel sessions
+- Long-running stability — daemon process runs for hours/days
+- Fearless concurrency — 5 eyes read shared goal state simultaneously
+
+### Why Python for Intelligence
+- LLM ecosystem — Anthropic SDK, OpenAI SDK are Python-first
+- API call latency (200ms-3s) dwarfs Python overhead
+- Rapid prompt iteration — vision prompts, verification prompts evolve weekly
+- AsyncIO handles I/O-bound parallelism well
+
+### Why NOT TypeScript in Critical Path
+- The agent does not interact with TypeScript code
+- If TypeScript fails, the agent keeps running
+- TypeScript is for developer observability only
+
+---
+
+## Browser Engine Strategy
+
+### Phase 1 (v1.0): Chromium via CDP, managed by Rust
+
+The Rust process OWNS Chromium's lifecycle (spawn, monitor, kill). All custom logic (distillation, diff, immune, goal) runs in Rust, not in the browser. Chromium is an implementation detail behind the `BrowserBackend` trait.
+
+```
+RUST PROCESS                    CHILD PROCESS
+┌──────────────────┐           ┌──────────────────┐
+│  AgentWeb Core   │  CDP WS   │  Headless Chromium│
+│  Session Manager │◄─────────►│  --headless=new   │
+│  CDP Client      │           │  --remote-debug   │
+│                  │           │  (one per session)│
+│  BrowserBackend  │           └──────────────────┘
+│  trait (swapable)│
+└──────────────────┘
+```
+
+### Why This is NOT "Bolted On Like Chrome Extensions"
+- Rust OWNS Chromium lifecycle — not an extension inside Chrome
+- Zero JavaScript injection into pages
+- All custom logic runs in Rust process, not in browser
+- CDP abstraction allows future engine swapping (Servo, WebKit)
+- Multiple Chromium instances — one per session, isolated
+
+### Phase 2 (v2.0+): Evaluate Servo for Simple Pages
+- Servo for documentation, forms, search results (no heavy JS)
+- Chromium only for complex JS-heavy sites
+- Transparent to rest of system via `BrowserBackend` trait
+
+---
+
+## Inter-Process Communication
+
+### Three Mechanisms
+
+| Mechanism | Use Case | Format |
+|-----------|----------|--------|
+| **gRPC** (tonic) | Synchronous RPC — session mgmt, action execution, state queries, score storage | Protobuf |
+| **Apache Arrow IPC** | Bulk data — screenshots (>100KB), DOM trees (>50KB), diff reports (>10KB) | Arrow RecordBatch (mmap'd, zero-copy) |
+| **NATS** | Async events — goal updates, eye reports, immune alerts, decision scored | JSON on NATS subjects |
+
+### Arrow IPC Zero-Copy Flow
+```
+Rust writes → /dev/shm/ans_frame_<seq>.arrow  (mmap)
+                    │
+gRPC: { frame_id, offset, len }
+                    │
+Python ←── pyarrow.ipc.open_stream(mmap_region)  (zero-copy read)
+```
+
+### NATS Subject Hierarchy
+```
+ans.goal.<goal_id>.update       → Goal state changes
+ans.session.<session_id>.action → Agent action events
+ans.eye.<eye_name>.report       → Individual eye reports
+ans.eye.cross_eye.synthesis     → Cross-eye coordinator output
+ans.immune.alert                → Distraction detected
+ans.decision.scored             → Action scored and stored
+ans.decision.best_action        → Best action recommendation
+```
+
+---
+
+## Process Model
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  ans-daemon (Rust binary, single process)                   │
+│                                                             │
+│  gRPC server (port 50051)  │  NATS client                   │
+│  Session actors (tokio tasks, one per session)              │
+│  Goal state manager  │  Immune system  │  Signal router     │
+│  LanceDB (embedded, no separate process)                    │
+│                                                             │
+│  Child processes: Chromium (one per session)                │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│  ans-nerves (Python process, uv run)                        │
+│                                                             │
+│  Async tasks (asyncio):                                     │
+│  Vision Eye │ Goal Verifier │ Error Detector                │
+│  Cross-Eye Coordinator │ Goal Decomposer                    │
+│  Decision Scoring Engine                                    │
+│                                                             │
+│  gRPC client → Rust daemon  │  NATS client → event bus      │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│  ans-dashboard (TypeScript, optional, non-critical)         │
+│  Next.js app  │  gRPC-web via envoy → Rust daemon (read-only)│
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Component Catalog
+
+### Rust Crates (Cargo Workspace)
+
+```
+agent-nervous-system/
+├── Cargo.toml (workspace)
+├── crates/
+│   ├── ans-daemon/           # Binary entry point, CLI, config, signal handling
+│   ├── ans-core/             # BrowserBackend trait, Session, Action types
+│   ├── ans-cdp/              # CDP WebSocket client, command/response layer
+│   ├── ans-distill/          # DOM distillation engine (3 modes)
+│   ├── ans-diff/             # Page diff engine (Zhang-Shasha on distilled DOM)
+│   ├── ans-immune/           # Distraction classifier (heuristic + WASM ML)
+│   ├── ans-goal/             # Goal state manager (Arc<RwLock<GoalStateStore>>)
+│   ├── ans-signal/           # Signal router (relevance scoring, suppression)
+│   ├── ans-ipc/              # gRPC server, Arrow IPC, NATS bridge
+│   ├── ans-storage/          # LanceDB wrapper, DecisionRecord CRUD, vector search
+│   └── ans-proto/            # Compiled protobuf definitions (tonic-build)
+```
+
+#### Key Types (ans-core)
+
+```rust
+// Browser abstraction
+#[async_trait]
+pub trait BrowserBackend: Send + Sync {
+    async fn navigate(&self, url: &str) -> Result<PageState>;
+    async fn get_dom(&self) -> Result<DomTree>;
+    async fn execute_script(&self, script: &str) -> Result<ScriptResult>;
+    async fn capture_screenshot(&self, format: ImageFormat) -> Result<Vec<u8>>;
+    async fn click(&self, selector: &str) -> Result<ActionResult>;
+    async fn type_text(&self, selector: &str, text: &str) -> Result<ActionResult>;
+    async fn wait_for_load(&self, timeout: Duration) -> Result<PageState>;
+    async fn close(&self) -> Result<()>;
+}
+
+// Session organized by GOAL, not tab
+pub struct Session {
+    pub id: Uuid,
+    pub goal_id: GoalId,
+    pub backend: Box<dyn BrowserBackend>,
+    pub current_page: Option<PageState>,
+    pub previous_page: Option<PageState>,
+    pub eye_reports: VecDeque<EyeReport>,
+    pub action_history: VecDeque<ActionRecord>,
+    pub status: SessionStatus,
+}
+
+pub enum SessionStatus {
+    Idle, Navigating, Executing, Perceiving, Blocked, Failed,
+}
+
+// Goal state — shared across parallel sessions for same goal
+pub struct GoalState {
+    pub goal_id: Uuid,
+    pub description: String,
+    pub status: GoalStatus,
+    pub progress: f32,           // 0.0 to 1.0
+    pub sub_goals: Vec<SubGoalState>,
+    pub context: GoalContext,
+}
+
+pub struct GoalContext {
+    pub current_url: Option<String>,
+    pub last_action: Option<Action>,
+    pub last_observation: Option<String>,
+    pub intent_embedding: Vec<f32>,
+    pub distraction_count: u32,
+    pub eye_consensus: Option<ConsensusState>,
+}
+```
+
+#### DOM Distillation (ans-distill)
+
+```rust
+pub enum DistillMode {
+    TextOnly,      // Reading content, search results
+    InputFields,   // Form interaction, data entry
+    AllFields,     // Comprehensive page understanding
+}
+
+pub struct DistilledDom {
+    pub mode: DistillMode,
+    pub url: String,
+    pub title: String,
+    pub elements: Vec<DistilledElement>,
+    pub interactive: Vec<InteractiveElement>,
+    pub semantic_blocks: Vec<SemanticBlock>,
+    pub distraction_flags: Vec<DistractionFlag>,
+}
+
+pub struct InteractiveElement {
+    pub selector: String,
+    pub element_type: ElementType,  // Button, Input, Select, Link, etc.
+    pub label: String,
+    pub is_visible: bool,
+    pub is_enabled: bool,
+    pub bounding_box: Option<BoundingBox>,
+}
+
+pub struct SemanticBlock {
+    pub block_type: BlockType,  // Navigation, Content, Form, Footer, Ad
+    pub text_content: String,
+    pub elements: Vec<usize>,   // indices into elements
+    pub goal_relevance_score: f32,
+}
+```
+
+#### Immune System (ans-immune)
+
+```rust
+pub enum DistractionKind {
+    Ad, Popup, CookieBanner, NewsletterModal,
+    Redirect, AutoPlayVideo, Survey, Notification,
+}
+
+pub struct Distraction {
+    pub kind: DistractionKind,
+    pub element: ElementLocator,
+    pub confidence: f32,
+    pub suggested_action: ImmuneAction,
+}
+
+pub enum ImmuneAction {
+    Dismiss,        // Click close/dismiss button
+    Block,          // Prevent interaction entirely
+    NavigateBack,   // Go back to previous page
+    Suppress,       // Hide from agent's perception
+    Ignore,         // False positive, allow through
+}
+
+// Two-tier classification
+pub struct ImmuneClassifier {
+    heuristic_rules: Vec<Rule>,       // <1ms, catches 95% of distractions
+    ml_model: Option<WasmModel>,      // <4ms, handles ambiguous cases
+}
+```
+
+#### Page Diff (ans-diff)
+
+```rust
+pub struct DiffReport {
+    pub before_url: String,
+    pub after_url: String,
+    pub is_same_page: bool,        // false if navigation occurred
+    pub added: Vec<Element>,
+    pub removed: Vec<Element>,
+    pub modified: Vec<ElementChange>,
+    pub visual_diff_percentage: f32,
+    pub summary: DiffSummary,
+}
+
+pub enum DiffSummary {
+    NoChange,
+    CosmeticChange,    // Animations, timestamps
+    ContentUpdate,     // New results loaded
+    FormUpdate,        // Input values changed
+    Navigation,        // New page loaded
+    DistractionAppeared(DistractionKind),
+    ErrorState(String),
+}
+```
+
+#### Signal Router (ans-signal)
+
+```rust
+pub struct EyeReport {
+    pub eye_name: EyeName,        // DOMReader, Vision, Diff, Verifier, ErrorDetector
+    pub timestamp: i64,
+    pub confidence: f32,
+    pub goal_relevance: f32,       // scored by Signal Router
+    pub content: EyeReportContent,  // eye-specific payload
+}
+
+pub enum EyeReportContent {
+    DomReport { elements: Vec<DistilledElement>, mode: DistillMode },
+    VisionReport { visible_elements: Vec<Element>, overlays: Vec<Overlay>, blocked_regions: Vec<Region> },
+    DiffReport(DiffReport),
+    VerificationResult { advanced: bool, reasoning: String },
+    ErrorReport { failure_type: FailureType, recovery_strategy: RecoveryStrategy },
+}
+
+pub struct RoutedSignal {
+    pub unified_perception: String,  // natural language summary for Decision layer
+    pub distractions: Vec<DistractionAlert>,
+    pub confidence: f32,
+    pub recommended_action_hint: Option<String>,
+}
+```
+
+#### Decision Storage (ans-storage)
+
+```rust
+pub struct DecisionRecord {
+    pub id: Uuid,
+    pub session_id: Uuid,
+    pub goal_id: Uuid,
+    pub action_hash: u64,
+    pub tool_hash: u64,
+    pub context_embedding: Vec<f32>,  // 768-dim from sentence-transformer
+    pub outcome_score: f32,           // 0.0 to 1.0
+    pub result_score: f32,            // 0.0 to 1.0
+    pub error_message: Option<String>,
+    pub error_penalty: f32,           // 0.0 to -1.0
+    pub business_outcome: f32,        // 0.0 to 1.0
+    pub composite_score: f32,         // weighted sum
+    pub timestamp: i64,
+    pub count: u32,                   // how many times this tuple has fired
+}
+
+// Composite score formula:
+// composite = outcome*0.35 + result*0.30 + error_penalty*0.20 + business*0.15
+// Weighted by recency: recent outcomes count more
+```
+
+---
+
+### Python Packages
+
+```
+ans-nerves/
+├── pyproject.toml
+├── src/
+│   ├── __init__.py
+│   ├── config.py              # Pydantic settings
+│   ├── eyes/
+│   │   ├── __init__.py
+│   │   ├── base.py            # BaseEye class (gRPC, NATS, health, shutdown)
+│   │   ├── vision.py          # Vision Model Eye (Claude/GPT-4o)
+│   │   ├── dom_reader.py      # DOM Reader Eye (thin wrapper, logic in Rust)
+│   │   ├── diff_wrapper.py    # Diff Eye (enriches Rust diff with semantics)
+│   │   ├── goal_verifier.py   # Goal Verifier Eye
+│   │   └── error_detector.py  # Error Detector Eye
+│   ├── coordinator.py         # Cross-Eye Awareness Coordinator
+│   ├── decomposer.py          # Goal Decomposer
+│   ├── scoring/
+│   │   ├── __init__.py
+│   │   ├── engine.py          # Decision Scoring Engine
+│   │   ├── outcome.py         # Outcome scorer (LLM-as-judge)
+│   │   ├── result.py          # Result quality scorer
+│   │   ├── error_penalty.py   # Error penalty calculator
+│   │   └── business.py        # Business value scorer
+│   ├── prompts/
+│   │   ├── vision.py          # Vision model prompt templates
+│   │   ├── verification.py    # Goal verification prompt templates
+│   │   ├── error.py           # Error classification prompt templates
+│   │   └── decomposition.py   # Goal decomposition prompt templates
+│   └── grpc_client.py         # Generated gRPC client stubs
+```
+
+#### Key Python Types
+
+```python
+from pydantic import BaseModel
+from enum import Enum
+from typing import Optional
+import numpy as np
+
+class GoalSpec(BaseModel):
+    description: str
+    context: dict = {}
+    max_budget_cents: int = 500  # max API cost per goal
+    max_steps: int = 50
+
+class SubGoal(BaseModel):
+    id: str
+    description: str
+    success_criteria: list[str]
+    depends_on: list[str] = []
+    status: str = "pending"  # pending, active, done, blocked
+
+class VisionReport(BaseModel):
+    visible_elements: list[dict]
+    overlays: list[dict]
+    blocked_regions: list[dict]
+    page_type: str  # search_results, product_page, checkout, login, error, etc.
+    anomalies: list[str]
+    raw_response: str
+
+class VerificationResult(BaseModel):
+    advanced: bool
+    confidence: float
+    reasoning: str
+    new_sub_goal_state: Optional[str] = None
+
+class FailureType(str, Enum):
+    SILENT_FAIL = "silent_fail"
+    WRONG_ELEMENT = "wrong_element"
+    BLOCKED_INTERACTION = "blocked_interaction"
+    STATE_MISMATCH = "state_mismatch"
+    GOAL_DRIFT = "goal_drift"
+    TIMEOUT = "timeout"
+    NAVIGATION_ERROR = "navigation_error"
+
+class RecoveryStrategy(BaseModel):
+    failure_type: FailureType
+    description: str
+    actions: list[str]  # ordered recovery steps
+    should_retry: bool
+    max_retries: int = 1
+```
+
+---
+
+### gRPC Service Definition
+
+```protobuf
+syntax = "proto3";
+
+package ans;
+
+service AgentNervousSystem {
+  // Session management
+  rpc CreateSession(CreateSessionRequest) returns (Session);
+  rpc CloseSession(CloseSessionRequest) returns (Empty);
+  rpc Navigate(NavigateRequest) returns (PageState);
+  rpc ExecuteAction(ExecuteActionRequest) returns (ActionResult);
+
+  // Perception
+  rpc GetDistilledDom(DomRequest) returns (DistilledDom);
+  rpc CaptureScreenshot(ScreenshotRequest) returns (ScreenshotResponse);
+  rpc ComputeDiff(DiffRequest) returns (DiffReport);
+
+  // Goal state
+  rpc CreateGoal(CreateGoalRequest) returns (GoalState);
+  rpc GetGoalState(GoalStateRequest) returns (GoalState);
+  rpc UpdateGoalProgress(ProgressUpdate) returns (GoalState);
+  rpc SubscribeGoalUpdates(GoalStateRequest) returns (stream GoalUpdate);
+
+  // Immune system
+  rpc ClassifyDistractions(DistractionRequest) returns (DistractionList);
+  rpc CheckAction(ActionCheckRequest) returns (ActionCheckResponse);
+
+  // Signal routing
+  rpc SubmitEyeReports(SubmitReportsRequest) returns (RoutedSignal);
+
+  // Decision intelligence
+  rpc StoreScore(StoreScoreRequest) returns (StoreScoreResponse);
+  rpc QueryBestActions(QueryBestActionsRequest) returns (ScoredActionList);
+  rpc SearchSimilarDecisions(SearchRequest) returns (ScoredActionList);
+
+  // Health
+  rpc Health(Empty) returns (HealthStatus);
+}
+
+message CreateSessionRequest {
+  string goal_id = 1;
+  string start_url = 2;
+  map<string, string> headers = 3;
+}
+
+message ExecuteActionRequest {
+  string session_id = 1;
+  Action action = 2;
+}
+
+message Action {
+  string action_type = 1;   // click, type, scroll, select, navigate, wait
+  string selector = 2;
+  string value = 3;          // text to type, option to select, url to navigate
+  map<string, string> params = 4;
+}
+
+message ActionResult {
+  bool success = 1;
+  string error_message = 2;
+  PageState new_state = 3;
+  DiffReport diff = 4;
+}
+
+message PageState {
+  string url = 1;
+  string title = 2;
+  bool loaded = 3;
+  int64 dom_node_count = 4;
+  repeated string visible_text = 5;
+}
+
+message DistilledDom {
+  string mode = 1;              // text_only, input_fields, all_fields
+  string url = 2;
+  string title = 3;
+  repeated DistilledElement elements = 4;
+  repeated InteractiveElement interactive = 5;
+  repeated SemanticBlock semantic_blocks = 6;
+  repeated DistractionFlag distraction_flags = 7;
+}
+
+message InteractiveElement {
+  string selector = 1;
+  string element_type = 2;
+  string label = 3;
+  bool is_visible = 4;
+  bool is_enabled = 5;
+  BoundingBox bounding_box = 6;
+}
+
+message SemanticBlock {
+  string block_type = 1;
+  string text_content = 2;
+  repeated int32 element_indices = 3;
+  float goal_relevance_score = 4;
+}
+
+message DiffReport {
+  string before_url = 1;
+  string after_url = 2;
+  bool is_same_page = 3;
+  repeated Element added = 4;
+  repeated Element removed = 5;
+  repeated ElementChange modified = 6;
+  float visual_diff_percentage = 7;
+  string summary = 8;
+}
+
+message EyeReport {
+  string eye_name = 1;
+  int64 timestamp = 2;
+  float confidence = 3;
+  oneof content {
+    DomReportContent dom = 10;
+    VisionReportContent vision = 11;
+    DiffReportContent diff = 12;
+    VerificationContent verification = 13;
+    ErrorReportContent error = 14;
+  }
+}
+
+message StoreScoreRequest {
+  string session_id = 1;
+  string goal_id = 2;
+  Action action = 3;
+  string tool = 4;
+  repeated float context_embedding = 5;
+  float outcome_score = 6;
+  float result_score = 7;
+  string error_message = 8;
+  float error_penalty = 9;
+  float business_outcome = 10;
+}
+
+message QueryBestActionsRequest {
+  repeated float context_embedding = 1;
+  int32 k = 2;  // top-k results
+  float min_score = 3;  // minimum composite score threshold
+}
+
+message ScoredActionList {
+  repeated ScoredAction actions = 1;
+}
+
+message ScoredAction {
+  Action action = 1;
+  string tool = 2;
+  float composite_score = 3;
+  float outcome_score = 4;
+  float result_score = 5;
+  float error_penalty = 6;
+  float business_outcome = 7;
+  uint32 count = 8;
+}
+```
+
+---
+
+## Data Flow: Complete Action Loop
+
+```
+1. GOAL INPUT
+   User → gRPC CreateGoal("Book Delhi→Mumbai June 5, cheapest")
+        → ans-nerves Goal Decomposer (LLM)
+        → GoalSpec { sub_goals: [navigate, fill-origin, fill-dest, fill-dates,
+                    click-search, parse-results, sort-price, select-cheapest,
+                    fill-passenger, click-book] }
+        → ans-daemon Goal State Manager stores, broadcasts via NATS
+
+2. SESSION CREATION
+   ans-daemon: create session for goal, launch Chromium, navigate to start URL
+        → Immune System classifies page on arrival (distractions flagged)
+        → DOM Distiller runs (mode: input-fields for search form)
+        → Arrow IPC: screenshot captured → shared memory
+        → NATS: ans.goal.<id>.update, ans.session.<id>.action
+
+3. PERCEPTION (5 Eyes in parallel)
+   Vision Eye:      Screenshot(Arrow IPC) → Claude/GPT-4o → VisionReport
+   DOM Reader Eye:  DistilledDom(gRPC) → structured element list
+   Diff Eye:        Rust diff → enriched with semantic interpretation
+   Goal Verifier:   All reports + goal state → "Did action advance goal?"
+   Error Detector:  All reports → FailureType + RecoveryStrategy
+
+4. CROSS-EYE SYNTHESIS
+   Cross-Eye Coordinator receives all 5 EyeReports via NATS
+        → Identifies contradictions (Vision says button visible, DOM says disabled)
+        → Produces unified SituationalSnapshot
+        → Published to NATS: ans.eye.cross_eye.synthesis
+
+5. DECISION
+   Decision Engine receives RoutedSignal
+        → Embeds current context → vector
+        → gRPC QueryBestActions(context_embedding, k=5) → Rust LanceDB
+        → Returns top-5 historically successful (action, tool) for this context
+        → LLM selects best among them (or overrides if context is novel)
+        → Executes action via gRPC ExecuteAction
+
+6. VERIFICATION
+   After action executes:
+        → Page Diff runs automatically (on distilled DOM)
+        → Goal Verifier checks: "Did the diff mean goal advanced?"
+        → If YES: update goal sub-state, proceed to next step
+        → If NO: Error Detector classifies failure → RecoveryStrategy → informed retry
+
+7. SCORING
+   Decision Engine scores the executed action:
+        composite = outcome*0.35 + result*0.30 + error_penalty*0.20 + business*0.15
+        → gRPC StoreScore → Rust LanceDB (appended, vector-indexed)
+        → NATS: ans.decision.scored
+```
+
+---
+
+## Immune System Flow
+
+```
+Page loads / Action about to execute
+        │
+        ▼
+┌─────────────────────────────────────┐
+│  HEURISTIC CLASSIFIER (<1ms)        │
+│  CSS class/id patterns              │
+│  Element position/size analysis     │
+│  ARIA role inspection               │
+│  URL pattern matching               │
+│                                     │
+│  Catches 95% of distractions        │
+└─────────────────────────────────────┘
+        │
+        │ ambiguous? (confidence < 0.9)
+        ▼
+┌─────────────────────────────────────┐
+│  WASM ML MODEL (<4ms)               │
+│  Pre-trained ONNX → WASM            │
+│  Handles edge cases                 │
+│  Updates via model training pipeline│
+└─────────────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────────────┐
+│  IMMUNE DECISION                    │
+│  → Dismiss (close popup/banner)     │
+│  → Block (prevent action entirely)  │
+│  → Suppress (hide from perception)  │
+│  → Ignore (false positive)          │
+│                                     │
+│  Total pipeline: <5ms               │
+└─────────────────────────────────────┘
+        │
+        ▼
+  Agent perceives clean view
+  (distraction never reached agent)
+```
+
+---
+
+## Implementation Roadmap
+
+**Team:** 5-6 engineers | **Duration:** 22 weeks (~5.5 months) | **Critical path:** 20 weeks
+
+| Phase | Weeks | What | Engineers | Key Deliverable |
+|-------|-------|------|-----------|-----------------|
+| **0: Foundation** | 1-3 | Monorepo, protobuf, Arrow schemas, NATS subjects, scaffolding, CI | 5 | Protocols frozen, daemon+nerves compile, CI green |
+| **1: Browser Control** | 3-8 | CDP manager, command layer, goal-scoped sessions, navigation, interaction, gRPC AgentWeb service, Arrow screenshot IPC | 2 Rust, 1 Python | Chromium launches, navigates, interacts via gRPC |
+| **2: DOM + Diff** | 6-10 | DOM snapshot, semantic annotator, serialization, visual+DOM diff engines, streaming services | 1 Rust | DOM snapshots and diffs stream in real time |
+| **3: 5 Eyes** | 8-13 | Vision Eye, DOM Reader, Diff Wrapper, Goal Verifier, Error Detector, common framework | 2 Python | All 5 eyes observe and report structured data |
+| **4: Coordination** | 11-15 | Cross-Eye Coordinator, temporal awareness, Goal Decomposer, step re-planning | 1 Python | Unified awareness, goal step generation |
+| **5: Decision Intelligence** | 13-16 | Scoring engine (outcome/result/error/business), LanceDB storage, vector search, gRPC service | 1 Rust, 1 Python | Decisions scored, stored, searchable |
+| **6: Immune System** | 14-17 | Heuristic classifier, WASM ML runner, immune pipeline, model training pipeline | 1 Rust, 0.5 Python | Harmful actions blocked within 6ms |
+| **7: Signal Router + Goal State** | 15-17 | NATS router, schema registry, shared goal state (Arc\<RwLock\>), state persistence | 1 Rust | Events route, goals share state |
+| **8: Dashboard + CLI** | 16-19 | Next.js dashboard, live view, decision timeline, debug visualizer, `ans` CLI | 1 TypeScript | Live dashboard, CLI tools |
+| **9: Hardening** | 18-22 | E2E scenarios, perf benchmarks, memory profiling, error injection, security review, docs | 5 | Production-ready |
+
+### Critical Path
+```
+Foundation → Browser Control → DOM/Diff (parallel with Vision Eye)
+→ Coordination → Decision Intelligence → Immune System → E2E = 20 weeks
+```
+
+### Performance Targets
+| Metric | Target |
+|--------|--------|
+| Screenshot capture + Arrow IPC | <50ms p99 |
+| DOM distillation (1000-node DOM) | <10ms |
+| Immune check (heuristic + WASM) | <6ms p99 |
+| Vision API round-trip (cached) | <5ms |
+| Vision API round-trip (uncached) | <2s p95 |
+| Decision scoring + LanceDB store | <30ms |
+| End-to-end action loop | <500ms p95 |
+
+---
+
+## Key Risks
+
+| Risk | Severity | Mitigation |
+|------|----------|------------|
+| CDP protocol churn breaks browser control | High | Pin Chromium version. `BrowserBackend` trait abstraction. Weekly canary test against latest Chrome. |
+| LLM API cost/latency unpredictability | High | Hash-caching screenshots (60s TTL). DOM-only fallback mode. Circuit breaker. Budget tracking. |
+| Arrow IPC memory corruption | High | Fuzz testing. Mature Arrow C Data Interface. Defensive deserialization on every read. |
+| Cross-language type drift (Rust↔Python) | Medium | CI enforces proto/Arrow compilation on every PR. Round-trip serialization tests. |
+| Rust learning curve for team | Medium | Hire experienced Rust engineers. Use established patterns (anyhow, tracing, tonic). |
+| Browser agent flakiness (non-deterministic) | Medium | Pinned Chromium + recorded network. Retry with exponential backoff. Accept 95% E2E pass rate. |
+| Scope creep | High | Hard gate: `BrowserBackend` trait exists but Firefox impl is post-v1. Eyes capped at 5. RFC process after M0. |
+
+---
+
+## Testing Strategy
+
+### Unit Tests
+| Layer | Framework | Coverage | Strategy |
+|-------|-----------|----------|----------|
+| Rust CDP | cargo test + MockBrowserBackend | >80% | Mock CDP responses. Test all error paths. |
+| Rust DOM Distiller | cargo test | >85% | 50+ static HTML fixtures as CDP DOM trees. |
+| Rust Immune System | cargo test | >90% | 1000+ labeled action samples. Both heuristic + WASM paths. |
+| Python Eyes | pytest + pytest-asyncio | >80% | Mock gRPC stubs and Arrow streams. |
+| Python Scoring | pytest | >90% | 200+ decision scenarios with verified scores. |
+
+### Integration Tests
+- Cross-language gRPC: Python client calls every Rust service method in CI
+- Arrow IPC fuzz harness: random payloads, oversized buffers, schema mismatches
+- NATS: message ordering under load (1000 msgs/sec), late subscriber replay
+
+### E2E Scenarios (run nightly)
+1. Book cheapest flight (3 airline variants)
+2. Purchase product with immune system active (inject phishing redirect)
+3. Fill multi-page form with error recovery (inject server error)
+4. 5 concurrent sessions on same daemon
+5. Crash recovery: kill daemon mid-session → restart → verify state restored
+
+### Success Criteria
+- Goal completion rate >90%
+- Average steps within 20% of optimal path
+- Zero unhandled process crashes
+- Immune system >95% harmful action classification
+
+---
+
+## Startup Sequence
+
+```
+1. ans-daemon starts
+   ├── Initializes LanceDB
+   ├── Starts gRPC server on port 50051
+   ├── Connects to NATS
+   └── Spawns Chromium pool (default: 4 pre-warmed instances)
+
+2. ans-nerves starts
+   ├── Connects to gRPC (health check)
+   ├── Subscribes to NATS subjects
+   ├── Loads prompt templates
+   └── Starts 5 eye async tasks
+
+3. System ready
+   └── Client submits goal via gRPC CreateGoal
+      ├── Goal Decomposer breaks into sub-goals
+      ├── Session created, browser navigates to start URL
+      └── Perception loop begins
+```
+
+---
+
+## Configuration
+
+```yaml
+# ans-daemon.yaml
+daemon:
+  grpc_port: 50051
+  nats_url: "nats://localhost:4222"
+  data_dir: "~/.ans"
+
+chromium:
+  executable: "/usr/bin/chromium"
+  headless: true
+  pool_size: 4
+  max_sessions_per_instance: 1
+
+immune:
+  heuristic_rules_path: "~/.ans/rules/"
+  wasm_model_path: "~/.ans/models/immune.wasm"
+  classification_timeout_ms: 10
+
+storage:
+  lance_db_path: "~/.ans/decisions.lance"
+  embedding_dim: 768
+  snapshot_interval_secs: 30
+
+limits:
+  max_sessions_per_goal: 5
+  max_action_history: 100
+  max_eye_reports: 50
+  session_timeout_secs: 3600
+```
+
+```yaml
+# ans-nerves.yaml
+nerves:
+  grpc_server: "localhost:50051"
+  nats_url: "nats://localhost:4222"
+
+vision:
+  provider: "anthropic"  # or "openai"
+  model: "claude-sonnet-4-6"
+  max_tokens: 1024
+  screenshot_width: 1280
+  screenshot_height: 720
+  cache_ttl_secs: 60
+  circuit_breaker_failures: 3
+  circuit_breaker_window_secs: 60
+
+scoring:
+  weights:
+    outcome: 0.35
+    result: 0.30
+    error_penalty: 0.20
+    business: 0.15
+  recency_decay_days: 30
+  min_score_threshold: 0.3
+```
+
+---
+
+## Summary
+
+This plan covers the complete 4-layer architecture:
+
+- **Layer 2 (Agent Web):** Rust — Chromium via CDP, DOM distillation, page diff, immune system
+- **Layer 3 (Nervous System + 5 Eyes):** Python — vision, verification, error detection, cross-eye coordination
+- **Layer 4 (Decision Intelligence):** Python scoring + Rust LanceDB storage
+- **Communication:** gRPC for RPC, Arrow IPC for bulk data, NATS for events
+
+**22 weeks, 5-6 engineers, all 4 layers built in full.** The critical path runs through browser control → perception → coordination → decision intelligence → immune system → E2E hardening.

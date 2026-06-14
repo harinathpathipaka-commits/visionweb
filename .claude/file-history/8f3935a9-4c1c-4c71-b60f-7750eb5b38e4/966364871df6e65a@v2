@@ -1,0 +1,240 @@
+//! Throughput benchmarks — DOM distillation, diff, immune scanning.
+//!
+//! Measures operations-per-second and latency across page sizes.
+
+use std::fmt::Write;
+
+use ans_core::distill::DistillMode;
+use ans_diff::PageDiffer;
+use ans_distill::Distiller;
+use ans_immune::detector::InjectionDetector;
+use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use serde_json::json;
+
+// ── Synthetic DOM generators ────────────────────────────────
+
+fn build_dom(leaf_count: usize) -> serde_json::Value {
+    let leaves: Vec<_> = (0..leaf_count)
+        .map(|i| {
+            json!({
+                "nodeType": 1,
+                "nodeName": "span",
+                "attributes": [{"name": "class", "value": format!("item-{}", i)}],
+                "children": [{
+                    "nodeType": 3,
+                    "nodeValue": format!("Leaf node number {}", i)
+                }]
+            })
+        })
+        .collect();
+
+    json!({
+        "root": {
+            "nodeType": 9, "nodeName": "#document",
+            "children": [{
+                "nodeType": 1, "nodeName": "HTML",
+                "children": [{
+                    "nodeType": 1, "nodeName": "HEAD", "children": []
+                }, {
+                    "nodeType": 1, "nodeName": "BODY",
+                    "children": [{
+                        "nodeType": 1, "nodeName": "div",
+                        "attributes": [{"name": "class", "value": "main-content"}],
+                        "children": leaves
+                    }]
+                }]
+            }]
+        }
+    })
+}
+
+// ── Distillation benchmarks ──────────────────────────────────
+
+fn bench_distill_small(c: &mut Criterion) {
+    let dom = build_dom(100);
+    let distiller = Distiller;
+    let mut group = c.benchmark_group("distill");
+    group.throughput(Throughput::Elements(100));
+    group.bench_function("small_100_nodes", |b| {
+        b.iter(|| {
+            distiller.process(
+                black_box(&dom),
+                DistillMode::AllFields,
+                "https://example.com",
+                "Benchmark Page",
+            )
+        });
+    });
+    group.finish();
+}
+
+fn bench_distill_medium(c: &mut Criterion) {
+    let dom = build_dom(1_000);
+    let distiller = Distiller;
+    let mut group = c.benchmark_group("distill");
+    group.throughput(Throughput::Elements(1_000));
+    group.bench_function("medium_1k_nodes", |b| {
+        b.iter(|| {
+            distiller.process(
+                black_box(&dom),
+                DistillMode::AllFields,
+                "https://example.com",
+                "Benchmark Page",
+            )
+        });
+    });
+    group.finish();
+}
+
+fn bench_distill_large(c: &mut Criterion) {
+    let dom = build_dom(10_000);
+    let distiller = Distiller;
+    let mut group = c.benchmark_group("distill");
+    group.throughput(Throughput::Elements(10_000));
+    group.bench_function("large_10k_nodes", |b| {
+        b.iter(|| {
+            distiller.process(
+                black_box(&dom),
+                DistillMode::AllFields,
+                "https://example.com",
+                "Benchmark Page",
+            )
+        });
+    });
+    group.finish();
+}
+
+fn bench_distill_modes(c: &mut Criterion) {
+    let dom = build_dom(5_000);
+    let distiller = Distiller;
+    let mut group = c.benchmark_group("distill_modes");
+
+    group.bench_function("text_only", |b| {
+        b.iter(|| {
+            distiller.process(
+                black_box(&dom),
+                DistillMode::TextOnly,
+                "https://example.com",
+                "Benchmark Page",
+            )
+        });
+    });
+
+    group.bench_function("input_fields", |b| {
+        b.iter(|| {
+            distiller.process(
+                black_box(&dom),
+                DistillMode::InputFields,
+                "https://example.com",
+                "Benchmark Page",
+            )
+        });
+    });
+
+    group.bench_function("all_fields", |b| {
+        b.iter(|| {
+            distiller.process(
+                black_box(&dom),
+                DistillMode::AllFields,
+                "https://example.com",
+                "Benchmark Page",
+            )
+        });
+    });
+
+    group.finish();
+}
+
+// ── Immune scanning benchmarks ───────────────────────────────
+
+fn bench_immune_scan(c: &mut Criterion) {
+    let detector = InjectionDetector;
+    let html = r#"<html><head><title>Test</title></head>
+        <body><div>Hello World</div>
+        <script>alert("This is a normal script")</script>
+        <input type="text" placeholder="Enter name" />
+        </body></html>"#;
+
+    c.bench_function("immune/scan_html", |b| {
+        b.iter(|| {
+            let _ = detector.scan("https://example.com", black_box(html));
+        });
+    });
+}
+
+fn bench_immune_scan_large(c: &mut Criterion) {
+    let detector = InjectionDetector;
+    let mut html = String::with_capacity(100_000);
+    html.push_str("<html><body>");
+    for i in 0..2000 {
+        let _ = write!(html, "<div class='item'><span>Item {i}</span><input id='f{i}' placeholder='Field {i}' /></div>");
+    }
+    html.push_str("</body></html>");
+
+    c.bench_function("immune/scan_large_html", |b| {
+        b.iter(|| {
+            let _ = detector.scan("https://example.com", black_box(&html));
+        });
+    });
+}
+
+// ── Diff benchmarks ──────────────────────────────────────────
+
+fn bench_diff_small(c: &mut Criterion) {
+    let differ = PageDiffer;
+    let distiller = Distiller;
+    let before = distiller.process(
+        &build_dom(50),
+        DistillMode::AllFields,
+        "https://example.com",
+        "Before",
+    );
+    let after = distiller.process(
+        &build_dom(60),
+        DistillMode::AllFields,
+        "https://example.com",
+        "After",
+    );
+
+    c.bench_function("diff/small_50vs60", |b| {
+        b.iter(|| {
+            differ.diff(black_box(&before), black_box(&after));
+        });
+    });
+}
+
+fn bench_diff_medium(c: &mut Criterion) {
+    let differ = PageDiffer;
+    let distiller = Distiller;
+    let before = distiller.process(
+        &build_dom(500),
+        DistillMode::AllFields,
+        "https://example.com",
+        "Before",
+    );
+    let after = distiller.process(
+        &build_dom(550),
+        DistillMode::AllFields,
+        "https://example.com",
+        "After",
+    );
+
+    c.bench_function("diff/medium_500vs550", |b| {
+        b.iter(|| {
+            differ.diff(black_box(&before), black_box(&after));
+        });
+    });
+}
+
+criterion_group!(
+    benches,
+    bench_distill_small,
+    bench_distill_medium,
+    bench_distill_large,
+    bench_distill_modes,
+    bench_immune_scan,
+    bench_immune_scan_large,
+    bench_diff_small,
+    bench_diff_medium,
+);
+criterion_main!(benches);

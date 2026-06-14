@@ -1,0 +1,8 @@
+{
+  "id": "11",
+  "subject": "Phase 13: Docker + Kubernetes",
+  "description": "Dockerfiles, docker-compose.yml, and all k8s manifests.",
+  "status": "completed",
+  "blocks": [],
+  "blockedBy": []
+}

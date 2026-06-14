@@ -1,0 +1,96 @@
+"""Goal Verifier Eye — checks sub-goal criteria via GPT-4.
+
+Compares page state against verifiable criteria defined by the Goal
+Decomposer. Determines if the current sub-goal is done, partially done,
+or blocked.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from ans_nerves.config import get_config
+from ans_nerves.eyes.base import BaseEye, EyeReport
+from ans_nerves.llm.client import get_llm_client
+from ans_nerves.logging import get_logger
+from ans_nerves.llm.prompts import (
+    VERIFIER_JSON_SCHEMA,
+    VERIFIER_SYSTEM,
+    build_verifier_user_prompt,
+)
+
+logger = get_logger(__name__)
+
+_VERIFIER_DEFAULTS: dict[str, Any] = {
+    "criteria_met": False,
+    "confidence": 0.0,
+    "reasoning": "",
+    "criteria_status": "pending",
+    "sub_goal_advanced": False,
+    "blocking_issues": [],
+}
+
+
+class GoalVerifierEye(BaseEye):
+    """Verifies sub-goal completion against measurable criteria."""
+
+    name = "goal_verifier"
+
+    async def observe(self, session_id: str, page_data: dict[str, Any]) -> EyeReport:
+        sub_goal = page_data.get("sub_goal_description", "")
+        criteria = page_data.get("success_criteria", [])
+
+        if not sub_goal or not criteria:
+            return EyeReport(
+                eye_name=self.name,
+                confidence=0.0,
+                content={
+                    **_VERIFIER_DEFAULTS,
+                    "reasoning": "Missing sub_goal_description or success_criteria",
+                },
+            )
+
+        page_url = page_data.get("page_url", page_data.get("url", ""))
+        page_title = page_data.get("page_title", page_data.get("title", ""))
+        visible_text = page_data.get("visible_text", [])
+        dom_summary = page_data.get("dom_summary", "")
+        diff_summary = page_data.get("diff_summary", "")
+
+        user_prompt = build_verifier_user_prompt(
+            sub_goal_description=sub_goal,
+            success_criteria=criteria,
+            page_url=page_url,
+            page_title=page_title,
+            visible_text=visible_text,
+            dom_summary=dom_summary,
+            diff_summary=diff_summary,
+        )
+
+        try:
+            response = await get_llm_client().complete_structured(
+                system_prompt=VERIFIER_SYSTEM,
+                user_prompt=user_prompt,
+                json_schema=VERIFIER_JSON_SCHEMA,
+                model_override=get_config().llm.verifier_model,
+            )
+        except Exception:
+            logger.warning("goal_verifier: LLM call failed", exc_info=True)
+            return EyeReport(
+                eye_name=self.name,
+                confidence=0.0,
+                content={**_VERIFIER_DEFAULTS, "error": "LLM call failed"},
+            )
+
+        if response.parsed is None:
+            logger.warning("goal_verifier: LLM returned unparseable response")
+            return EyeReport(
+                eye_name=self.name,
+                confidence=0.0,
+                content={**_VERIFIER_DEFAULTS, "raw_response": response.content[:500]},
+            )
+
+        return EyeReport(
+            eye_name=self.name,
+            confidence=response.parsed.get("confidence", 0.0),
+            content=response.parsed,
+        )

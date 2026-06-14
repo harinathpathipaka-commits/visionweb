@@ -1,0 +1,148 @@
+/**
+ * li-client.ts — LayerInfinite REST API client for the benchmark.
+ * Uses the REST API directly (not MCP) for programmatic control.
+ * Includes rate-limit-aware delays between requests.
+ */
+
+const LI_BASE_URL = 'https://layerinfinite.me';
+const LI_API_KEY = 'layerinfinite_60a7e2729d358205f2f2433e4e4cf78d';
+
+/** Delay to respect the 300 req/min rate limit. */
+const REQUEST_DELAY_MS = 250; // 4 req/sec = 240 req/min — safe under 300 limit
+
+async function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+interface LIRequestOptions {
+  method: 'GET' | 'POST' | 'PUT';
+  path: string;
+  body?: Record<string, unknown>;
+  params?: Record<string, string>;
+}
+
+async function liRequest<T>(opts: LIRequestOptions): Promise<{ ok: boolean; status: number; data: T | null; error?: string }> {
+  const url = new URL(`${LI_BASE_URL}${opts.path}`);
+  if (opts.params) {
+    for (const [k, v] of Object.entries(opts.params)) {
+      url.searchParams.set(k, v);
+    }
+  }
+
+  const fetchOpts: RequestInit = {
+    method: opts.method,
+    headers: {
+      'X-API-Key': LI_API_KEY,
+      'Content-Type': 'application/json',
+    },
+  };
+
+  if (opts.body) {
+    fetchOpts.body = JSON.stringify(opts.body);
+  }
+
+  // Rate limit safety — wait between requests
+  await delay(REQUEST_DELAY_MS);
+
+  try {
+    const res = await fetch(url.toString(), fetchOpts);
+    const data = await res.json() as T;
+
+    if (res.status === 429) {
+      // Rate limited — wait and retry once
+      const retryAfter = parseInt(res.headers.get('Retry-After') ?? '5', 10);
+      console.log(`  ⚠️  Rate limited. Waiting ${retryAfter}s...`);
+      await delay(retryAfter * 1000);
+      const retryRes = await fetch(url.toString(), fetchOpts);
+      const retryData = await retryRes.json() as T;
+      return { ok: retryRes.ok, status: retryRes.status, data: retryData };
+    }
+
+    return { ok: res.ok, status: res.status, data };
+  } catch (err: any) {
+    return { ok: false, status: 0, data: null, error: err.message };
+  }
+}
+
+/** Log an outcome to LayerInfinite. */
+export async function logOutcome(params: {
+  action_name: string;
+  issue_type: string;
+  success: boolean;
+  outcome_score?: number;
+  response_ms?: number;
+  metadata?: Record<string, unknown>;
+}): Promise<boolean> {
+  const result = await liRequest<any>({
+    method: 'POST',
+    path: '/v1/log-outcome',
+    body: {
+      action_name: params.action_name,
+      issue_type: params.issue_type,
+      success: params.success,
+      outcome_score: params.outcome_score ?? (params.success ? 1.0 : 0.0),
+      response_ms: params.response_ms ?? 0,
+      metadata: params.metadata ?? {},
+    },
+  });
+
+  if (!result.ok) {
+    console.error(`  ❌ log-outcome failed (${result.status}):`, result.error ?? result.data);
+  }
+  return result.ok;
+}
+
+/** Get scored actions from LayerInfinite for a given task. */
+export async function getScores(issueType: string): Promise<{
+  actions: Array<{ action_name: string; score: number; total_runs: number; success_rate: number }>;
+  recommendation?: { action: string; confidence: string };
+} | null> {
+  const result = await liRequest<any>({
+    method: 'GET',
+    path: '/v1/get-scores',
+    params: { issue_type: issueType },
+  });
+
+  if (!result.ok || !result.data) return null;
+
+  const data = result.data;
+  const rankedActions = data.ranked_actions ?? data.scores ?? data.actions ?? [];
+  return {
+    actions: rankedActions.map((a: any) => ({
+      action_name: a.action_name,
+      score: a.composite_score ?? a.score ?? a.weighted_score ?? 0,
+      total_runs: a.total_attempts ?? a.total_runs ?? a.total_outcomes ?? 0,
+      success_rate: a.composite_score ?? a.success_rate ?? 0,
+    })),
+    recommendation: data.top_action
+      ? { action: data.top_action.action_name, confidence: data.cold_start ? 'cold_start' : 'empirical' }
+      : data.recommendation ?? data.policy_recommendation ?? undefined,
+  };
+}
+
+/** Check API health. */
+export async function checkHealth(): Promise<boolean> {
+  try {
+    const res = await fetch(`${LI_BASE_URL}/health`, {
+      headers: { 'X-API-Key': LI_API_KEY },
+    });
+    const data = await res.json() as any;
+    return data.status === 'ok';
+  } catch {
+    return false;
+  }
+}
+
+/** Verify API key works. */
+export async function verifyApiKey(): Promise<{ agentId: string; customerId: string } | null> {
+  const result = await liRequest<any>({
+    method: 'GET',
+    path: '/v1/me',
+  });
+
+  if (!result.ok || !result.data) return null;
+  return {
+    agentId: result.data.agent_id,
+    customerId: result.data.customer_id,
+  };
+}

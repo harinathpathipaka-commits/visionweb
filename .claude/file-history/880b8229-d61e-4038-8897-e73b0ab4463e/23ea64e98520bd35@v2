@@ -1,0 +1,87 @@
+/**
+ * ModeManager unit tests — per-task-type mode resolution with caching.
+ */
+import { describe, it, expect, beforeEach } from 'vitest';
+import { ModeManager } from '../src/mode-manager.js';
+import type { GatewayConfig } from '../src/config.js';
+
+function makeConfig(overrides?: Partial<GatewayConfig>): GatewayConfig {
+  return {
+    mode: 'recommend',
+    environment: 'production',
+    apiKey: 'test-key',
+    baseUrl: 'https://test.example.com',
+    upstreamServers: [],
+    shadowMode: false,
+    adminKey: null,
+    modeOverrides: new Map(),
+    ...overrides,
+  };
+}
+
+describe('ModeManager', () => {
+  describe('resolveMode', () => {
+    it('returns bootstrap when global mode is null', () => {
+      const config = makeConfig({ mode: null });
+      const manager = new ModeManager(config);
+      expect(manager.resolveMode('build')).toBe('bootstrap');
+      expect(manager.resolveMode('deploy')).toBe('bootstrap');
+    });
+
+    it('returns global mode when no override exists', () => {
+      const config = makeConfig({ mode: 'recommend' });
+      const manager = new ModeManager(config);
+      expect(manager.resolveMode('unknown_task')).toBe('recommend');
+    });
+
+    it('respects per-task-type overrides', () => {
+      const overrides = new Map([['build', 'auto']]);
+      const config = makeConfig({ mode: 'assist', modeOverrides: overrides });
+      const manager = new ModeManager(config);
+      expect(manager.resolveMode('build')).toBe('auto');
+      expect(manager.resolveMode('deploy')).toBe('assist');
+    });
+
+    it('caches results for the same task type', () => {
+      const overrides = new Map<string, 'auto'>([['build', 'auto']]);
+      const config = makeConfig({ mode: 'recommend', modeOverrides: overrides });
+      const manager = new ModeManager(config);
+
+      const first = manager.resolveMode('build');
+      // Override the map to verify cached result
+      overrides.delete('build');
+      const second = manager.resolveMode('build');
+
+      expect(first).toBe('auto');
+      expect(second).toBe('auto'); // cached, not re-resolved
+    });
+  });
+
+  describe('getGlobalMode', () => {
+    it('returns the configured global mode', () => {
+      const config = makeConfig({ mode: 'auto' });
+      const manager = new ModeManager(config);
+      expect(manager.getGlobalMode()).toBe('auto');
+    });
+
+    it('returns bootstrap when mode is null', () => {
+      const config = makeConfig({ mode: null });
+      const manager = new ModeManager(config);
+      expect(manager.getGlobalMode()).toBe('bootstrap');
+    });
+  });
+
+  describe('clearCache', () => {
+    it('clears cached mode resolutions', () => {
+      const overrides = new Map([['build', 'auto']]);
+      const config = makeConfig({ mode: 'recommend', modeOverrides: overrides });
+      const manager = new ModeManager(config);
+
+      expect(manager.resolveMode('build')).toBe('auto');
+      overrides.delete('build');
+      manager.clearCache();
+
+      expect(manager.resolveMode('build')).toBe('recommend');
+    });
+  });
+});

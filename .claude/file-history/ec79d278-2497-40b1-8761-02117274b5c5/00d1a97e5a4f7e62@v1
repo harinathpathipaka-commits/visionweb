@@ -1,0 +1,8 @@
+from src.pipeline import solve
+
+
+def test_pipeline_runs(tmp_path) -> None:
+    db_path = str(tmp_path / "test.db")
+    result = solve("test query", [1.0, 2.0, 3.0], [2.0, 4.0, 6.0], db_path)
+    assert result.gate is not None
+    assert result.trace_id

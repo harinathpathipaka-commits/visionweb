@@ -1,0 +1,53 @@
+from __future__ import annotations
+
+from typing import Any, List, Optional
+
+from .auto_mapper import auto_map_columns
+from .ingestion import detect_delimiter, ingest_csv, ingest_excel, profile_csv, save_file
+from .models import IngestionSummary, SchemaMapping
+from .storage import init_storage
+
+
+def upload_csv(db_path: str, filename: str, content_type: str, data: bytes) -> int:
+    init_storage(db_path)
+    return save_file(db_path, filename, content_type, data)
+
+
+def profile_file(data: bytes):
+    return profile_csv(data)
+
+
+def run_ingestion(
+    db_path: str,
+    file_id: int,
+    data: bytes,
+    mappings: List[SchemaMapping],
+    content_type: str = "text/csv",
+) -> IngestionSummary:
+    init_storage(db_path)
+    if "spreadsheet" in content_type or "excel" in content_type or content_type.endswith(".xlsx"):
+        return ingest_excel(db_path, file_id, data, mappings)
+    return ingest_csv(db_path, file_id, data, mappings)
+
+
+def upload_excel(db_path: str, filename: str, data: bytes) -> int:
+    init_storage(db_path)
+    return save_file(db_path, filename, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", data)
+
+
+def get_delimiter(data: bytes) -> str:
+    return detect_delimiter(data)
+
+
+def auto_map_and_ingest(
+    db_path: str,
+    file_id: int,
+    data: bytes,
+    domain: str = "general",
+    llm_client: Optional[Any] = None,
+    content_type: str = "text/csv",
+) -> IngestionSummary:
+    """Profile CSV, auto-map columns to variables, then ingest."""
+    profiles = profile_csv(data)
+    mappings = auto_map_columns(profiles, domain, llm_client)
+    return run_ingestion(db_path, file_id, data, mappings, content_type)

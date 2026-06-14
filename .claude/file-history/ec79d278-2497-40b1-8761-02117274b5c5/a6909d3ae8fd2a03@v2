@@ -1,0 +1,76 @@
+import pytest
+from src.connectors import TableSchema
+from src.connectors.schema_interpreter import SchemaInterpreter
+from src.connectors.sync_engine import SyncEngine
+
+
+def _make_table(name="test_table", columns=None):
+    if columns is None:
+        columns = [
+            {"name": "revenue", "type": "REAL"},
+            {"name": "customers", "type": "INTEGER"},
+            {"name": "created_at", "type": "TEXT"},
+        ]
+    return TableSchema(name=name, columns=columns, row_count_estimate=100)
+
+
+class TestSchemaInterpreter:
+    def test_map_columns_basic(self):
+        si = SchemaInterpreter(domain="finance_saas")
+        table = _make_table()
+        mappings = si.map_columns(table)
+        assert len(mappings) > 0
+
+    def test_suggest_mappings(self):
+        si = SchemaInterpreter(domain="finance_saas")
+        table = _make_table()
+        suggestions = si.suggest_mappings([table])
+        assert isinstance(suggestions, dict)
+        assert table.name in suggestions
+
+    def test_no_matching_columns(self):
+        si = SchemaInterpreter(domain="general")
+        table = TableSchema(
+            name="t", columns=[{"name": "unrelated_col", "type": "TEXT"}], row_count_estimate=1
+        )
+        mappings = si.map_columns(table)
+        assert len(mappings) == 0
+
+
+class _MockConnector:
+    """Minimal mock connector for SyncEngine tests."""
+    def __init__(self):
+        self._connected = False
+
+    def connect(self):
+        self._connected = True
+
+    def disconnect(self):
+        self._connected = False
+
+    def introspect(self):
+        return []
+
+    def fetch(self, table, columns, since=None, cursor=None, limit=10000):
+        from src.connectors import FetchResult
+        return FetchResult(table=table, columns=columns, rows=[], cursor=None)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+
+class TestSyncEngine:
+    def test_incremental_sync_returns_count(self, tmp_path):
+        db_path = str(tmp_path / "test_sync.db")
+        se = SyncEngine(db_path=db_path)
+        result = se.incremental_sync(_MockConnector(), "test", [], since="2024-01-01")
+        assert isinstance(result, int)
+
+    def test_full_sync(self, tmp_path):
+        db_path = str(tmp_path / "test_sync.db")
+        se = SyncEngine(db_path=db_path)
+        result = se.full_sync(_MockConnector(), "test", [])
+        assert isinstance(result, int)

@@ -1,0 +1,19 @@
+[package]
+name = "ans-ipc"
+version.workspace = true
+edition.workspace = true
+description = "gRPC server + Arrow IPC bridge — the Rust↔Python communication layer"
+
+[dependencies]
+ans-proto.workspace = true
+ans-core.workspace = true
+tonic.workspace = true
+prost.workspace = true
+tokio.workspace = true
+arrow.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+ans-cdp = { path = "../ans-cdp" }

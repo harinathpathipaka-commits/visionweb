@@ -1,0 +1,302 @@
+import json
+import sqlite3
+from typing import Any, Dict, Optional
+
+
+def init_storage(db_path: str) -> None:
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS equation_library (
+                equation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                var_hash TEXT NOT NULL,
+                domain TEXT NOT NULL,
+                active_version_id INTEGER,
+                active_from TEXT,
+                active_reason TEXT,
+                form_family TEXT NOT NULL,
+                sympy_ast TEXT NOT NULL,
+                parameters_json TEXT NOT NULL,
+                stats_json TEXT NOT NULL,
+                n_obs INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                last_fitted_at TEXT NOT NULL,
+                drift_status TEXT NOT NULL,
+                confidence_level TEXT NOT NULL,
+                provenance_json TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS equation_versions (
+                version_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                equation_id INTEGER NOT NULL,
+                form_family TEXT NOT NULL,
+                sympy_ast TEXT NOT NULL,
+                parameters_json TEXT NOT NULL,
+                stats_json TEXT NOT NULL,
+                n_obs INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                source TEXT NOT NULL,
+                shadow_status TEXT NOT NULL,
+                provenance_json TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS equation_shadow_evals (
+                shadow_eval_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                version_id INTEGER NOT NULL,
+                mape REAL NOT NULL,
+                aic REAL NOT NULL,
+                residual_random INTEGER NOT NULL,
+                passed INTEGER NOT NULL,
+                evaluated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ingestion_files (
+                file_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename TEXT NOT NULL,
+                content_type TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                checksum TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ingestion_profiles (
+                profile_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_id INTEGER NOT NULL,
+                columns_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ingestion_mappings (
+                mapping_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_id INTEGER NOT NULL,
+                mappings_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS observation_ledger (
+                observation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                variable TEXT NOT NULL,
+                value REAL NOT NULL,
+                unit TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                entity_id TEXT,
+                quality_score REAL NOT NULL,
+                provenance_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ingestion_quality_issues (
+                issue_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_id INTEGER NOT NULL,
+                row_index INTEGER NOT NULL,
+                column_name TEXT NOT NULL,
+                code TEXT NOT NULL,
+                severity TEXT NOT NULL,
+                message TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ingestion_jobs (
+                job_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_id INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                total_rows INTEGER NOT NULL,
+                observations_created INTEGER NOT NULL,
+                issues_count INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+
+
+def find_equation(db_path: str, var_hash: str, domain: str) -> Optional[Dict[str, Any]]:
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT equation_id, active_version_id, form_family, sympy_ast, parameters_json, stats_json, n_obs, drift_status, confidence_level, provenance_json "
+            "FROM equation_library WHERE var_hash = ? AND domain = ?",
+            (var_hash, domain),
+        ).fetchone()
+    if not row:
+        return None
+    equation_id = row[0]
+    active_version_id = row[1]
+    if active_version_id is None:
+        return None
+    version = conn.execute(
+        "SELECT form_family, sympy_ast, parameters_json, stats_json, n_obs, provenance_json "
+        "FROM equation_versions WHERE version_id = ?",
+        (active_version_id,),
+    ).fetchone()
+    if not version:
+        return None
+    return {
+        "equation_id": equation_id,
+        "form_family": version[0],
+        "sympy_ast": version[1],
+        "parameters": json.loads(version[2]),
+        "stats": json.loads(version[3]),
+        "n_obs": version[4],
+        "drift_status": row[7],
+        "confidence_level": row[8],
+        "provenance": json.loads(version[5]),
+    }
+
+
+def get_or_create_equation(
+    db_path: str,
+    var_hash: str,
+    domain: str,
+    created_at: str,
+) -> int:
+    with sqlite3.connect(db_path) as conn:
+        existing = conn.execute(
+            "SELECT equation_id FROM equation_library WHERE var_hash = ? AND domain = ?",
+            (var_hash, domain),
+        ).fetchone()
+        if existing:
+            return existing[0]
+        conn.execute(
+            """
+            INSERT INTO equation_library (
+                var_hash, domain, form_family, sympy_ast, parameters_json, stats_json,
+                n_obs, created_at, last_fitted_at, drift_status, confidence_level, provenance_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                var_hash,
+                domain,
+                "pending",
+                "",
+                json.dumps({}),
+                json.dumps({}),
+                0,
+                created_at,
+                created_at,
+                "pending",
+                "low",
+                json.dumps({}),
+            ),
+        )
+        return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+
+def insert_version(
+    db_path: str,
+    equation_id: int,
+    form_family: str,
+    sympy_ast: str,
+    parameters: Dict[str, float],
+    stats: Dict[str, Any],
+    n_obs: int,
+    created_at: str,
+    source: str,
+    provenance: Dict[str, Any],
+) -> int:
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO equation_versions (
+                equation_id, form_family, sympy_ast, parameters_json, stats_json,
+                n_obs, created_at, source, shadow_status, provenance_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                equation_id,
+                form_family,
+                sympy_ast,
+                json.dumps(parameters),
+                json.dumps(stats),
+                n_obs,
+                created_at,
+                source,
+                "pending",
+                json.dumps(provenance),
+            ),
+        )
+        return cursor.lastrowid
+
+
+def record_shadow_eval(
+    db_path: str,
+    version_id: int,
+    mape: float,
+    aic: float,
+    residual_random: bool,
+    passed: bool,
+    evaluated_at: str,
+) -> None:
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO equation_shadow_evals (
+                version_id, mape, aic, residual_random, passed, evaluated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (version_id, mape, aic, int(residual_random), int(passed), evaluated_at),
+        )
+        conn.execute(
+            "UPDATE equation_versions SET shadow_status = ? WHERE version_id = ?",
+            ("passed" if passed else "failed", version_id),
+        )
+
+
+def promote_version(
+    db_path: str,
+    equation_id: int,
+    version_id: int,
+    promoted_at: str,
+    reason: str,
+) -> None:
+    with sqlite3.connect(db_path) as conn:
+        version = conn.execute(
+            "SELECT form_family, sympy_ast, parameters_json, stats_json, n_obs, provenance_json FROM equation_versions WHERE version_id = ?",
+            (version_id,),
+        ).fetchone()
+        if not version:
+            return
+        conn.execute(
+            """
+            UPDATE equation_library
+            SET active_version_id = ?, active_from = ?, active_reason = ?,
+                form_family = ?, sympy_ast = ?, parameters_json = ?, stats_json = ?,
+                n_obs = ?, last_fitted_at = ?, confidence_level = ?
+            WHERE equation_id = ?
+            """,
+            (
+                version_id,
+                promoted_at,
+                reason,
+                version[0],
+                version[1],
+                version[2],
+                version[3],
+                version[4],
+                promoted_at,
+                "medium",
+                equation_id,
+            ),
+        )

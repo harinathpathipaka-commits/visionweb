@@ -1,0 +1,105 @@
+---
+name: session-state-jun-2026
+description: "ANS project state as of 2026-06-12 — Docker running, major intelligence fixes applied, decision memory gap identified"
+metadata: 
+  node_type: memory
+  type: project
+  originSessionId: a40d33bf-19ab-407b-b281-8395d3c17198
+---
+
+## ANS Current State — June 12, 2026
+
+### Docker: Image built, container runs
+
+**Image:** `ans:latest` (1.78GB)
+**Run:** `docker run -d --name ans -p 50051:50051 -p 50052:50052 --env-file nerves/.env ans`
+**Note:** Docker Desktop on this Windows machine is unstable — WSL2 backend crashes periodically. Container disappears on daemon restart. Use `docker-compose up -d` for persistent runs.
+
+### What Was Fixed This Session
+
+#### Docker/Infra (10 fixes)
+1. `.dockerignore` — excludes target/, .venv/, .git/, screenshots (12KB context vs multi-GB)
+2. `~/.ans/` directories created in container with correct ownership
+3. `api_keys.json` — default admin + dashboard keys at `/home/ans/.ans/api_keys.json`
+4. `ans.toml` copied to `/app/ans.toml`
+5. Dockerfile base: `rust:1.85` → `rust:1.86-slim-bookworm` (ICU crates MSRV)
+6. Python runtime base: `debian:bookworm-slim` → `python:3.12-slim-bookworm` (matching Python version)
+7. Three Rust const-fn fixes for Rust 1.86 compatibility (budget.rs, engine.rs, decision.rs)
+8. `--gateway-bind 0.0.0.0` CLI flag added — gateways in containers must bind to 0.0.0.0
+9. UTF-8 safe string truncation in `ans-distill/src/engine.rs` and `ans-diff/src/engine.rs` (emoji crash fix)
+10. All axum route paths: `{id}` → `:id` (axum 0.7 syntax — parametrized routes were 404)
+
+#### Dashboard Fixes
+11. Cancel goal button on active/blocked goal cards
+12. `cancelGoal(id)` JS function calling `POST /api/v1/goals/:id/cancel`
+13. Goal ID tracked from create response, shown immediately in grid
+
+#### Model Switch
+14. LLM switched from `deepseek-chat` to `deepseek-v4-flash` for all roles (planner, verifier, decomposer)
+
+#### Intelligence Fixes (80% of "dumb agent" problem)
+15. **Label association** — `ans-distill/src/engine.rs`: post-processing pass scans `<label for="id">` elements and enriches `InteractiveElement.label`. Previously every `<input>` had `label: ""`.
+16. **Form attributes propagated** — `dom_reader.py`: `input_type`, `placeholder`, `name`, `autocomplete`, `aria_label` now included in interactive element dicts
+17. **Vision Eye orientation** — `loop.py`: runs on steps 1-2 always (orientation phase), throttles to every 3rd step after
+18. **DOM element cap raised** — `loop.py`: 30 → 80 elements, text truncation 60 → 120 chars
+19. **Coordinator summaries enriched** — `coordinator.py`: fallback synthesizer now includes form field labels, types, names
+20. **Form-filling planner prompt** — `prompts.py`: FORM-FILLING STRATEGY section (map → fill → ask → submit)
+21. **ask_user action** — added to planner schema + loop handles it via pause mechanism
+
+### What Still Needs to Be Done
+
+#### P0 — Wire decision memory gRPC sync (CRITICAL)
+- **Problem:** Python `DecisionIntelligence.record_action()` stores to local LanceDB but NEVER calls `grpc.store_score()`. Rust `DecisionStore` is always empty. Two stores are disconnected.
+- **Fix:** Add `await self._grpc.store_score(...)` call in `intelligence.py:record_action()` after local store.
+- **Files:** `nerves/ans_nerves/scoring/intelligence.py` (add gRPC sync), check `loop.py` for grpc access
+- **Also needed for "perfect":**
+  - Rust DecisionStore still in-memory (Vec) — reboot loses data. Need LanceDB in Rust crate.
+  - FastEmbed availability in Docker — verify ONNX runtime works, otherwise embeddings are SHA-256 hash garbage
+  - `crates/ans-storage/Cargo.toml` needs `lancedb` dependency
+  - `crates/ans-storage/src/decisions.rs` needs real LanceDB backing
+
+#### P1 — Remaining 20% intelligence gaps
+22. **Selector builder ignores `name` attribute** — `engine.rs:build_selector()`: should add `[name="email"]` selectors for form inputs
+23. **No Tab action** — planner cannot press Tab to move between form fields. Add `tab` to action types + execute in loop.
+24. **Coordinator LLM path never called** — `loop.py` always uses `_fallback_synthesize`, the LLM `synthesize()` is dead code
+
+#### P2 — Docker stability
+- Docker Desktop on this Windows machine needs a reboot to clear WSL2 state
+- After reboot: `docker build -t ans . && docker run -d --name ans -p 50051:50051 -p 50052:50052 --env-file nerves/.env ans`
+
+### Project Truths (Corrected from previous session)
+- **Benchmarks are theoretical only** — zero empirical measurement against browser-use or any tool
+- **ANS is middleware, not a browser** — should plug into Browser-Use/Playwright, not compete with them
+- **Config is DeepSeek, not OpenAI** — text models use DeepSeek API, only Vision uses GPT-4o
+
+### Key Endpoints
+| Endpoint | Method | Auth |
+|----------|--------|------|
+| `/api/v1/health` | GET | Public |
+| `/api/v1/metrics` | GET | Public |
+| `/` | GET | Public (Dashboard) |
+| `/api/v1/goals` | POST | API key |
+| `/api/v1/goals/:id` | GET | API key |
+| `/api/v1/goals/:id/cancel` | POST | API key |
+| `/api/v1/sessions` | POST | API key |
+| `/ws` | GET | Public |
+
+### Working Commands
+```powershell
+# Build
+docker build -t ans .
+
+# Run
+docker run -d --name ans -p 50051:50051 -p 50052:50052 --env-file nerves/.env ans
+
+# Verify
+curl http://localhost:50052/api/v1/health
+
+# Cancel goal
+curl -X POST -H "X-API-Key: dev-secret-key-123" http://localhost:50052/api/v1/goals/<goal-id>/cancel
+
+# Kill all Python processes (hard stop)
+docker exec ans pkill -f "python.*ans_nerves"
+```
+
+[[phase1-complete-jun-2026]] [[cost-optimization-jun-2026]] [[benchmark-comparison-jun-2026]] [[ans-gateway-not-browser]] [[decision-memory-pipeline]]

@@ -1,0 +1,533 @@
+syntax = "proto3";
+
+package ans;
+
+// ────────────────────────────────────────────────────────────
+// Agent Nervous System — Complete gRPC Service Definition
+// Version: 1.0.0 (Phase 0 — Protocols Frozen)
+// ────────────────────────────────────────────────────────────
+
+service AgentNervousSystem {
+  // ── Session Management ──────────────────────────────────
+  rpc CreateSession(CreateSessionRequest) returns (Session);
+  rpc CloseSession(CloseSessionRequest) returns (Empty);
+  rpc Navigate(NavigateRequest) returns (PageState);
+  rpc ExecuteAction(ExecuteActionRequest) returns (ActionResult);
+
+  // ── Perception ──────────────────────────────────────────
+  rpc GetDistilledDom(DomRequest) returns (DistilledDom);
+  rpc CaptureScreenshot(ScreenshotRequest) returns (ScreenshotResponse);
+  rpc ComputeDiff(DiffRequest) returns (DiffReport);
+
+  // ── Goal State ──────────────────────────────────────────
+  rpc CreateGoal(CreateGoalRequest) returns (GoalState);
+  rpc GetGoalState(GoalStateRequest) returns (GoalState);
+  rpc UpdateGoalProgress(ProgressUpdate) returns (GoalState);
+  rpc SubscribeGoalUpdates(GoalStateRequest) returns (stream GoalUpdate);
+
+  // ── Eye Reports (Streaming) ─────────────────────────────
+  rpc SubmitEyeReports(SubmitReportsRequest) returns (RoutedSignal);
+  rpc SubscribeEyeReports(SessionRequest) returns (stream EyeReport);
+
+  // ── Immune System ───────────────────────────────────────
+  rpc ClassifyDistractions(DistractionRequest) returns (DistractionList);
+  rpc ScanInjections(InjectionScanRequest) returns (InjectionScanResult);
+  rpc CheckAction(ActionCheckRequest) returns (ActionCheckResponse);
+
+  // ── Decision Intelligence ───────────────────────────────
+  rpc StoreScore(StoreScoreRequest) returns (StoreScoreResponse);
+  rpc QueryBestActions(QueryBestActionsRequest) returns (ScoredActionList);
+  rpc SearchSimilarDecisions(SearchRequest) returns (ScoredActionList);
+
+  // ── Budget ──────────────────────────────────────────────
+  rpc GetBudgetStatus(BudgetStatusRequest) returns (BudgetStatus);
+  rpc ConfigureBudget(BudgetConfigRequest) returns (BudgetConfig);
+
+  // ── Health ──────────────────────────────────────────────
+  rpc Health(Empty) returns (HealthStatus);
+}
+
+// ────────────────────────────────────────────────────────────
+// Common Types
+// ────────────────────────────────────────────────────────────
+
+message Empty {}
+
+message SessionRequest {
+  string session_id = 1;
+}
+
+// ────────────────────────────────────────────────────────────
+// Session Management
+// ────────────────────────────────────────────────────────────
+
+message CreateSessionRequest {
+  string goal_id = 1;
+  string start_url = 2;
+  map<string, string> headers = 3;
+}
+
+message CloseSessionRequest {
+  string session_id = 1;
+  string reason = 2;
+}
+
+message Session {
+  string session_id = 1;
+  string goal_id = 2;
+  string status = 3;           // idle, navigating, executing, perceiving, blocked, failed
+  PageState current_page = 4;
+  int64 created_at = 5;
+  int64 last_activity_at = 6;
+}
+
+message NavigateRequest {
+  string session_id = 1;
+  string url = 2;
+  int32 timeout_ms = 3;
+}
+
+message PageState {
+  string url = 1;
+  string title = 2;
+  bool loaded = 3;
+  int64 dom_node_count = 4;
+  repeated string visible_text = 5;
+  int64 timestamp = 6;
+}
+
+message BoundingBox {
+  int32 x = 1;
+  int32 y = 2;
+  int32 width = 3;
+  int32 height = 4;
+}
+
+// ────────────────────────────────────────────────────────────
+// Actions
+// ────────────────────────────────────────────────────────────
+
+message ExecuteActionRequest {
+  string session_id = 1;
+  Action action = 2;
+}
+
+message Action {
+  string action_type = 1;      // click, type, scroll, select, navigate, wait, submit, screenshot
+  string selector = 2;
+  string value = 3;            // text to type, option to select, url to navigate
+  map<string, string> params = 4;
+}
+
+message ActionResult {
+  bool success = 1;
+  string error_message = 2;
+  PageState new_state = 3;
+  DiffReport diff = 4;
+  int64 execution_time_ms = 5;
+}
+
+message ActionCheckRequest {
+  string session_id = 1;
+  Action action = 2;
+}
+
+message ActionCheckResponse {
+  bool allowed = 1;
+  string reason = 2;
+  repeated string distraction_alerts = 3;
+  repeated string injection_alerts = 4;
+}
+
+// ────────────────────────────────────────────────────────────
+// DOM Distillation
+// ────────────────────────────────────────────────────────────
+
+message DomRequest {
+  string session_id = 1;
+  string mode = 2;             // text_only, input_fields, all_fields
+}
+
+message DistilledDom {
+  string mode = 1;
+  string url = 2;
+  string title = 3;
+  repeated DistilledElement elements = 4;
+  repeated InteractiveElement interactive = 5;
+  repeated SemanticBlock semantic_blocks = 6;
+  repeated DistractionFlag distraction_flags = 7;
+  int64 timestamp = 8;
+}
+
+message DistilledElement {
+  string tag = 1;
+  string text = 2;
+  map<string, string> attributes = 3;
+  string role = 4;
+  bool is_visible = 5;
+  BoundingBox bounding_box = 6;
+  repeated int32 children = 7;
+}
+
+message InteractiveElement {
+  string selector = 1;
+  string element_type = 2;     // button, input, select, textarea, link, checkbox, radio
+  string label = 3;
+  string placeholder = 4;
+  string current_value = 5;
+  bool is_visible = 6;
+  bool is_enabled = 7;
+  BoundingBox bounding_box = 8;
+}
+
+message SemanticBlock {
+  string block_type = 1;       // navigation, main_content, form, sidebar, footer, ad, cookie_banner
+  string text_content = 2;
+  repeated int32 element_indices = 3;
+  float goal_relevance_score = 4;
+}
+
+message DistractionFlag {
+  string kind = 1;             // ad, popup, cookie_banner, newsletter_modal, redirect, autoplay_video, survey, notification
+  string element_selector = 2;
+  float confidence = 3;
+  string suggested_action = 4; // dismiss, block, suppress, ignore, navigate_back
+}
+
+// ────────────────────────────────────────────────────────────
+// Screenshot
+// ────────────────────────────────────────────────────────────
+
+message ScreenshotRequest {
+  string session_id = 1;
+  string format = 2;           // png, jpeg
+  int32 quality = 3;           // 1-100, jpeg only
+  bool full_page = 4;
+  string arrow_shm_key = 5;    // key for Arrow IPC shared memory (bulk transfer)
+}
+
+message ScreenshotResponse {
+  bool success = 1;
+  int64 size_bytes = 2;
+  int32 width = 3;
+  int32 height = 4;
+  string format = 5;
+  bytes data = 6;              // inline for small screenshots (<1MB), otherwise Arrow IPC
+  string arrow_shm_key = 7;
+}
+
+// ────────────────────────────────────────────────────────────
+// Page Diff
+// ────────────────────────────────────────────────────────────
+
+message DiffRequest {
+  string session_id = 1;
+  DistilledDom before = 2;
+  DistilledDom after = 3;
+}
+
+message DiffReport {
+  string before_url = 1;
+  string after_url = 2;
+  bool is_same_page = 3;
+  repeated ElementChange added = 4;
+  repeated ElementChange removed = 5;
+  repeated ElementModification modified = 6;
+  float visual_diff_percentage = 7;
+  string summary = 8;          // no_change, cosmetic_change, content_update, form_update, navigation, distraction_appeared, error_state
+}
+
+message ElementChange {
+  string tag = 1;
+  string text = 2;
+  string selector = 3;
+  int32 index = 4;
+}
+
+message ElementModification {
+  string selector = 1;
+  string attribute_name = 2;
+  string old_value = 3;
+  string new_value = 4;
+}
+
+// ────────────────────────────────────────────────────────────
+// Distraction Classification
+// ────────────────────────────────────────────────────────────
+
+message DistractionRequest {
+  string session_id = 1;
+  string url = 2;
+  DistilledDom dom = 3;
+}
+
+message DistractionList {
+  repeated Distraction distractions = 1;
+  int64 classification_time_us = 2;
+}
+
+message Distraction {
+  string kind = 1;
+  string element_selector = 2;
+  float confidence = 3;
+  string action = 4;           // dismiss, block, suppress, ignore, navigate_back
+}
+
+// ────────────────────────────────────────────────────────────
+// Prompt Injection Defense
+// ────────────────────────────────────────────────────────────
+
+message InjectionScanRequest {
+  string session_id = 1;
+  string url = 2;
+  string page_content = 3;     // raw HTML or distilled text
+}
+
+message InjectionScanResult {
+  float score = 1;             // 0.0 (safe) to 1.0 (definite injection)
+  repeated FlaggedContent flagged = 2;
+  string action = 3;           // allow, sanitize, block
+  string reason = 4;
+  int64 scan_time_us = 5;
+}
+
+message FlaggedContent {
+  string content_snippet = 1;
+  string pattern_matched = 2;
+  string location = 3;         // element attribute, hidden div, aria-label, css pseudo, etc.
+  float confidence = 4;
+}
+
+// ────────────────────────────────────────────────────────────
+// Eye Reports
+// ────────────────────────────────────────────────────────────
+
+message SubmitReportsRequest {
+  string session_id = 1;
+  repeated EyeReport reports = 2;
+}
+
+message EyeReport {
+  string eye_name = 1;         // dom_reader, vision, page_diff, goal_verifier, error_detector
+  int64 timestamp = 2;
+  float confidence = 3;
+  float goal_relevance = 4;
+  oneof content {
+    DomReportContent dom = 10;
+    VisionReportContent vision = 11;
+    DiffReportContent diff = 12;
+    VerificationContent verification = 13;
+    ErrorReportContent error = 14;
+  }
+}
+
+message DomReportContent {
+  DistilledDom dom = 1;
+  repeated InteractiveElement focused_elements = 2;
+}
+
+message VisionReportContent {
+  repeated string visible_elements = 1;
+  repeated string overlays = 2;
+  repeated string blocked_regions = 3;
+  string page_type = 4;
+  repeated string anomalies = 5;
+  string raw_response = 6;
+}
+
+message DiffReportContent {
+  DiffReport diff = 1;
+}
+
+message VerificationContent {
+  bool sub_goal_advanced = 1;
+  float confidence = 2;
+  string reasoning = 3;
+  string criteria_status = 4;  // pending, met, failed, partial
+}
+
+message ErrorReportContent {
+  string failure_type = 1;     // silent_fail, wrong_element, blocked_interaction, state_mismatch, goal_drift, timeout, navigation_error
+  string description = 2;
+  repeated string recovery_actions = 3;
+  bool should_retry = 4;
+  int32 max_retries = 5;
+}
+
+// ────────────────────────────────────────────────────────────
+// Signal Routing
+// ────────────────────────────────────────────────────────────
+
+message RoutedSignal {
+  string unified_perception = 1;       // natural language summary for Decision layer
+  repeated DistractionAlert alerts = 2;
+  float confidence = 3;
+  string recommended_action_hint = 4;
+  repeated string contradictions = 5;  // cross-eye contradictions detected
+}
+
+message DistractionAlert {
+  string kind = 1;
+  string description = 2;
+  string action_taken = 3;
+}
+
+// ────────────────────────────────────────────────────────────
+// Goal State
+// ────────────────────────────────────────────────────────────
+
+message CreateGoalRequest {
+  string description = 1;
+  map<string, string> context = 2;
+  int32 max_budget_cents = 3;
+  int32 max_steps = 4;
+}
+
+message GoalState {
+  string goal_id = 1;
+  string description = 2;
+  string status = 3;           // pending, active, completed, failed, blocked
+  float progress = 4;          // 0.0 to 1.0
+  repeated SubGoal sub_goals = 5;
+  GoalContext context = 6;
+  int64 created_at = 7;
+  int64 updated_at = 8;
+}
+
+message SubGoal {
+  string id = 1;
+  string description = 2;
+  repeated string success_criteria = 3;
+  repeated string depends_on = 4;
+  string status = 5;           // pending, active, done, blocked
+}
+
+message GoalContext {
+  string current_url = 1;
+  string last_action = 2;
+  string last_observation = 3;
+  repeated float intent_embedding = 4;
+  uint32 distraction_count = 5;
+}
+
+message GoalStateRequest {
+  string goal_id = 1;
+}
+
+message ProgressUpdate {
+  string goal_id = 1;
+  float progress = 2;
+  string status = 3;
+  repeated SubGoal sub_goals = 4;
+}
+
+message GoalUpdate {
+  string goal_id = 1;
+  string event_type = 2;       // progress, sub_goal_completed, blocked, failed, budget_warning
+  string message = 3;
+  float progress = 4;
+  SubGoal sub_goal = 5;
+}
+
+// ────────────────────────────────────────────────────────────
+// Decision Intelligence
+// ────────────────────────────────────────────────────────────
+
+message StoreScoreRequest {
+  string session_id = 1;
+  string goal_id = 2;
+  Action action = 3;
+  string tool = 4;
+  repeated float context_embedding = 5;
+  float outcome_score = 6;     // immediate: did action succeed?
+  float result_score = 7;      // immediate: what was produced?
+  string error_message = 8;
+  float error_penalty = 9;
+  float business_outcome = 10; // composite of immediate + short-term + long-term
+  string context_type = 11;    // task type for grouping
+}
+
+message StoreScoreResponse {
+  string record_id = 1;
+  int64 total_records = 2;
+}
+
+message QueryBestActionsRequest {
+  repeated float context_embedding = 1;
+  int32 k = 2;
+  float min_score = 3;
+  string context_type = 4;
+}
+
+message SearchRequest {
+  repeated float context_embedding = 1;
+  int32 k = 2;
+  float min_score = 3;
+  string context_type = 4;
+}
+
+message ScoredActionList {
+  repeated ScoredAction actions = 1;
+  int64 search_time_us = 2;
+}
+
+message ScoredAction {
+  Action action = 1;
+  string tool = 2;
+  float composite_score = 3;
+  float outcome_score = 4;
+  float result_score = 5;
+  float error_penalty = 6;
+  float business_outcome = 7;
+  uint32 use_count = 8;
+  int64 last_used_at = 9;
+}
+
+// ────────────────────────────────────────────────────────────
+// Budget & Cost Tracking
+// ────────────────────────────────────────────────────────────
+
+message BudgetStatusRequest {
+  string goal_id = 1;          // empty = global status
+}
+
+message BudgetStatus {
+  string mode = 1;             // normal, conservative, critical, emergency
+  int32 budget_cents = 2;
+  int32 spent_cents = 3;
+  float remaining_pct = 4;
+  int32 daily_spend_limit_cents = 5;
+  int32 daily_spent_cents = 6;
+}
+
+message BudgetConfigRequest {
+  int32 default_per_goal_cents = 1;
+  int32 daily_api_key_spend_limit_cents = 2;
+  float normal_threshold_pct = 3;
+  float conservative_threshold_pct = 4;
+  float critical_threshold_pct = 5;
+}
+
+message BudgetConfig {
+  int32 default_per_goal_cents = 1;
+  int32 daily_api_key_spend_limit_cents = 2;
+  float normal_threshold_pct = 3;
+  float conservative_threshold_pct = 4;
+  float critical_threshold_pct = 5;
+}
+
+// ────────────────────────────────────────────────────────────
+// Health
+// ────────────────────────────────────────────────────────────
+
+message HealthStatus {
+  bool healthy = 1;
+  string version = 2;
+  int32 active_sessions = 3;
+  int32 active_goals = 4;
+  int64 uptime_seconds = 5;
+  int64 total_actions_executed = 6;
+  int64 total_decisions_stored = 7;
+  string budget_mode = 8;
+  map<string, string> metrics = 9;
+}

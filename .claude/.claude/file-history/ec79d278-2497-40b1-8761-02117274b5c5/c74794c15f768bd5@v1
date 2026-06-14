@@ -1,0 +1,87 @@
+from __future__ import annotations
+
+import json
+import uuid
+from datetime import datetime
+from typing import List
+
+from .compute import evaluate_equation
+from .domain_router import route_domain
+from .epistemic_ledger import append_event, init_ledger
+from .fitting import choose_best, fit_canonical_families
+from .gating import gate
+from .models import (ComputeResult, EquationFit, ExtractionResult, ProbabilisticResult,
+                     SolveResult, Variable)
+from .probabilistic import laplace_uncertainty
+from .pysr_discovery import run_pysr_primary
+from .storage import (
+    find_equation,
+    get_or_create_equation,
+    init_storage,
+    insert_version,
+    promote_version,
+    record_shadow_eval,
+)
+
+
+def solve(query: str, x_values: List[float], y_values: List[float], db_path: str) -> SolveResult:
+    trace_id = str(uuid.uuid4())
+    init_storage(db_path)
+    init_ledger(db_path)
+    domain = route_domain(query)
+    variables = [Variable(name="x", unit="unit"), Variable(name="y", unit="unit")]
+    extraction = ExtractionResult(variables=variables, assumptions=[], domain=domain)
+    append_event(db_path, trace_id, "extraction", json.dumps(extraction.__dict__))
+
+    var_hash = f"{domain}:x:y"
+    found = find_equation(db_path, var_hash, domain)
+    if found:
+        equation = EquationFit(
+            family=found["form_family"],
+            parameters=found["parameters"],
+            stats=found["stats"],
+            sympy_expr=found["sympy_ast"],
+        )
+    else:
+        now = datetime.utcnow().isoformat()
+        equation_id = get_or_create_equation(db_path, var_hash, domain, now)
+        candidates = fit_canonical_families(x_values, y_values)
+        canonical_best = choose_best(candidates)
+        pysr_result = run_pysr_primary(x_values, y_values)
+        equation = min([canonical_best, pysr_result.equation], key=lambda eq: eq.stats.aic)
+        version_id = insert_version(
+            db_path=db_path,
+            equation_id=equation_id,
+            form_family=equation.family,
+            sympy_ast=equation.sympy_expr,
+            parameters=equation.parameters,
+            stats=equation.stats.__dict__,
+            n_obs=equation.stats.n_obs,
+            created_at=now,
+            source="primary",
+            provenance={"source": equation.family},
+        )
+        passed = gate(equation.stats).passed
+        record_shadow_eval(
+            db_path=db_path,
+            version_id=version_id,
+            mape=equation.stats.holdout_mape,
+            aic=equation.stats.aic,
+            residual_random=equation.stats.residual_random,
+            passed=passed,
+            evaluated_at=now,
+        )
+        if passed:
+            promote_version(db_path, equation_id, version_id, now, "auto_promoted")
+
+    compute = evaluate_equation(equation, x_values[-1])
+    prob = laplace_uncertainty(compute.answer)
+    gate_result = gate(equation.stats)
+
+    return SolveResult(
+        equation=equation,
+        compute=compute,
+        probabilistic=prob,
+        gate=gate_result,
+        trace_id=trace_id,
+    )

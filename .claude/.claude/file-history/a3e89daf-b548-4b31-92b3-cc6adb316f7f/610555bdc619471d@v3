@@ -1,0 +1,1052 @@
+//! gRPC server implementing the `AgentNervousSystem` service.
+//!
+//! Binds to loopback:50051. Only the Python nerves process and the
+//! TypeScript dashboard (via envoy) connect here. External agents
+//! go through the Layer 1 gateway on port 50052.
+
+use std::net::SocketAddr;
+use std::sync::Arc;
+
+use ans_core::metrics::Metrics;
+use ans_proto::ans::agent_nervous_system_server::AgentNervousSystem;
+use ans_proto::ans::{
+    ActionCheckRequest, ActionCheckResponse, ActionResult, BudgetConfig, BudgetConfigRequest,
+    BudgetStatus, BudgetStatusRequest, CloseSessionRequest, CreateGoalRequest,
+    CreateSessionRequest, DiffReport, DiffRequest, DistilledDom, DistractionList,
+    DistractionRequest, DomRequest, Empty, ExecuteActionRequest, GoalState, GoalStateRequest,
+    HealthStatus, InjectionScanRequest, InjectionScanResult, NavigateRequest, PageState,
+    ProgressUpdate, QueryBestActionsRequest, RoutedSignal, ScoredActionList, ScreenshotRequest,
+    ScreenshotResponse, SearchRequest, Session, SessionRequest, StoreScoreRequest,
+    StoreScoreResponse, SubmitReportsRequest,
+};
+use tonic::{transport::Server, Request, Response, Status};
+use tracing;
+use uuid::Uuid;
+
+use ans_core::backend::ImageFormat;
+use ans_core::distill::DistillMode;
+use ans_core::signal::{EyeName, EyeReportContent};
+
+use ans_goal::GoalManager;
+
+use tokio_stream::{wrappers::BroadcastStream, StreamExt};
+
+use ans_signal::SignalRouter;
+
+use crate::session::SessionManager;
+use crate::subscriber::{EventBus, EyeReportEvent};
+
+// ── Public API ───────────────────────────────────────────────────────
+
+/// The gRPC server. Created once at daemon startup, runs until shutdown.
+pub struct IpcServer {
+    sessions: SessionManager,
+    goals: GoalManager,
+    events: Arc<EventBus>,
+    decisions: ans_storage::DecisionStore,
+    budget: std::sync::Arc<tokio::sync::Mutex<ans_budget::BudgetTracker>>,
+    signal_router: SignalRouter,
+    metrics: Arc<Metrics>,
+    nerves_dir: Option<std::path::PathBuf>,
+}
+
+impl IpcServer {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            sessions: SessionManager::new(),
+            goals: GoalManager::new(),
+            events: Arc::new(EventBus::new()),
+            decisions: ans_storage::DecisionStore::new(),
+            budget: std::sync::Arc::new(tokio::sync::Mutex::new(
+                ans_budget::BudgetTracker::default(),
+            )),
+            signal_router: SignalRouter::new(),
+            metrics: Arc::new(Metrics::new()),
+            nerves_dir: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_nerves_dir(mut self, dir: std::path::PathBuf) -> Self {
+        self.nerves_dir = Some(dir);
+        self
+    }
+
+    /// Set the browser pool size for session pre-warming.
+    #[must_use]
+    pub fn with_pool_size(mut self, size: usize) -> Self {
+        self.sessions = SessionManager::with_pool_size(size);
+        self
+    }
+
+    /// New with a shared metrics handle (from gateway).
+    #[must_use]
+    pub fn with_metrics(metrics: Arc<Metrics>) -> Self {
+        Self {
+            sessions: SessionManager::new(),
+            goals: GoalManager::new(),
+            events: Arc::new(EventBus::new()),
+            decisions: ans_storage::DecisionStore::new(),
+            budget: std::sync::Arc::new(tokio::sync::Mutex::new(
+                ans_budget::BudgetTracker::default(),
+            )),
+            signal_router: SignalRouter::new(),
+            metrics,
+            nerves_dir: None,
+        }
+    }
+
+    /// Access the shared goal state store for cross-cutting subscribers
+    /// (e.g., the gateway's WebSocket bridge).
+    #[must_use]
+    pub fn goal_store(&self) -> ans_goal::GoalStateStore {
+        self.goals.store().clone()
+    }
+
+    /// Access the shared goal manager for goal creation/reporting.
+    #[must_use]
+    pub fn goal_manager(&self) -> ans_goal::GoalManager {
+        self.goals.clone()
+    }
+
+    /// Access the session manager for human-in-the-loop actions
+    /// (e.g., the gateway's WebSocket error recovery handler).
+    #[must_use]
+    pub fn session_manager(&self) -> SessionManager {
+        self.sessions.clone()
+    }
+
+    /// Convert into a tonic service, useful for integration testing.
+    pub fn into_tonic_service(
+        self,
+    ) -> generated::AgentNervousSystemServer<AgentNervousSystemServer> {
+        let svc = AgentNervousSystemServer {
+            sessions: self.sessions,
+            goals: self.goals,
+            events: self.events,
+            decisions: self.decisions,
+            budget: self.budget,
+            signal_router: self.signal_router,
+            metrics: self.metrics,
+            nerves_dir: self.nerves_dir,
+        };
+        generated::AgentNervousSystemServer::new(svc)
+    }
+
+    /// Start the gRPC server and block until shutdown signal received.
+    pub async fn serve(self, addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
+        let svc = AgentNervousSystemServer {
+            sessions: self.sessions,
+            goals: self.goals,
+            events: self.events,
+            decisions: self.decisions,
+            budget: self.budget,
+            signal_router: self.signal_router,
+            metrics: self.metrics,
+            nerves_dir: self.nerves_dir,
+        };
+
+        tracing::info!("gRPC server starting on {}", addr);
+
+        Server::builder()
+            .add_service(generated::AgentNervousSystemServer::new(svc))
+            .serve_with_shutdown(addr, async {
+                let _ = tokio::signal::ctrl_c().await;
+                tracing::info!("Shutdown signal received");
+            })
+            .await?;
+
+        Ok(())
+    }
+}
+
+impl Default for IpcServer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ── Tonic service implementation ─────────────────────────────────────
+
+pub struct AgentNervousSystemServer {
+    sessions: SessionManager,
+    goals: GoalManager,
+    #[allow(dead_code)]
+    events: Arc<EventBus>,
+    decisions: ans_storage::DecisionStore,
+    budget: std::sync::Arc<tokio::sync::Mutex<ans_budget::BudgetTracker>>,
+    signal_router: SignalRouter,
+    metrics: Arc<Metrics>,
+    nerves_dir: Option<std::path::PathBuf>,
+}
+
+// Import the generated server trait module alias
+use ans_proto::ans::agent_nervous_system_server as generated;
+
+#[tonic::async_trait]
+impl AgentNervousSystem for AgentNervousSystemServer {
+    // ── Session Management ──────────────────────────────────────────
+
+    async fn create_session(
+        &self,
+        request: Request<CreateSessionRequest>,
+    ) -> Result<Response<Session>, Status> {
+        let req = request.into_inner();
+        let goal_id = parse_uuid(&req.goal_id, "goal_id")?;
+        let start_url = optional_string(&req.start_url);
+
+        let session_id = self
+            .sessions
+            .create(goal_id, start_url)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        let now = now_epoch_ms();
+        self.metrics.inc_sessions(1);
+
+        Ok(Response::new(Session {
+            session_id: session_id.to_string(),
+            goal_id: req.goal_id,
+            status: "idle".into(),
+            current_page: None,
+            created_at: now,
+            last_activity_at: now,
+        }))
+    }
+
+    async fn close_session(
+        &self,
+        request: Request<CloseSessionRequest>,
+    ) -> Result<Response<Empty>, Status> {
+        let req = request.into_inner();
+        let session_id = parse_uuid(&req.session_id, "session_id")?;
+        self.sessions
+            .close(session_id)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+        self.metrics.inc_sessions(-1);
+        Ok(Response::new(Empty {}))
+    }
+
+    async fn navigate(
+        &self,
+        request: Request<NavigateRequest>,
+    ) -> Result<Response<PageState>, Status> {
+        let req = request.into_inner();
+        let session_id = parse_uuid(&req.session_id, "session_id")?;
+
+        let state = self
+            .sessions
+            .navigate(session_id, &req.url)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        Ok(Response::new(PageState {
+            url: state.url,
+            title: state.title,
+            loaded: state.loaded,
+            dom_node_count: state.dom_node_count as i64,
+            visible_text: state.visible_text,
+            timestamp: state.timestamp.timestamp_millis(),
+        }))
+    }
+
+    async fn execute_action(
+        &self,
+        request: Request<ExecuteActionRequest>,
+    ) -> Result<Response<ActionResult>, Status> {
+        let req = request.into_inner();
+        let session_id = parse_uuid(&req.session_id, "session_id")?;
+
+        let proto_action = req
+            .action
+            .ok_or_else(|| Status::invalid_argument("action is required"))?;
+
+        let action = proto_to_core_action(&proto_action)?;
+
+        let outcome = self
+            .sessions
+            .execute_action(session_id, &action)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        self.metrics.inc_actions();
+        if !outcome.success {
+            self.metrics.inc_errors();
+        }
+
+        Ok(Response::new(ActionResult {
+            success: outcome.success,
+            error_message: outcome.error_message.unwrap_or_default(),
+            new_state: None,
+            diff: None,
+            execution_time_ms: outcome.execution_time_ms as i64,
+        }))
+    }
+
+    // ── Perception ───────────────────────────────────────────────────
+
+    async fn get_distilled_dom(
+        &self,
+        request: Request<DomRequest>,
+    ) -> Result<Response<DistilledDom>, Status> {
+        let req = request.into_inner();
+        let session_id = parse_uuid(&req.session_id, "session_id")?;
+        let mode = parse_distill_mode(&req.mode)?;
+
+        let page = self
+            .sessions
+            .get_distilled_dom(session_id, mode)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        self.metrics.inc_dom_requests();
+
+        Ok(Response::new(
+            ans_distill::serialization::distilled_page_to_proto(&page),
+        ))
+    }
+
+    async fn capture_screenshot(
+        &self,
+        request: Request<ScreenshotRequest>,
+    ) -> Result<Response<ScreenshotResponse>, Status> {
+        let req = request.into_inner();
+        let session_id = parse_uuid(&req.session_id, "session_id")?;
+
+        let format = match req.format.as_str() {
+            "jpeg" => ImageFormat::Jpeg {
+                quality: req.quality.clamp(1, 100) as u8,
+            },
+            _ => ImageFormat::Png,
+        };
+
+        let bytes = self
+            .sessions
+            .capture_screenshot(session_id, format, req.full_page)
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        self.metrics.inc_screenshots();
+
+        Ok(Response::new(ScreenshotResponse {
+            success: true,
+            size_bytes: bytes.len() as i64,
+            width: 0,
+            height: 0,
+            format: req.format,
+            data: bytes,
+            arrow_shm_key: String::new(),
+        }))
+    }
+
+    async fn compute_diff(
+        &self,
+        request: Request<DiffRequest>,
+    ) -> Result<Response<DiffReport>, Status> {
+        let req = request.into_inner();
+        let before = req
+            .before
+            .ok_or_else(|| Status::invalid_argument("before is required"))?;
+        let after = req
+            .after
+            .ok_or_else(|| Status::invalid_argument("after is required"))?;
+
+        let before_page = ans_distill::serialization::proto_to_distilled_page(&before);
+        let after_page = ans_distill::serialization::proto_to_distilled_page(&after);
+
+        let differ = ans_diff::PageDiffer;
+        let output = differ.diff(&before_page, &after_page);
+
+        Ok(Response::new(DiffReport {
+            before_url: before_page.url,
+            after_url: after_page.url,
+            is_same_page: output.is_same_page,
+            added: output
+                .added
+                .into_iter()
+                .map(|c| ans_proto::ans::ElementChange {
+                    tag: c.tag,
+                    text: c.text,
+                    selector: c.selector,
+                    index: c.index,
+                })
+                .collect(),
+            removed: output
+                .removed
+                .into_iter()
+                .map(|c| ans_proto::ans::ElementChange {
+                    tag: c.tag,
+                    text: c.text,
+                    selector: c.selector,
+                    index: c.index,
+                })
+                .collect(),
+            modified: output
+                .modified
+                .into_iter()
+                .map(|m| ans_proto::ans::ElementModification {
+                    selector: m.selector,
+                    attribute_name: m.attribute_name,
+                    old_value: m.old_value,
+                    new_value: m.new_value,
+                })
+                .collect(),
+            visual_diff_percentage: output.visual_diff_pct,
+            summary: output.summary,
+        }))
+    }
+
+    // ── Goal State ──────────────────────────────────────────────────
+
+    async fn create_goal(
+        &self,
+        request: Request<CreateGoalRequest>,
+    ) -> Result<Response<GoalState>, Status> {
+        let req = request.into_inner();
+        let state = self
+            .goals
+            .create_goal(&req.description, &req.context, req.max_steps as u32)
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        self.metrics.inc_goals(1);
+
+        // Spawn Python AgentLoop in background
+        let goal_id = state.goal_id.to_string();
+        let goal_uuid = state.goal_id;
+        let description = state.description.clone();
+        let nerves_dir = self.nerves_dir.clone();
+        let goals = self.goals.clone();
+        tokio::spawn(async move {
+            // Auto-detect venv Python relative to nerves_dir
+            let python = if let Some(ref dir) = nerves_dir {
+                let venv_python = dir.join(".venv").join("Scripts").join("python.exe");
+                if venv_python.exists() {
+                    venv_python
+                } else {
+                    let unix_venv = dir.join(".venv").join("bin").join("python");
+                    if unix_venv.exists() { unix_venv } else { std::path::PathBuf::from("python") }
+                }
+            } else {
+                std::path::PathBuf::from("python")
+            };
+
+            let mut cmd = tokio::process::Command::new(&python);
+            cmd.args(["-m", "ans_nerves", "run", "--goal-id", &goal_id, &description])
+                .kill_on_drop(true)
+                .env("ANS_GRPC_PORT", "50051")
+                .env("ANS_GRPC_HOST", "127.0.0.1");
+            if let Some(ref dir) = nerves_dir {
+                cmd.current_dir(dir);
+            }
+            match cmd.output().await {
+                Ok(output) => {
+                    if output.status.success() {
+                        tracing::info!(%goal_id, "Python AgentLoop completed");
+                    } else {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        tracing::error!(%goal_id, %stderr, "Python AgentLoop failed");
+                        let _ = goals.update_progress(goal_uuid, 0.0, ans_core::goal::GoalStatus::Failed, None);
+                    }
+                }
+                Err(e) => {
+                    tracing::error!(%goal_id, error=%e, "Failed to spawn Python AgentLoop");
+                    let _ = goals.update_progress(goal_uuid, 0.0, ans_core::goal::GoalStatus::Failed, None);
+                }
+            }
+        });
+
+        Ok(Response::new(ans_goal::serialization::goal_state_to_proto(
+            &state,
+        )))
+    }
+
+    async fn get_goal_state(
+        &self,
+        request: Request<GoalStateRequest>,
+    ) -> Result<Response<GoalState>, Status> {
+        let req = request.into_inner();
+        let goal_id = Uuid::parse_str(&req.goal_id)
+            .map_err(|_| Status::invalid_argument("invalid goal_id"))?;
+
+        let state = self
+            .goals
+            .get_goal_state(&goal_id)
+            .ok_or_else(|| Status::not_found("goal not found"))?;
+
+        Ok(Response::new(ans_goal::serialization::goal_state_to_proto(
+            &state,
+        )))
+    }
+
+    async fn update_goal_progress(
+        &self,
+        request: Request<ProgressUpdate>,
+    ) -> Result<Response<GoalState>, Status> {
+        let req = request.into_inner();
+        let goal_id = Uuid::parse_str(&req.goal_id)
+            .map_err(|_| Status::invalid_argument("invalid goal_id"))?;
+
+        let status = ans_goal::serialization::str_to_goal_status(&req.status);
+
+        // If Python sent LLM-decomposed sub-goals, replace them
+        if !req.sub_goals.is_empty() {
+            let sub_goals: Vec<ans_core::goal::SubGoal> = req
+                .sub_goals
+                .iter()
+                .map(ans_goal::serialization::proto_to_sub_goal)
+                .collect();
+            let _ = self.goals.update_sub_goals(goal_id, sub_goals);
+        }
+
+        let message = if req.message.is_empty() { None } else { Some(req.message) };
+        let state = self
+            .goals
+            .update_progress(goal_id, req.progress, status, message)
+            .map_err(|e| match e {
+                ans_goal::GoalStoreError::NotFound(id) => {
+                    Status::not_found(format!("goal {id} not found"))
+                }
+                other => Status::internal(other.to_string()),
+            })?;
+
+        Ok(Response::new(ans_goal::serialization::goal_state_to_proto(
+            &state,
+        )))
+    }
+
+    type SubscribeGoalUpdatesStream = std::pin::Pin<
+        Box<
+            dyn tonic::codegen::tokio_stream::Stream<
+                    Item = std::result::Result<ans_proto::ans::GoalUpdate, tonic::Status>,
+                > + std::marker::Send,
+        >,
+    >;
+
+    async fn subscribe_goal_updates(
+        &self,
+        request: Request<GoalStateRequest>,
+    ) -> Result<Response<Self::SubscribeGoalUpdatesStream>, Status> {
+        let req = request.into_inner();
+        let goal_id = if req.goal_id.is_empty() {
+            None
+        } else {
+            Some(
+                Uuid::parse_str(&req.goal_id)
+                    .map_err(|_| Status::invalid_argument("invalid goal_id"))?,
+            )
+        };
+
+        let rx = self.goals.subscribe();
+        let stream = BroadcastStream::new(rx).filter_map(move |result| {
+            let gid = goal_id;
+            let notification = result.ok()?;
+            if gid.is_none_or(|id| notification.goal_id == id) {
+                Some(Ok(ans_proto::ans::GoalUpdate {
+                    goal_id: notification.goal_id.to_string(),
+                    event_type: goal_status_event(notification.status),
+                    message: notification.message,
+                    progress: notification.progress,
+                    sub_goal: None,
+                }))
+            } else {
+                None
+            }
+        });
+
+        Ok(Response::new(Box::pin(stream)))
+    }
+
+    // ── Eye Reports ─────────────────────────────────────────────────
+
+    async fn submit_eye_reports(
+        &self,
+        request: Request<SubmitReportsRequest>,
+    ) -> Result<Response<RoutedSignal>, Status> {
+        let req = request.into_inner();
+        let _session_id = parse_uuid(&req.session_id, "session_id")?;
+
+        // Publish each report to the event bus for subscribers
+        for report in &req.reports {
+            self.events.eye_reports.publish(EyeReportEvent {
+                eye_name: report.eye_name.clone(),
+                goal_id: Uuid::nil(),
+                confidence: report.confidence,
+                content: format_eye_content(report.content.as_ref()),
+            });
+        }
+
+        // Convert proto reports → core reports, then route through SignalRouter
+        let core_reports: Vec<ans_core::signal::EyeReport> = req
+            .reports
+            .iter()
+            .filter_map(proto_to_core_eye_report)
+            .collect();
+
+        let signal = self.signal_router.route(&core_reports);
+
+        Ok(Response::new(RoutedSignal {
+            unified_perception: signal.unified_perception,
+            alerts: signal
+                .alerts
+                .into_iter()
+                .map(|a| ans_proto::ans::DistractionAlert {
+                    kind: a.kind,
+                    description: a.description,
+                    action_taken: a.action_taken,
+                })
+                .collect(),
+            confidence: signal.confidence,
+            recommended_action_hint: signal.recommended_action_hint.unwrap_or_default(),
+            contradictions: signal.contradictions,
+        }))
+    }
+
+    type SubscribeEyeReportsStream = std::pin::Pin<
+        Box<
+            dyn tonic::codegen::tokio_stream::Stream<
+                    Item = std::result::Result<ans_proto::ans::EyeReport, tonic::Status>,
+                > + std::marker::Send,
+        >,
+    >;
+
+    async fn subscribe_eye_reports(
+        &self,
+        _request: Request<SessionRequest>,
+    ) -> Result<Response<Self::SubscribeEyeReportsStream>, Status> {
+        let rx = self.events.eye_reports.subscribe();
+        let stream = BroadcastStream::new(rx).filter_map(|result| {
+            let event = result.ok()?;
+            Some(Ok(ans_proto::ans::EyeReport {
+                eye_name: event.eye_name,
+                timestamp: chrono::Utc::now().timestamp_millis(),
+                confidence: event.confidence,
+                goal_relevance: 0.0,
+                content: None,
+            }))
+        });
+
+        Ok(Response::new(Box::pin(stream)))
+    }
+
+    // ── Immune System ────────────────────────────────────────────────
+
+    async fn classify_distractions(
+        &self,
+        request: Request<DistractionRequest>,
+    ) -> Result<Response<DistractionList>, Status> {
+        let req = request.into_inner();
+        let url = req.url;
+
+        // Extract CSS class/id hints from DOM elements for distraction pattern matching
+        let css_hints = req
+            .dom
+            .as_ref()
+            .map(|dom| {
+                dom.elements
+                    .iter()
+                    .flat_map(|el| {
+                        el.attributes
+                            .iter()
+                            .filter(|(k, _)| *k == "class" || *k == "id")
+                            .map(|(_, v)| v.clone())
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .unwrap_or_default();
+
+        // Extract all visible text from the distilled DOM for content scanning
+        let dom_text = req
+            .dom
+            .as_ref()
+            .map(|dom| {
+                dom.elements
+                    .iter()
+                    .map(|el| el.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .unwrap_or_default();
+
+        self.metrics.inc_immune_scans();
+        let classifier = ans_immune::DistractionClassifier;
+        let flags = classifier.classify(&url, &dom_text, &css_hints);
+
+        let distractions: Vec<_> = flags
+            .iter()
+            .map(ans_immune::serialization::distraction_to_proto_list_item)
+            .collect();
+
+        Ok(Response::new(DistractionList {
+            distractions,
+            classification_time_us: 0,
+        }))
+    }
+
+    async fn scan_injections(
+        &self,
+        request: Request<InjectionScanRequest>,
+    ) -> Result<Response<InjectionScanResult>, Status> {
+        let req = request.into_inner();
+
+        self.metrics.inc_immune_scans();
+        let detector = ans_immune::InjectionDetector;
+        let start = std::time::Instant::now();
+        let result = detector.scan(&req.url, &req.page_content);
+        let scan_time_us = start.elapsed().as_micros() as i64;
+
+        let mut proto = ans_immune::serialization::injection_result_to_proto(&result);
+        proto.scan_time_us = scan_time_us;
+
+        Ok(Response::new(proto))
+    }
+
+    async fn check_action(
+        &self,
+        request: Request<ActionCheckRequest>,
+    ) -> Result<Response<ActionCheckResponse>, Status> {
+        let req = request.into_inner();
+        let session_id = parse_uuid(&req.session_id, "session_id")?;
+
+        // Get current URL for context
+        let url = self.sessions.get_url(session_id).await.unwrap_or_default();
+
+        // Build scannable text from the action itself
+        let action = req.action.as_ref();
+        let action_text = action.map_or(String::new(), |a| {
+            format!("{} {} {}", a.action_type, a.selector, a.value)
+        });
+
+        // Run both immune checks
+        self.metrics.inc_immune_scans();
+        let classifier = ans_immune::DistractionClassifier;
+        let distractions = classifier.classify(&url, &action_text, &action_text);
+
+        let detector = ans_immune::InjectionDetector;
+        let injection = detector.scan(&url, &action_text);
+
+        let response =
+            ans_immune::serialization::build_action_check_response(&distractions, &injection);
+
+        Ok(Response::new(response))
+    }
+
+    // ── Decision Intelligence ────────────────────────────────────────
+
+    async fn store_score(
+        &self,
+        request: Request<StoreScoreRequest>,
+    ) -> Result<Response<StoreScoreResponse>, Status> {
+        let req = request.into_inner();
+
+        let record = ans_storage::serialization::proto_to_decision_record(&req)
+            .ok_or_else(|| Status::invalid_argument("action is required"))?;
+
+        let total = self.decisions.insert(record);
+
+        self.metrics.inc_decisions();
+
+        Ok(Response::new(StoreScoreResponse {
+            record_id: String::new(),
+            total_records: total as i64,
+        }))
+    }
+
+    async fn query_best_actions(
+        &self,
+        request: Request<QueryBestActionsRequest>,
+    ) -> Result<Response<ScoredActionList>, Status> {
+        let req = request.into_inner();
+        let k = req.k.clamp(1, 100) as usize;
+        let min_score = req.min_score;
+
+        let results = self
+            .decisions
+            .query_similar(&req.context_embedding, k, min_score);
+
+        let actions: Vec<_> = results
+            .iter()
+            .map(|(record, sim)| {
+                ans_storage::serialization::decision_to_scored_action(record, *sim)
+            })
+            .collect();
+
+        Ok(Response::new(ScoredActionList {
+            actions,
+            search_time_us: 0,
+        }))
+    }
+
+    async fn search_similar_decisions(
+        &self,
+        request: Request<SearchRequest>,
+    ) -> Result<Response<ScoredActionList>, Status> {
+        let req = request.into_inner();
+        let k = req.k.clamp(1, 100) as usize;
+        let min_score = req.min_score;
+
+        let results = self
+            .decisions
+            .query_similar(&req.context_embedding, k, min_score);
+
+        let actions: Vec<_> = results
+            .iter()
+            .map(|(record, sim)| {
+                ans_storage::serialization::decision_to_scored_action(record, *sim)
+            })
+            .collect();
+
+        Ok(Response::new(ScoredActionList {
+            actions,
+            search_time_us: 0,
+        }))
+    }
+
+    // ── Budget ───────────────────────────────────────────────────────
+
+    async fn get_budget_status(
+        &self,
+        request: Request<BudgetStatusRequest>,
+    ) -> Result<Response<BudgetStatus>, Status> {
+        let req = request.into_inner();
+        let tracker = self.budget.lock().await;
+        let status = tracker.status();
+
+        Ok(Response::new(
+            ans_budget::serialization::budget_status_to_proto(&status, &req.goal_id),
+        ))
+    }
+
+    async fn configure_budget(
+        &self,
+        request: Request<BudgetConfigRequest>,
+    ) -> Result<Response<BudgetConfig>, Status> {
+        let req = request.into_inner();
+        let config = ans_budget::serialization::proto_to_budget_config(&req);
+
+        {
+            let mut tracker = self.budget.lock().await;
+            tracker.configure(config);
+        }
+
+        let tracker = self.budget.lock().await;
+        let proto_config = ans_budget::serialization::budget_config_to_proto(tracker.config());
+
+        Ok(Response::new(proto_config))
+    }
+
+    // ── Health ───────────────────────────────────────────────────────
+
+    async fn health(&self, _request: Request<Empty>) -> Result<Response<HealthStatus>, Status> {
+        Ok(Response::new(HealthStatus {
+            healthy: true,
+            version: env!("CARGO_PKG_VERSION").into(),
+            active_sessions: self.sessions.session_count() as i32,
+            active_goals: self.metrics.goals_active.load(std::sync::atomic::Ordering::Relaxed) as i32,
+            uptime_seconds: self.metrics.uptime_seconds() as i64,
+            total_actions_executed: self.metrics.actions_total.load(std::sync::atomic::Ordering::Relaxed) as i64,
+            total_decisions_stored: self.metrics.decisions_stored.load(std::sync::atomic::Ordering::Relaxed) as i64,
+            budget_mode: "normal".into(),
+            metrics: std::collections::HashMap::new(),
+        }))
+    }
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────
+
+/// Return type uses `tonic::Status` — large Err is inherent to gRPC handlers.
+#[allow(clippy::result_large_err)]
+fn parse_distill_mode(s: &str) -> Result<DistillMode, Status> {
+    match s {
+        "text_only" => Ok(DistillMode::TextOnly),
+        "input_fields" => Ok(DistillMode::InputFields),
+        "all_fields" => Ok(DistillMode::AllFields),
+        _ => Err(Status::invalid_argument(format!(
+            "unknown distill mode: {s}"
+        ))),
+    }
+}
+
+#[allow(clippy::result_large_err)]
+fn parse_uuid(s: &str, field: &str) -> Result<Uuid, Status> {
+    Uuid::parse_str(s).map_err(|_| Status::invalid_argument(format!("invalid {field} UUID")))
+}
+
+fn optional_string(s: &str) -> Option<String> {
+    if s.is_empty() {
+        None
+    } else {
+        Some(s.to_string())
+    }
+}
+
+fn now_epoch_ms() -> i64 {
+    chrono::Utc::now().timestamp_millis()
+}
+
+#[allow(clippy::result_large_err)]
+fn proto_to_core_action(
+    proto: &ans_proto::ans::Action,
+) -> Result<ans_core::session::Action, Status> {
+    use ans_core::session::ActionType;
+    use std::collections::HashMap;
+
+    let action_type = match proto.action_type.as_str() {
+        "click" => ActionType::Click,
+        "type" => ActionType::Type,
+        "scroll" => ActionType::Scroll,
+        "select" => ActionType::Select,
+        "navigate" => ActionType::Navigate,
+        "wait" => ActionType::Wait,
+        "submit" => ActionType::Submit,
+        "screenshot" => ActionType::Screenshot,
+        "evaluate" => ActionType::Evaluate,
+        other => {
+            return Err(Status::invalid_argument(format!(
+                "unknown action_type: {other}"
+            )))
+        }
+    };
+
+    Ok(ans_core::session::Action {
+        action_type,
+        selector: optional_string(&proto.selector),
+        value: optional_string(&proto.value),
+        params: proto
+            .params
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect::<HashMap<_, _>>(),
+    })
+}
+
+/// Map [`GoalStatus`] to a streaming event type string.
+fn goal_status_event(status: ans_core::goal::GoalStatus) -> String {
+    match status {
+        ans_core::goal::GoalStatus::Pending => "created",
+        ans_core::goal::GoalStatus::Active => "progress",
+        ans_core::goal::GoalStatus::Completed => "completed",
+        ans_core::goal::GoalStatus::Failed => "failed",
+        ans_core::goal::GoalStatus::Blocked => "blocked",
+    }
+    .into()
+}
+
+/// Convert a proto [`ans_proto::ans::EyeReport`] to core [`ans_core::signal::EyeReport`].
+/// Returns `None` if the `eye_name` is unrecognized or the content is missing.
+fn proto_to_core_eye_report(
+    proto: &ans_proto::ans::EyeReport,
+) -> Option<ans_core::signal::EyeReport> {
+    use ans_proto::ans::eye_report::Content;
+
+    let eye_name = match proto.eye_name.as_str() {
+        "dom_reader" => EyeName::DomReader,
+        "vision" => EyeName::Vision,
+        "page_diff" => EyeName::PageDiff,
+        "goal_verifier" => EyeName::GoalVerifier,
+        "error_detector" => EyeName::ErrorDetector,
+        _ => return None,
+    };
+
+    let content = match &proto.content {
+        Some(Content::Dom(dom)) => EyeReportContent::DomReport {
+            elements: vec![],
+            interactive: vec![],
+            mode: dom
+                .dom
+                .as_ref()
+                .map_or(DistillMode::AllFields, |d| match d.mode.as_str() {
+                    "text_only" => DistillMode::TextOnly,
+                    "input_fields" => DistillMode::InputFields,
+                    _ => DistillMode::AllFields,
+                }),
+        },
+        Some(Content::Vision(v)) => EyeReportContent::VisionReport {
+            visible_elements: v.visible_elements.clone(),
+            overlays: v.overlays.clone(),
+            blocked_regions: v.blocked_regions.clone(),
+            page_type: v.page_type.clone(),
+            anomalies: v.anomalies.clone(),
+            raw_response: v.raw_response.clone(),
+        },
+        Some(Content::Diff(d)) => {
+            let diff_report = d.diff.as_ref();
+            EyeReportContent::DiffReport {
+                added: diff_report.map_or(vec![], |r| {
+                    r.added.iter().map(|e| e.selector.clone()).collect()
+                }),
+                removed: diff_report.map_or(vec![], |r| {
+                    r.removed.iter().map(|e| e.selector.clone()).collect()
+                }),
+                modified: diff_report.map_or(vec![], |r| {
+                    r.modified.iter().map(|m| m.selector.clone()).collect()
+                }),
+                visual_diff_pct: diff_report.map_or(0.0, |r| r.visual_diff_percentage),
+                summary: diff_report.map_or(String::new(), |r| r.summary.clone()),
+            }
+        }
+        Some(Content::Verification(v)) => EyeReportContent::Verification {
+            sub_goal_advanced: v.criteria_status == "met",
+            confidence: v.confidence,
+            reasoning: v.reasoning.clone(),
+            criteria_status: v.criteria_status.clone(),
+        },
+        Some(Content::Error(e)) => EyeReportContent::ErrorReport {
+            failure_type: e.failure_type.clone(),
+            description: e.description.clone(),
+            recovery_actions: e.recovery_actions.clone(),
+            should_retry: e.should_retry,
+            max_retries: e.max_retries as u32,
+        },
+        None => return None,
+    };
+
+    Some(ans_core::signal::EyeReport {
+        eye_name,
+        timestamp: chrono::Utc::now(),
+        confidence: proto.confidence,
+        goal_relevance: proto.goal_relevance,
+        content,
+    })
+}
+
+/// Format the oneof eye report content into a readable string.
+fn format_eye_content(content: Option<&ans_proto::ans::eye_report::Content>) -> String {
+    use ans_proto::ans::eye_report::Content;
+    match content {
+        Some(Content::Dom(dom)) => {
+            format!(
+                "DOM: {} elements, {} interactive",
+                dom.dom.as_ref().map_or(0, |d| d.elements.len() as i32),
+                dom.focused_elements.len()
+            )
+        }
+        Some(Content::Vision(v)) => {
+            format!(
+                "Vision: {} visible, {} overlays, type={}",
+                v.visible_elements.len(),
+                v.overlays.len(),
+                v.page_type
+            )
+        }
+        Some(Content::Diff(d)) => {
+            format!(
+                "Diff: {}% visual change",
+                d.diff.as_ref().map_or(0.0, |r| r.visual_diff_percentage)
+            )
+        }
+        Some(Content::Verification(v)) => {
+            format!(
+                "Verify: {} (confidence={:.0}%)",
+                v.criteria_status,
+                v.confidence * 100.0
+            )
+        }
+        Some(Content::Error(e)) => {
+            format!("Error: {} — {}", e.failure_type, e.description)
+        }
+        None => "no content".into(),
+    }
+}

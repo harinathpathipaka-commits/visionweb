@@ -1,0 +1,9 @@
+{
+  "id": "49",
+  "subject": "Switch embeddings to OpenAI API and remove sentence-transformers",
+  "description": "Replace local SentenceTransformer with OpenAI text-embedding-3-small. Update embeddings.py, config.py, store.py, pyproject.toml, tests.",
+  "activeForm": "Switching to OpenAI embeddings",
+  "status": "in_progress",
+  "blocks": [],
+  "blockedBy": []
+}

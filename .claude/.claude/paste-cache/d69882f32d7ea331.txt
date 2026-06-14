@@ -1,0 +1,226 @@
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  api/tests/layer1/schema.test.ts > Layer 1 — Schema validation > accepts payload missing session_id (auto-generated)
+AssertionError: expected 202 to be 201 // Object.is equality
+
+- Expected
++ Received
+
+- 201
++ 202
+
+ ❯ api/tests/layer1/schema.test.ts:91:28
+     89|             body: JSON.stringify({ action_name: 'refund', issue_type: …
+     90|         });
+     91|         expect(res.status).toBe(201);
+       |                            ^
+     92|     });
+     93| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+ FAIL  api/tests/layer1/schema.test.ts > Layer 1 — Schema validation > normalizes unknown business_outcome value to unknown
+AssertionError: expected 202 to be 201 // Object.is equality
+
+- Expected
++ Received
+
+- 201
++ 202
+
+ ❯ api/tests/layer1/schema.test.ts:122:28
+    120|             body: JSON.stringify({ session_id: crypto.randomUUID(), ac…
+    121|         });
+    122|         expect(res.status).toBe(201);
+       |                            ^
+    123|     });
+    124| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  api/tests/layer1/schema.test.ts > Layer 1 — Schema validation > normalizes environment alias 'qa' to 'staging' and returns 201
+AssertionError: expected 202 to be 201 // Object.is equality
+
+- Expected
++ Received
+
+- 201
++ 202
+
+ ❯ api/tests/layer1/schema.test.ts:131:28
+    129|             body: JSON.stringify({ session_id: crypto.randomUUID(), ac…
+    130|         });
+    131|         expect(res.status).toBe(201);
+       |                            ^
+    132|         const body = await res.json() as any;
+    133|         expect(body.idempotency_replayed).toBe(false);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+ FAIL  api/tests/layer1/schema.test.ts > Layer 1 — Schema validation > normalizes unknown environment 'unknown_env' to 'production' and returns 201
+AssertionError: expected 202 to be 201 // Object.is equality
+
+- Expected
++ Received
+
+- 201
++ 202
+
+ ❯ api/tests/layer1/schema.test.ts:142:28
+    140|             body: JSON.stringify({ session_id: crypto.randomUUID(), ac…
+    141|         });
+    142|         expect(res.status).toBe(201);
+       |                            ^
+    143|     });
+    144| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/7]⎯
+
+ FAIL  api/tests/layer1/schema.test.ts > Layer 1 — Schema validation > accepts valid minimal payload
+AssertionError: expected 202 to be 201 // Object.is equality
+
+- Expected
++ Received
+
+- 201
++ 202
+
+ ❯ api/tests/layer1/schema.test.ts:158:28
+    156|         const body = await res.json() as any;
+    157|         if (res.status !== 201) console.error('500 ERROR BODY:', body);
+    158|         expect(res.status).toBe(201);
+       |                            ^
+    159|         expect(body.outcome_id).toBeDefined();
+    160|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/7]⎯
+
+ FAIL  api/tests/layer1/schema.test.ts > Layer 1 — Schema validation > rejects conflicting execution_status and success payload
+AssertionError: expected 202 to be 400 // Object.is equality
+
+- Expected
++ Received
+
+- 400
++ 202
+
+ ❯ api/tests/layer1/schema.test.ts:177:28
+    175|         });
+    176| 
+    177|         expect(res.status).toBe(400);
+       |                            ^
+    178|         const body = await res.json() as any;
+    179|         expect(body.code).toBe('STATUS_CONFLICT');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/7]⎯
+
+ FAIL  api/tests/layer1/schema.test.ts > Layer 1 — Schema validation > rejects conflicting execution_status and outcome_score polarity payload
+AssertionError: expected 202 to be 400 // Object.is equality
+
+- Expected
++ Received
+
+- 400
++ 202
+
+ ❯ api/tests/layer1/schema.test.ts:196:28
+    194|         });
+    195| 
+    196|         expect(res.status).toBe(400);
+       |                            ^
+    197|         const body = await res.json() as any;
+    198|         expect(body.code).toBe('STATUS_CONFLICT');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/7]⎯
+
+
+ Test Files  1 failed | 55 passed (56)
+      Tests  7 failed | 522 passed (529)
+   Start at  12:01:46
+   Duration  6.12s (transform 2.40s, setup 0ms, import 5.97s, tests 1.51s, environment 10ms)
+
+
+Error: AssertionError: expected 202 to be 201 // Object.is equality
+
+- Expected
++ Received
+
+- 201
++ 202
+
+ ❯ api/tests/layer1/schema.test.ts:91:28
+
+
+
+Error: AssertionError: expected 202 to be 201 // Object.is equality
+
+- Expected
++ Received
+
+- 201
++ 202
+
+ ❯ api/tests/layer1/schema.test.ts:122:28
+
+
+
+Error: AssertionError: expected 202 to be 201 // Object.is equality
+
+- Expected
++ Received
+
+- 201
++ 202
+
+ ❯ api/tests/layer1/schema.test.ts:131:28
+
+
+
+Error: AssertionError: expected 202 to be 201 // Object.is equality
+
+- Expected
++ Received
+
+- 201
++ 202
+
+ ❯ api/tests/layer1/schema.test.ts:142:28
+
+
+
+Error: AssertionError: expected 202 to be 201 // Object.is equality
+
+- Expected
++ Received
+
+- 201
++ 202
+
+ ❯ api/tests/layer1/schema.test.ts:158:28
+
+
+
+Error: AssertionError: expected 202 to be 400 // Object.is equality
+
+- Expected
++ Received
+
+- 400
++ 202
+
+ ❯ api/tests/layer1/schema.test.ts:177:28
+
+
+
+Error: AssertionError: expected 202 to be 400 // Object.is equality
+
+- Expected
++ Received
+
+- 400
++ 202
+
+ ❯ api/tests/layer1/schema.test.ts:196:28
+
+
+Error: Process completed with exit code 1.

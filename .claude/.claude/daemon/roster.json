@@ -1,0 +1,64 @@
+{
+  "proto": 1,
+  "supervisorPid": 28036,
+  "updatedAt": 1779335280926,
+  "workers": {
+    "5078d34e": {
+      "pid": 22908,
+      "procStart": "639148866564254930",
+      "sessionId": "5078d34e-e23c-45ab-899e-92ae7a71561b",
+      "rendezvousSock": "\\\\.\\pipe\\cc-daemon-b9cead912ab7c371-rv-5078d34e",
+      "ptySock": "\\\\.\\pipe\\cc-daemon-b9cead912ab7c371-pty-5078d34e",
+      "cliVersion": "2.1.145",
+      "startedAt": 1779270056421,
+      "attempt": 1,
+      "cwd": "C:\\Users\\kusta\\Layerinfinite\\Outcome",
+      "dispatch": {
+        "proto": 1,
+        "short": "5078d34e",
+        "nonce": "532f5e52",
+        "sessionId": "5078d34e-e23c-45ab-899e-92ae7a71561b",
+        "createdAt": 1779270055914,
+        "source": "fleet",
+        "cwd": "C:\\Users\\kusta\\Layerinfinite\\Outcome",
+        "launch": {
+          "mode": "prompt",
+          "args": [
+            "--session-id",
+            "5078d34e-e23c-45ab-899e-92ae7a71561b",
+            "--effort",
+            "medium",
+            "--permission-mode",
+            "acceptEdits",
+            "--",
+            "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nSummary:\n1. Primary Request and Intent:\n   The "
+          ]
+        },
+        "env": {
+          "CLAUDE_BG_ISOLATION": "none"
+        },
+        "isolation": "none",
+        "respawnFlags": [
+          "--effort",
+          "medium",
+          "--permission-mode",
+          "acceptEdits"
+        ],
+        "seed": {
+          "intent": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nSummary:\n1. Primary Request and Intent:\n   The "
+        },
+        "cols": 156,
+        "rows": 41
+      },
+      "decModes": [
+        1004,
+        1000,
+        1002,
+        1003,
+        1006,
+        2004,
+        2031
+      ]
+    }
+  }
+}

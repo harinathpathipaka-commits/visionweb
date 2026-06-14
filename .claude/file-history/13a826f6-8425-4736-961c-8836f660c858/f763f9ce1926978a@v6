@@ -1,0 +1,6 @@
+- [Implementation Plan](implementation-plan.md) — Full product build: all 4 layers including Agent Web. No phasing.
+- [Agent Web Architecture](agent-web-architecture.md) — The complete 4-layer architecture: purpose-built agent browser, Nervous System, and Decision Intelligence
+- [Implementation Plan](implementation-plan.md) — Full product build: all 4 layers including Agent Web. No phasing.
+- [Agent Web Architecture](agent-web-architecture.md) — The complete 4-layer architecture: purpose-built agent browser, Nervous System, and Decision Intelligence
+- [Decision Intelligence Layer](decision-intelligence-layer.md) — Inbuilt feedback loop (NOT middleware) that scores actions/tools per context and selects from scored memory
+- [Phase 1 Complete](phase1-complete.md) — Browser Control layer done: Chromium CDP, session management, gRPC server, daemon. CI green across all 13 crates.

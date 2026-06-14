@@ -1,0 +1,28 @@
+FROM rust:1.78-slim-bookworm AS builder
+
+WORKDIR /build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    protobuf-compiler \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY src/rust/ingestion_grpc/ ./ingestion_grpc/
+COPY src/rust/fit_kernel/ ./fit_kernel/
+COPY src/rust/ledger/ ./ledger/
+
+WORKDIR /build/ingestion_grpc
+RUN cargo build --release -p ingestion_grpc --lib
+
+WORKDIR /build/fit_kernel
+RUN cargo build --release -p fit_kernel
+
+WORKDIR /build/ledger
+RUN cargo build --release -p el_ledger
+
+FROM debian:bookworm-slim
+COPY --from=builder /build/target/release/libingestion_grpc.so /usr/local/lib/
+COPY --from=builder /build/target/release/libfit_kernel.so /usr/local/lib/
+COPY --from=builder /build/target/release/libel_ledger.so /usr/local/lib/
+CMD ["echo", "Rust libraries built"]

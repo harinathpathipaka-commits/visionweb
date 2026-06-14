@@ -1,0 +1,8 @@
+{
+  "id": "9",
+  "subject": "Phase 1.3 — Gateway Proxy",
+  "description": "Create gateway-proxy.ts — intercept tools/list (enrich), intercept tools/call (reroute in Auto, decision_id, proxy), add li_recommend virtual tool.",
+  "status": "pending",
+  "blocks": [],
+  "blockedBy": []
+}

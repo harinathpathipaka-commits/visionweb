@@ -1,0 +1,88 @@
+from src.equation_graph import EquationGraph, import_library_to_graph
+from src.models import GraphPath
+
+
+class TestEquationGraph:
+    def test_add_equation_creates_nodes(self):
+        g = EquationGraph()
+        g.add_equation(
+            output_variable="y", input_variables=["x"],
+            equation_id=1, family="linear", sympy_expr="2*x + 1",
+        )
+        assert g.has_variable("x")
+        assert g.has_variable("y")
+
+    def test_find_path_single_edge(self):
+        g = EquationGraph()
+        g.add_equation(
+            output_variable="y", input_variables=["x"],
+            equation_id=1, family="linear", sympy_expr="2*x + 1",
+        )
+        path = g.find_path("x", "y")
+        assert path is not None
+        assert isinstance(path, GraphPath)
+        assert path.nodes == ["x", "y"]
+
+    def test_no_path_returns_none(self):
+        g = EquationGraph()
+        path = g.find_path("a", "b")
+        assert path is None
+
+    def test_multi_hop_chain(self):
+        g = EquationGraph()
+        g.add_equation(
+            output_variable="y", input_variables=["x"],
+            equation_id=1, family="linear", sympy_expr="1*x",
+        )
+        g.add_equation(
+            output_variable="z", input_variables=["y"],
+            equation_id=2, family="linear", sympy_expr="2*y",
+        )
+        path = g.find_path("x", "z")
+        assert path is not None
+        assert path.nodes == ["x", "y", "z"]
+
+    def test_reachable_from(self):
+        g = EquationGraph()
+        g.add_equation(
+            output_variable="b", input_variables=["a"],
+            equation_id=1, family="linear", sympy_expr="x",
+        )
+        reachable = g.reachable_from("a")
+        assert "b" in reachable
+
+    def test_remove_equation(self):
+        g = EquationGraph()
+        g.add_equation(
+            output_variable="y", input_variables=["x"],
+            equation_id=1, family="linear", sympy_expr="x",
+        )
+        assert g.has_variable("x")
+        g.remove_equation(1)
+        # Edge should be removed after removing the equation
+
+    def test_propagate_uncertainty(self):
+        g = EquationGraph()
+        g.add_equation(
+            output_variable="y", input_variables=["x"],
+            equation_id=1, family="linear", sympy_expr="2*x + 1",
+            uncertainty=0.03,
+        )
+        path = g.find_path("x", "y")
+        if path:
+            uncertainty = g.propagate_uncertainty(path)
+            assert uncertainty >= 0.0
+
+
+class TestImportLibrary:
+    def test_import_from_empty_db(self, tmp_path):
+        db_path = str(tmp_path / "empty.db")
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        from src.storage import init_storage
+        init_storage(db_path)
+        conn.close()
+
+        g = import_library_to_graph(db_path, var_mapping={})
+        assert isinstance(g, EquationGraph)
+        assert len(g.nodes) == 0

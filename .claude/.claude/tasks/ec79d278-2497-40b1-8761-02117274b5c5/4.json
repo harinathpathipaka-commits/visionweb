@@ -1,0 +1,8 @@
+{
+  "id": "4",
+  "subject": "Phase 4: Pipeline + Domain Router Rewrite",
+  "description": "Full rewrite of pipeline.py wiring all real components. Rewrite domain_router.py with ontology loading.",
+  "status": "pending",
+  "blocks": [],
+  "blockedBy": []
+}

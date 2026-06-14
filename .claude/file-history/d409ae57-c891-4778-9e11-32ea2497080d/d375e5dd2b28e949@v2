@@ -1,0 +1,155 @@
+from __future__ import annotations
+
+import json
+from typing import Any, Dict, List, Optional
+
+from .domain_router import load_ontology, resolve_variable
+from .models import ColumnProfile, SchemaMapping
+
+MAPPER_SYSTEM_PROMPT = """You are a schema mapper. Your job is to map CSV columns to canonical variable names.
+Rules:
+- Detect time/timestamp columns (names like "date", "timestamp", "created_at", "report_date") → mark time_column=true
+- Map numeric columns to known ontology variables when the name clearly matches
+- For numeric columns without an ontology match, use a normalized snake_case version of the column name
+- Skip columns that are clearly identifiers, metadata, or non-numeric labels
+- Assign confidence: 0.9+ for obvious matches, 0.5-0.8 for plausible, <0.5 for guesses
+- Return ONLY the JSON array, no other text."""
+
+
+def auto_map_columns(
+    profiles: List[ColumnProfile],
+    domain: str = "general",
+    llm_client: Optional[Any] = None,
+) -> List[SchemaMapping]:
+    """Map ColumnProfiles to SchemaMappings, with LLM assistance when available."""
+    if not profiles:
+        return []
+
+    if llm_client is not None and hasattr(llm_client, "messages"):
+        try:
+            return _map_with_llm(profiles, domain, llm_client)
+        except Exception:
+            pass
+
+    return _map_rule_based(profiles, domain)
+
+
+def _map_with_llm(
+    profiles: List[ColumnProfile],
+    domain: str,
+    llm_client: Any,
+) -> List[SchemaMapping]:
+    ontology = load_ontology(domain)
+    known_vars = list(ontology.get("variables", {}).keys())
+
+    profile_text = ""
+    for p in profiles:
+        samples = ", ".join(str(v) for v in p.sample_values[:5])
+        profile_text += (
+            f"  - column_name: \"{p.column_name}\"\n"
+            f"    inferred_type: {p.inferred_type}\n"
+            f"    null_pct: {p.null_pct:.0%}\n"
+            f"    unique_pct: {p.unique_pct:.0%}\n"
+            f"    samples: [{samples}]\n"
+        )
+
+    prompt = f"""Domain: {domain}
+Known variables: {', '.join(known_vars) if known_vars else '(none — use normalized column names)'}
+
+Column profiles:
+{profile_text}
+
+Return a JSON array:
+[{{"column_name": "str", "variable": "str", "unit": "str", "confidence": 0.0-1.0, "time_column": false, "entity_key": null}}]"""
+
+    response = llm_client.messages.create(
+        model="claude-haiku-4-5",
+        max_tokens=1024,
+        system=MAPPER_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    content = (
+        response.content[0].text
+        if isinstance(response.content, list)
+        else response.content
+    )
+
+    parsed = json.loads(content)
+    return [SchemaMapping(**m) for m in parsed]
+
+
+def _map_rule_based(
+    profiles: List[ColumnProfile],
+    domain: str,
+) -> List[SchemaMapping]:
+    ontology = load_ontology(domain)
+    mappings: List[SchemaMapping] = []
+
+    for p in profiles:
+        col_lower = p.column_name.lower().strip()
+
+        # Detect time columns by name pattern
+        if any(
+            t in col_lower
+            for t in ("date", "timestamp", "time", "created_at", "created", "updated_at", "updated")
+        ):
+            mappings.append(
+                SchemaMapping(
+                    column_name=p.column_name,
+                    variable=col_lower,
+                    unit="",
+                    confidence=0.9,
+                    time_column=True,
+                    entity_key=None,
+                )
+            )
+            continue
+
+        # String columns: treat as categorical (not skipped — real datasets need these)
+        if p.inferred_type == "string":
+            # Skip pure-ID columns (very high uniqueness, no semantic match)
+            if p.unique_pct > 0.9 and p.null_pct < 0.1:
+                continue
+            # Map string columns as categorical variables
+            normalized = col_lower.replace(" ", "_").replace("-", "_")
+            mappings.append(
+                SchemaMapping(
+                    column_name=p.column_name,
+                    variable=normalized,
+                    unit="category",
+                    confidence=0.6,
+                    time_column=False,
+                    entity_key=None,
+                )
+            )
+            continue
+
+        # Try ontology match
+        resolved = resolve_variable(col_lower, ontology)
+        if resolved:
+            mappings.append(
+                SchemaMapping(
+                    column_name=p.column_name,
+                    variable=col_lower,
+                    unit=resolved.get("unit", ""),
+                    confidence=0.85,
+                    time_column=False,
+                    entity_key=None,
+                )
+            )
+            continue
+
+        # Numeric column, no ontology match — use normalized name
+        normalized = col_lower.replace(" ", "_").replace("-", "_")
+        mappings.append(
+            SchemaMapping(
+                column_name=p.column_name,
+                variable=normalized,
+                unit="",
+                confidence=0.3,
+                time_column=False,
+                entity_key=None,
+            )
+        )
+
+    return mappings

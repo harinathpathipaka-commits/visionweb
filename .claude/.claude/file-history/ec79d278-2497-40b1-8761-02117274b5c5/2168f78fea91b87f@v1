@@ -1,0 +1,203 @@
+from __future__ import annotations
+
+import csv
+import hashlib
+import json
+import sqlite3
+from datetime import datetime
+from typing import List, Tuple
+
+from .models import ColumnProfile, IngestionSummary, ObservationDraft, SchemaMapping
+
+
+def _checksum_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def save_file(db_path: str, filename: str, content_type: str, data: bytes) -> int:
+    checksum = _checksum_bytes(data)
+    created_at = datetime.utcnow().isoformat()
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.execute(
+            "INSERT INTO ingestion_files (filename, content_type, size_bytes, checksum, created_at) VALUES (?, ?, ?, ?, ?)",
+            (filename, content_type, len(data), checksum, created_at),
+        )
+        return cursor.lastrowid
+
+
+def profile_csv(file_bytes: bytes, max_rows: int = 50) -> List[ColumnProfile]:
+    decoded = file_bytes.decode("utf-8", errors="ignore")
+    reader = csv.reader(decoded.splitlines())
+    rows = list(reader)
+    if not rows:
+        return []
+    headers = rows[0]
+    data_rows = rows[1:max_rows + 1]
+    profiles: List[ColumnProfile] = []
+    for col_idx, header in enumerate(headers):
+        col_values = [r[col_idx] for r in data_rows if len(r) > col_idx]
+        nulls = sum(1 for v in col_values if v.strip() == "")
+        unique = len(set(col_values)) if col_values else 0
+        inferred_type = "number" if all(_looks_number(v) for v in col_values if v.strip()) else "string"
+        profiles.append(
+            ColumnProfile(
+                column_name=header,
+                inferred_type=inferred_type,
+                null_pct=nulls / max(len(col_values), 1),
+                unique_pct=unique / max(len(col_values), 1),
+                sample_values=col_values[:5],
+            )
+        )
+    return profiles
+
+
+def save_profile(db_path: str, file_id: int, profiles: List[ColumnProfile]) -> None:
+    created_at = datetime.utcnow().isoformat()
+    columns_json = json.dumps([p.__dict__ for p in profiles])
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO ingestion_profiles (file_id, columns_json, created_at) VALUES (?, ?, ?)",
+            (file_id, columns_json, created_at),
+        )
+
+
+def save_mappings(db_path: str, file_id: int, mappings: List[SchemaMapping]) -> None:
+    created_at = datetime.utcnow().isoformat()
+    mappings_json = json.dumps([m.__dict__ for m in mappings])
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO ingestion_mappings (file_id, mappings_json, created_at) VALUES (?, ?, ?)",
+            (file_id, mappings_json, created_at),
+        )
+
+
+def build_observations(
+    file_bytes: bytes,
+    mappings: List[SchemaMapping],
+) -> Tuple[List[ObservationDraft], List[Tuple[int, str, str]]]:
+    decoded = file_bytes.decode("utf-8", errors="ignore")
+    reader = csv.DictReader(decoded.splitlines())
+    obs: List[ObservationDraft] = []
+    issues: List[Tuple[int, str, str]] = []
+    mapping_by_col = {m.column_name: m for m in mappings}
+    for row_index, row in enumerate(reader, start=1):
+        for col_name, mapping in mapping_by_col.items():
+            raw = row.get(col_name, "")
+            if mapping.time_column:
+                continue
+            value = _parse_number(raw)
+            if value is None:
+                issues.append((row_index, col_name, "invalid_number"))
+            obs.append(
+                ObservationDraft(
+                    variable=mapping.variable,
+                    value=value,
+                    unit=mapping.unit,
+                    timestamp=row.get(_time_column(mappings), None),
+                    entity_id=mapping.entity_key,
+                    row_index=row_index,
+                )
+            )
+    return obs, issues
+
+
+def save_quality_issues(
+    db_path: str,
+    file_id: int,
+    issues: List[Tuple[int, str, str]],
+) -> None:
+    created_at = datetime.utcnow().isoformat()
+    with sqlite3.connect(db_path) as conn:
+        for row_index, col_name, code in issues:
+            conn.execute(
+                "INSERT INTO ingestion_quality_issues (file_id, row_index, column_name, code, severity, message, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (file_id, row_index, col_name, code, "high", code, created_at),
+            )
+
+
+def save_observations(db_path: str, observations: List[ObservationDraft]) -> int:
+    created_at = datetime.utcnow().isoformat()
+    with sqlite3.connect(db_path) as conn:
+        for obs in observations:
+            if obs.value is None or obs.timestamp is None:
+                continue
+            conn.execute(
+                """
+                INSERT INTO observation_ledger (variable, value, unit, timestamp, entity_id, quality_score, provenance_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    obs.variable,
+                    obs.value,
+                    obs.unit,
+                    obs.timestamp,
+                    obs.entity_id,
+                    1.0,
+                    json.dumps({"source": "csv"}),
+                    created_at,
+                ),
+            )
+    return len(observations)
+
+
+def create_job(
+    db_path: str,
+    file_id: int,
+    total_rows: int,
+    observations_created: int,
+    issues_count: int,
+) -> int:
+    created_at = datetime.utcnow().isoformat()
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO ingestion_jobs (file_id, status, total_rows, observations_created, issues_count, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (file_id, "completed", total_rows, observations_created, issues_count, created_at),
+        )
+        return cursor.lastrowid
+
+
+def ingest_csv(
+    db_path: str,
+    file_id: int,
+    file_bytes: bytes,
+    mappings: List[SchemaMapping],
+) -> IngestionSummary:
+    profiles = profile_csv(file_bytes)
+    total_rows = max(len(file_bytes.decode("utf-8", errors="ignore").splitlines()) - 1, 0)
+    save_profile(db_path, file_id, profiles)
+    save_mappings(db_path, file_id, mappings)
+    observations, issues = build_observations(file_bytes, mappings)
+    save_quality_issues(db_path, file_id, issues)
+    created = save_observations(db_path, observations)
+    create_job(db_path, file_id, total_rows, created, len(issues))
+    return IngestionSummary(
+        total_rows=total_rows,
+        observations_created=created,
+        issues_count=len(issues),
+        status="completed",
+    )
+
+
+def _looks_number(value: str) -> bool:
+    try:
+        float(value)
+        return True
+    except ValueError:
+        return False
+
+
+def _parse_number(value: str):
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _time_column(mappings: List[SchemaMapping]) -> str:
+    for mapping in mappings:
+        if mapping.time_column:
+            return mapping.column_name
+    return ""

@@ -1,0 +1,310 @@
+/**
+ * LayerInfinite MCP Server — gateway-proxy.ts
+ * ══════════════════════════════════════════════════════════════
+ * Core V2 Gateway Proxy. Intercepts tools/list (pre-reasoning
+ * enrichment) and tools/call (proxy to upstream + auto-mode
+ * rerouting). Natural language enrichment per mode — never
+ * bracketed metadata.
+ *
+ * Phase 2 refactor: delegates enrichment to tool-enrichment.ts,
+ * mode resolution to mode-manager.ts, score fetching to
+ * score-fetcher.ts, and li_recommend to li-recommend-tool.ts.
+ * ══════════════════════════════════════════════════════════════
+ */
+
+import type { GatewayConfig } from './config.js';
+import type {
+  EnrichedTool,
+  EnrichmentContext,
+  OutcomePayload,
+  GatewayMode,
+} from './types.js';
+import type { LiApiClient, UpstreamMCPClient, UpstreamCallResult } from './rest-client.js';
+import type { UpstreamRegistry } from './upstream-registry.js';
+import { enqueueOutcome } from './fail-open.js';
+import { enrichToolList } from './tool-enrichment.js';
+import { ModeManager } from './mode-manager.js';
+import { ScoreFetcher } from './enrichment/score-fetcher.js';
+import { createLiRecommendTool, handleLiRecommend } from './li-recommend-tool.js';
+import { generateDecisionId } from './decision-tracker.js';
+export { generateDecisionId };
+import { logger } from './logger.js';
+
+const log = logger.forTool('gateway-proxy');
+
+// ── Auto-mode reroute threshold ─────────────────────────────
+
+const REROUTE_CONFIDENCE_THRESHOLD = 0.3;
+
+// ══════════════════════════════════════════════════════════════
+// GatewayProxy
+// ══════════════════════════════════════════════════════════════
+
+export class GatewayProxy {
+  private readonly modeManager: ModeManager;
+  private readonly scoreFetcher: ScoreFetcher;
+
+  constructor(
+    private readonly liApi: LiApiClient,
+    private readonly upstreamClient: UpstreamMCPClient,
+    private readonly registry: UpstreamRegistry,
+    private readonly config: GatewayConfig,
+  ) {
+    this.modeManager = new ModeManager(config);
+    this.scoreFetcher = new ScoreFetcher(liApi);
+  }
+
+  // ── tools/list handler ───────────────────────────────────
+
+  async handleListTools(taskContext: {
+    taskType: string;
+    customerId: string;
+    agentId: string;
+  }): Promise<EnrichedTool[]> {
+    const mode = this.modeManager.resolveMode(taskContext.taskType);
+
+    try {
+      const [rawTools, context] = await Promise.all([
+        this.upstreamClient.listTools(),
+        this.getEnrichmentContext(taskContext.taskType, taskContext.customerId, taskContext.agentId, mode),
+      ]);
+
+      const enriched = enrichToolList(rawTools, context);
+
+      // Inject virtual li_recommend tool (only in non-bootstrap modes)
+      if (mode !== 'bootstrap') {
+        enriched.push(createLiRecommendTool());
+      }
+
+      // Sort: ranked first, then alphabetically
+      enriched.sort((a, b) => {
+        const rankA = a.annotations?.ranking ?? 999;
+        const rankB = b.annotations?.ranking ?? 999;
+        if (rankA !== rankB) return rankA - rankB;
+        return a.name.localeCompare(b.name);
+      });
+
+      log.debug('tools/list enriched', {
+        count: enriched.length,
+        mode,
+        taskType: taskContext.taskType,
+      });
+
+      return enriched;
+    } catch (err) {
+      log.error('tools/list failed', { error: err instanceof Error ? err.message : String(err) });
+      // Degrade: return raw tools with no enrichment
+      try {
+        const rawTools = await this.upstreamClient.listTools();
+        return rawTools.map((t) => ({
+          name: t.name,
+          description: t.description,
+          inputSchema: t.inputSchema,
+          upstreamName: t.upstreamName,
+        }));
+      } catch {
+        return [];
+      }
+    }
+  }
+
+  // ── tools/call handler ───────────────────────────────────
+
+  async handleCallTool(
+    toolName: string,
+    args: Record<string, unknown>,
+    taskContext: { taskType: string; customerId: string; agentId: string },
+  ): Promise<UpstreamCallResult> {
+    const decisionId = generateDecisionId(taskContext.agentId);
+    const mode = this.modeManager.resolveMode(taskContext.taskType);
+    const startMs = Date.now();
+
+    // Handle virtual li_recommend tool (delegated to li-recommend-tool.ts)
+    if (toolName === 'li_recommend') {
+      return handleLiRecommend(
+        this.liApi,
+        taskContext.taskType,
+        taskContext.customerId,
+        taskContext.agentId,
+      );
+    }
+
+    // Determine which tool to execute (auto-mode may reroute)
+    let executedAction = toolName;
+    let originalAction = toolName;
+    let rerouted = false;
+    let enrichmentScores: Record<string, number> = {};
+
+    if (mode === 'auto' && !this.config.shadowMode) {
+      try {
+        const [scores, policy] = await Promise.all([
+          this.scoreFetcher.getScores(taskContext.taskType, taskContext.customerId, taskContext.agentId),
+          this.liApi.getPolicyDecision(taskContext.taskType, taskContext.customerId, taskContext.agentId),
+        ]);
+
+        for (const s of scores) {
+          enrichmentScores[s.actionName] = s.compositeScore;
+        }
+
+        if (
+          policy &&
+          policy.confidence >= REROUTE_CONFIDENCE_THRESHOLD &&
+          policy.action !== toolName &&
+          this.registry.isHealthy(this.resolveUpstream(policy.action))
+        ) {
+          originalAction = toolName;
+          executedAction = policy.action;
+          rerouted = true;
+          log.info('Auto-mode reroute', {
+            decisionId,
+            from: toolName,
+            to: policy.action,
+            confidence: policy.confidence,
+            reason: policy.reason,
+          });
+        }
+      } catch {
+        // Degrade — continue with original tool
+      }
+    }
+
+    // Resolve upstream from tool name
+    const upstreamName = this.resolveUpstream(executedAction);
+
+    // Proxy to upstream
+    const result = await this.upstreamClient.callTool(upstreamName, executedAction, args);
+
+    // Fire-and-forget outcome logging
+    const latencyMs = Date.now() - startMs;
+    void this.logDecision({
+      decisionId,
+      agentId: taskContext.agentId,
+      customerId: taskContext.customerId,
+      taskType: taskContext.taskType,
+      actionName: executedAction,
+      upstreamName,
+      originalAction,
+      executedAction,
+      mode,
+      rerouted,
+      enrichmentScores,
+      latencyMs,
+    });
+
+    return result;
+  }
+
+  // ── Shutdown ─────────────────────────────────────────────
+
+  async shutdown(): Promise<void> {
+    this.registry.stopHealthChecks();
+    log.info('Gateway proxy shut down');
+  }
+
+  // ── Private: enrichment context ──────────────────────────
+
+  private async getEnrichmentContext(
+    taskType: string,
+    customerId: string,
+    agentId: string,
+    mode: GatewayMode,
+  ): Promise<EnrichmentContext> {
+    // Bootstrap mode — no enrichment needed
+    if (mode === 'bootstrap') {
+      return {
+        taskType,
+        customerId,
+        agentId,
+        mode,
+        scores: [],
+        policyDecision: null,
+      };
+    }
+
+    try {
+      const [scores, policyDecision] = await Promise.all([
+        this.scoreFetcher.getScores(taskType, customerId, agentId),
+        this.liApi.getPolicyDecision(taskType, customerId, agentId),
+      ]);
+
+      return { taskType, customerId, agentId, mode, scores, policyDecision };
+    } catch (err) {
+      log.warn('Enrichment context fetch failed — degrading to bootstrap-like', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return {
+        taskType,
+        customerId,
+        agentId,
+        mode,
+        scores: [],
+        policyDecision: null,
+      };
+    }
+  }
+
+  // ── Private: routing helpers ─────────────────────────────
+
+  private resolveUpstream(toolName: string): string {
+    const entries = this.registry.getAllUpstreams();
+
+    // Match tool name to upstream by prefix convention:
+    // "github_push_fix" → upstream named "github"
+    // "database_query" → upstream named "database"
+    const prefix = toolName.split('_')[0];
+    if (prefix) {
+      const matched = entries.find(
+        (e) => e.server.name === prefix && this.registry.isHealthy(e.server.name),
+      );
+      if (matched) return matched.server.name;
+    }
+
+    // Fallback: first healthy upstream
+    for (const entry of entries) {
+      if (this.registry.isHealthy(entry.server.name)) return entry.server.name;
+    }
+    return entries[0]?.server.name ?? 'unknown';
+  }
+
+  private async logDecision(record: {
+    decisionId: string;
+    agentId: string;
+    customerId: string;
+    taskType: string;
+    actionName: string;
+    upstreamName: string;
+    originalAction: string;
+    executedAction: string;
+    mode: GatewayMode;
+    rerouted: boolean;
+    enrichmentScores: Record<string, number>;
+    latencyMs: number;
+  }): Promise<void> {
+    try {
+      const payload: OutcomePayload = {
+        decision_id: record.decisionId,
+        agent_id: record.agentId,
+        customer_id: record.customerId,
+        task_type: record.taskType,
+        action_name: record.actionName,
+        upstream_name: record.upstreamName,
+        original_action: record.originalAction,
+        executed_action: record.executedAction,
+        mode: record.mode,
+        rerouted: record.rerouted,
+        latency_ms: record.latencyMs,
+        timestamp: new Date().toISOString(),
+        ingestion_source: 'mcp',
+        environment: this.config.environment,
+      };
+
+      const sent = await this.liApi.logOutcome(payload);
+      if (!sent) {
+        await enqueueOutcome(payload);
+      }
+    } catch {
+      // Fire-and-forget — silent failure is acceptable
+      log.debug('Outcome logging skipped (non-critical)');
+    }
+  }
+}

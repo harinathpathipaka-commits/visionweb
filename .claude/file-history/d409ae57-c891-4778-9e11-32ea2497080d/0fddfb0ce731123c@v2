@@ -1,0 +1,251 @@
+"""Tests for Phase 2: Multi-variable, categorical, discovery."""
+from __future__ import annotations
+
+import os
+import tempfile
+
+import pytest
+from fastapi.testclient import TestClient
+
+from src.api import app
+from src.multivar import fit_multivariate, predict_multivariate, correlation_matrix, partial_dependence
+from src.categorical import detect_categorical, auto_encode, one_hot_encode, label_encode
+from src.discovery import rank_variables, discover_relationships
+
+
+@pytest.fixture
+def client():
+    return TestClient(app)
+
+
+# ── Multivar Module ──────────────────────────────────────────────────────────
+
+
+class TestMultivariate:
+    def test_fit_perfect_linear(self):
+        """y = 10 + 2*x1 + 3*x2 with no noise."""
+        X = {"x1": [1.0, 2.0, 3.0, 4.0, 5.0],
+             "x2": [5.0, 4.0, 3.0, 2.0, 1.0]}
+        y = [10 + 2*x1 + 3*x2 for x1, x2 in zip(X["x1"], X["x2"])]
+        result = fit_multivariate(X, y)
+        assert result["adj_r2"] > 0.99
+        assert "intercept" in result["coefficients"]
+        assert "x1" in result["coefficients"]
+        assert "x2" in result["coefficients"]
+
+    def test_fit_no_relationship(self):
+        X = {"x1": [1.0, 2.0, 3.0, 4.0, 5.0]}
+        y = [42.0, 42.0, 42.0, 42.0, 42.0]
+        result = fit_multivariate(X, y)
+        assert result["adj_r2"] <= 0.0
+
+    def test_predict(self):
+        coeffs = {"intercept": 10.0, "x1": 2.0, "x2": 3.0}
+        X_eval = {"x1": 4.0, "x2": 5.0}
+        pred = predict_multivariate(X_eval, coeffs)
+        assert pred == pytest.approx(33.0)  # 10 + 8 + 15
+
+    def test_correlation_matrix(self):
+        X = {"a": [1, 2, 3, 4, 5],
+             "b": [5, 4, 3, 2, 1],
+             "c": [1, 3, 5, 7, 9]}
+        corr = correlation_matrix(X)
+        assert -1.1 < corr["a"]["b"] < -0.9  # perfectly anti-correlated
+        assert 0.9 < corr["a"]["c"] < 1.1    # perfectly correlated
+
+    def test_partial_dependence(self):
+        X = {"x1": [1, 2, 3, 4, 5],
+             "x2": [5, 4, 3, 2, 1]}
+        y = [10 + 2*x1 + 3*x2 for x1, x2 in zip(X["x1"], X["x2"])]
+        result = fit_multivariate(X, y)
+        grid, y_vals = partial_dependence(X, result["coefficients"], "x1")
+        assert len(grid) > 0
+        assert len(y_vals) == len(grid)
+        # Partial dependence should increase as x1 increases (positive coefficient)
+        assert y_vals[-1] > y_vals[0]
+
+    def test_empty_input(self):
+        result = fit_multivariate({}, [])
+        assert result["n_obs"] == 0
+        assert result["adj_r2"] == 0.0
+
+
+# ── Categorical Module ───────────────────────────────────────────────────────
+
+
+class TestCategorical:
+    def test_detect_binary(self):
+        assert detect_categorical(["yes", "no", "yes", "no", "yes"]) is True
+
+    def test_detect_numeric(self):
+        assert detect_categorical([1.1, 2.2, 3.3, 4.4, 5.5, 6.6, 7.7, 8.8, 9.9, 10.0]) is False
+
+    def test_detect_few_categories(self):
+        assert detect_categorical(["a", "b", "c", "a", "b", "a", "c", "b", "a", "c"]) is True
+
+    def test_label_encode(self):
+        encoded, mapping = label_encode(["cat", "dog", "cat", "bird"])
+        assert len(mapping) == 3
+        assert encoded[0] == encoded[2]  # Same label for "cat"
+
+    def test_one_hot_encode(self):
+        encoded, cats = one_hot_encode(["a", "b", "c", "a", "b"])
+        # With drop_first, reference "a" is dropped
+        assert len(cats) == 2  # "b" and "c"
+        assert "b" in encoded
+        assert encoded["b"] == [0.0, 1.0, 0.0, 0.0, 1.0]
+
+    def test_auto_encode_mixed(self):
+        columns = {
+            "numeric": [1.0, 2.0, 3.0, 4.0, 5.0],
+            "binary": ["yes", "no", "yes", "no", "yes"],
+        }
+        encoded = auto_encode(columns)
+        assert "numeric" in encoded
+        assert len(encoded["numeric"]) == 5
+        assert len(encoded["binary"]) == 5  # label-encoded to 0/1
+
+    def test_auto_encode_multi_category(self):
+        columns = {
+            "region": ["east", "west", "north", "east", "west"],
+            "value": [1.0, 2.0, 3.0, 4.0, 5.0],
+        }
+        encoded = auto_encode(columns)
+        assert "value" in encoded
+        # region should be one-hot encoded (drop_first)
+        region_cols = [k for k in encoded if k.startswith("region_")]
+        assert len(region_cols) >= 1
+
+
+# ── Discovery Module ─────────────────────────────────────────────────────────
+
+
+class TestDiscovery:
+    def test_rank_variables_linear(self):
+        columns = {
+            "x1": [1.0, 2.0, 3.0, 4.0, 5.0],
+            "x2": [5.0, 4.0, 3.0, 2.0, 1.0],
+            "noise": [0.1, 0.3, 0.2, 0.5, 0.4],
+            "target": [10 + 2*x1 for x1 in [1, 2, 3, 4, 5]],
+        }
+        ranked = rank_variables(columns, "target", columns["target"], top_k=3)
+        assert len(ranked) > 0
+        # x1 should be top-ranked (it's the true driver)
+        assert ranked[0]["variable"] == "x1"
+
+    def test_rank_variables_empty(self):
+        columns = {"target": [1.0, 2.0, 3.0]}
+        ranked = rank_variables(columns, "target", columns["target"])
+        assert ranked == []
+
+    def test_discover_relationships(self):
+        columns = {
+            "a": [1, 2, 3, 4, 5],
+            "b": [5, 4, 3, 2, 1],
+            "c": [1, 3, 5, 7, 9],
+        }
+        rels = discover_relationships(columns, min_correlation=0.8)
+        assert len(rels) >= 2  # a-b (neg), a-c (pos) should be found
+        # a-b should be negative
+        ab = [r for r in rels if set([r["x"], r["y"]]) == {"a", "b"}]
+        assert len(ab) == 1
+        assert ab[0]["direction"] == "negative"
+
+
+# ── Multi-Variable API Endpoints ────────────────────────────────────────────
+
+
+class TestMultiSolveAPI:
+    def test_multiv_solve_linear(self, client):
+        resp = client.post("/v2/solve", json={
+            "query": "what drives revenue",
+            "variables": {
+                "customers": [10, 20, 30, 40, 50],
+                "price": [100, 100, 100, 100, 100],
+                "revenue": [1000, 2000, 3100, 3900, 5100],
+            },
+            "target": "revenue",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["adj_r2"] > 0.9
+        assert "customers" in data["coefficients"]
+        assert data["n_obs"] == 5
+
+    def test_multiv_solve_missing_target(self, client):
+        resp = client.post("/v2/solve", json={
+            "query": "test",
+            "variables": {"a": [1, 2, 3], "b": [4, 5, 6]},
+            "target": "c",
+        })
+        assert resp.status_code == 400
+
+    def test_multiv_solve_with_evaluate(self, client):
+        resp = client.post("/v2/solve", json={
+            "query": "what if",
+            "variables": {
+                "x1": [1, 2, 3, 4, 5],
+                "x2": [5, 4, 3, 2, 1],
+                "y": [10 + 2*x1 + 3*x2 for x1, x2 in zip([1, 2, 3, 4, 5], [5, 4, 3, 2, 1])],
+            },
+            "target": "y",
+            "evaluate_at": {"x1": 3.0, "x2": 3.0},
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["answer"] is not None
+        assert abs(data["answer"] - 25.0) < 1.0  # 10 + 2*3 + 3*3 = 25
+
+    def test_multiv_zero_variance_rejected(self, client):
+        resp = client.post("/v2/solve", json={
+            "query": "test",
+            "variables": {
+                "x": [5, 5, 5, 5, 5],
+                "y": [1, 2, 3, 4, 5],
+            },
+            "target": "y",
+        })
+        assert resp.status_code == 422
+
+
+class TestDiscoverAPI:
+    def test_discover_returns_ranked(self, client):
+        resp = client.post("/v2/discover", json={
+            "variables": {
+                "x1": [1.0, 2.0, 3.0, 4.0, 5.0],
+                "x2": [5.0, 4.0, 3.0, 2.0, 1.0],
+                "noise": [0.1, 0.3, 0.2, 0.5, 0.4],
+                "target": [1.0, 2.0, 3.0, 4.0, 5.0],
+            },
+            "target": "target",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        assert len(data) > 0
+        assert "variable" in data[0]
+        assert "importance" in data[0]
+        assert "direction" in data[0]
+
+    def test_discover_invalid_target(self, client):
+        resp = client.post("/v2/discover", json={
+            "variables": {"a": [1, 2, 3], "b": [4, 5, 6]},
+            "target": "nonexistent",
+        })
+        assert resp.status_code == 400
+
+
+class TestCorrelationsAPI:
+    def test_correlations_finds_relationships(self, client):
+        resp = client.post("/v2/correlations", json={
+            "variables": {
+                "a": [1, 2, 3, 4, 5],
+                "b": [5, 4, 3, 2, 1],
+                "c": [1, 3, 5, 7, 9],
+            },
+            "target": "a",  # required by DiscoverRequest but not used
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "correlations" in data
+        assert len(data["correlations"]) >= 2

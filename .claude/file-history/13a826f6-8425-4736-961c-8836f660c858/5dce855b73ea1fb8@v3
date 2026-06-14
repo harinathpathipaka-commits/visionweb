@@ -1,0 +1,263 @@
+//! Session manager for goal-scoped browser sessions.
+//!
+//! Each session wraps a [`CdpBackend`] (Chromium instance) and is
+//! identified by a UUID. Sessions are organized by goal — not by tab —
+//! and share the same goal state store.
+
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
+
+use ans_cdp::CdpBackend;
+use ans_core::backend::{BrowserBackend, BrowserError, ImageFormat, PageState};
+use ans_core::distill::{DistillMode, DistilledPage};
+use ans_core::session::{Action, ActionOutcome, SessionStatus};
+use tokio::sync::RwLock;
+use tracing;
+use uuid::Uuid;
+
+/// Handle to an active browser session.
+pub struct SessionHandle {
+    pub session_id: Uuid,
+    pub goal_id: Uuid,
+    pub backend: CdpBackend,
+    pub current_url: String,
+    pub status: SessionStatus,
+}
+
+/// Thread-safe session registry.
+///
+/// Cloning shares the underlying `Arc<RwLock<>>` — all references
+/// see the same sessions.
+#[derive(Clone)]
+pub struct SessionManager {
+    sessions: Arc<RwLock<HashMap<Uuid, SessionHandle>>>,
+}
+
+impl Default for SessionManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SessionManager {
+    pub fn new() -> Self {
+        Self {
+            sessions: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// Create a new session by launching a Chromium instance.
+    /// If `start_url` is provided, navigate to it immediately.
+    pub async fn create(
+        &self,
+        goal_id: Uuid,
+        start_url: Option<String>,
+    ) -> Result<Uuid, BrowserError> {
+        let session_id = Uuid::new_v4();
+        tracing::info!(%session_id, %goal_id, "Creating session");
+
+        let backend = CdpBackend::launch().await?;
+
+        if let Some(url) = &start_url {
+            let _ = backend
+                .navigate(url, Duration::from_secs(30))
+                .await
+                .map(|state| {
+                    tracing::info!(url = %state.url, "Session started at URL");
+                });
+        }
+
+        let handle = SessionHandle {
+            session_id,
+            goal_id,
+            backend,
+            current_url: start_url.unwrap_or_else(|| "about:blank".into()),
+            status: SessionStatus::Idle,
+        };
+
+        self.sessions.write().await.insert(session_id, handle);
+
+        Ok(session_id)
+    }
+
+    /// Close a session and kill its Chromium process.
+    pub async fn close(&self, session_id: Uuid) -> Result<(), BrowserError> {
+        tracing::info!(%session_id, "Closing session");
+        if let Some(handle) = self.sessions.write().await.remove(&session_id) {
+            handle.backend.close().await?;
+        }
+        Ok(())
+    }
+
+    /// Close all active sessions.
+    pub async fn close_all(&self) {
+        let ids: Vec<Uuid> = self.sessions.read().await.keys().copied().collect();
+        for id in ids {
+            let _ = self.close(id).await;
+        }
+        tracing::info!("All sessions closed");
+    }
+
+    /// Execute an action on a session.
+    pub async fn execute_action(
+        &self,
+        session_id: Uuid,
+        action: &Action,
+    ) -> Result<ActionOutcome, BrowserError> {
+        let sessions = self.sessions.read().await;
+        let handle = sessions
+            .get(&session_id)
+            .ok_or(BrowserError::BrowserClosed)?;
+
+        let outcome = match action.action_type {
+            ans_core::session::ActionType::Click => {
+                let selector = action
+                    .selector
+                    .as_deref()
+                    .ok_or_else(|| BrowserError::SelectorNotFound("missing selector".into()))?;
+                handle.backend.click(selector).await?
+            }
+            ans_core::session::ActionType::Type => {
+                let selector = action
+                    .selector
+                    .as_deref()
+                    .ok_or_else(|| BrowserError::SelectorNotFound("missing selector".into()))?;
+                let text = action.value.as_deref().unwrap_or("");
+                handle.backend.type_text(selector, text).await?
+            }
+            ans_core::session::ActionType::Scroll => {
+                let pixels = action.value.as_deref().and_then(|v| v.parse().ok());
+                let selector = action.selector.as_deref();
+                handle.backend.scroll(pixels, selector).await?
+            }
+            ans_core::session::ActionType::Select => {
+                let selector = action
+                    .selector
+                    .as_deref()
+                    .ok_or_else(|| BrowserError::SelectorNotFound("missing selector".into()))?;
+                let value = action.value.as_deref().unwrap_or("");
+                handle.backend.select_option(selector, value).await?
+            }
+            ans_core::session::ActionType::Navigate => {
+                let url = action
+                    .value
+                    .as_deref()
+                    .ok_or_else(|| BrowserError::CdpProtocol("missing URL".into()))?;
+                let state = handle
+                    .backend
+                    .navigate(url, Duration::from_secs(30))
+                    .await?;
+                ActionOutcome {
+                    success: true,
+                    error_message: None,
+                    execution_time_ms: 0,
+                    page_url_after: Some(state.url),
+                    dom_changed: false,
+                }
+            }
+            ans_core::session::ActionType::Wait => {
+                let ms = action
+                    .value
+                    .as_deref()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(1000u64);
+                tokio::time::sleep(Duration::from_millis(ms)).await;
+                ActionOutcome {
+                    success: true,
+                    error_message: None,
+                    execution_time_ms: ms,
+                    page_url_after: None,
+                    dom_changed: false,
+                }
+            }
+            ans_core::session::ActionType::Submit => {
+                // Submit is typically handled as a click on a submit button
+                // or pressing Enter. Evaluate a JS submit on the form.
+                let selector = action.selector.as_deref().unwrap_or("form");
+                let result = handle
+                    .backend
+                    .execute_script(&format!(
+                        "(function(){{var f=document.querySelector('{}');if(f){{f.submit();return'ok'}}return'not found'}})()",
+                        escape_for_js(selector)
+                    ))
+                    .await?;
+                ActionOutcome {
+                    success: result.contains("ok"),
+                    error_message: if result.contains("ok") {
+                        None
+                    } else {
+                        Some("form not found".into())
+                    },
+                    execution_time_ms: 0,
+                    page_url_after: None,
+                    dom_changed: true,
+                }
+            }
+            ans_core::session::ActionType::Screenshot => {
+                let _bytes = handle
+                    .backend
+                    .capture_screenshot(ans_core::backend::ImageFormat::Png, false)
+                    .await?;
+                ActionOutcome {
+                    success: true,
+                    error_message: None,
+                    execution_time_ms: 0,
+                    page_url_after: None,
+                    dom_changed: false,
+                }
+            }
+        };
+
+        Ok(outcome)
+    }
+
+    /// Navigate a session to a URL.
+    pub async fn navigate(&self, session_id: Uuid, url: &str) -> Result<PageState, BrowserError> {
+        let sessions = self.sessions.read().await;
+        let handle = sessions
+            .get(&session_id)
+            .ok_or(BrowserError::BrowserClosed)?;
+
+        handle.backend.navigate(url, Duration::from_secs(30)).await
+    }
+
+    /// Distill the DOM in a session's current page.
+    pub async fn get_distilled_dom(
+        &self,
+        session_id: Uuid,
+        mode: DistillMode,
+    ) -> Result<DistilledPage, BrowserError> {
+        let sessions = self.sessions.read().await;
+        let handle = sessions
+            .get(&session_id)
+            .ok_or(BrowserError::BrowserClosed)?;
+        handle.backend.get_distilled_dom(mode).await
+    }
+
+    /// Capture a screenshot from a session's current page.
+    pub async fn capture_screenshot(
+        &self,
+        session_id: Uuid,
+        format: ImageFormat,
+        full_page: bool,
+    ) -> Result<Vec<u8>, BrowserError> {
+        let sessions = self.sessions.read().await;
+        let handle = sessions
+            .get(&session_id)
+            .ok_or(BrowserError::BrowserClosed)?;
+        handle.backend.capture_screenshot(format, full_page).await
+    }
+
+    /// Get the number of active sessions.
+    pub fn session_count(&self) -> usize {
+        // Non-async snapshot — ok for informational use
+        self.sessions.blocking_read().len()
+    }
+}
+
+fn escape_for_js(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('\'', "\\'")
+        .replace('\n', "\\n")
+}

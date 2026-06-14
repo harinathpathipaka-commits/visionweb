@@ -1,0 +1,8 @@
+{
+  "id": "7",
+  "subject": "Phase 1.1 — Upstream Registry",
+  "description": "Create upstream-registry.ts — parse UPSTREAM_TOOLS JSON, maintain health check state, expose isHealthy/getUpstream/getAllUpstreams.",
+  "status": "completed",
+  "blocks": [],
+  "blockedBy": []
+}

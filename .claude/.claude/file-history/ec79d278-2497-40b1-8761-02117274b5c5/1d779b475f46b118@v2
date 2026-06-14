@@ -1,0 +1,151 @@
+from __future__ import annotations
+
+import json
+import time
+from datetime import datetime, timezone
+from typing import Any, Callable, Dict, List, Optional
+
+from ..models import ObservationDraft, SchemaMapping
+from ..storage import init_storage
+from . import BaseConnector, FetchResult
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+class SyncEngine:
+    """Orchestrates full and incremental sync between external connectors and the observation ledger."""
+
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        init_storage(db_path)
+
+    def full_sync(
+        self,
+        connector: BaseConnector,
+        table: str,
+        mappings: List[SchemaMapping],
+        batch_size: int = 10000,
+    ) -> int:
+        """Initial full load of all rows from a table."""
+        mapping_by_col = {m.column_name: m for m in mappings}
+        time_col = self._find_time_column(mappings)
+        total = 0
+        cursor: Optional[str] = None
+
+        with connector:
+            while True:
+                columns = [m.column_name for m in mappings]
+                result = connector.fetch(table, columns, cursor=cursor, limit=batch_size)
+                if not result.rows:
+                    break
+
+                obs = self._rows_to_observations(result.rows, mapping_by_col, time_col)
+                total += self._save_observations(obs)
+                cursor = result.cursor
+                if cursor is None:
+                    break
+
+        return total
+
+    def incremental_sync(
+        self,
+        connector: BaseConnector,
+        table: str,
+        mappings: List[SchemaMapping],
+        since: str,
+    ) -> int:
+        """Delta sync: fetch rows updated after `since`."""
+        mapping_by_col = {m.column_name: m for m in mappings}
+        time_col = self._find_time_column(mappings)
+
+        with connector:
+            result = connector.fetch(table, [m.column_name for m in mappings], since=since)
+            obs = self._rows_to_observations(result.rows, mapping_by_col, time_col)
+            return self._save_observations(obs)
+
+    def watch(
+        self,
+        connector: BaseConnector,
+        table: str,
+        mappings: List[SchemaMapping],
+        interval_seconds: int = 300,
+        on_batch: Optional[Callable[[int], None]] = None,
+    ) -> None:
+        """Blocking watch loop — polls for new data every `interval_seconds`."""
+        last_run = _now()
+        while True:
+            count = self.incremental_sync(connector, table, mappings, since=last_run)
+            if count > 0 and on_batch:
+                on_batch(count)
+            last_run = _now()
+            time.sleep(interval_seconds)
+
+    def trigger_refit_on_new_data(
+        self,
+        variable_set: List[str],
+        threshold: int = 50,
+    ) -> bool:
+        """Check if enough new observations exist to justify refitting equations."""
+        import sqlite3
+        with sqlite3.connect(self.db_path) as conn:
+            for var in variable_set:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM observation_ledger WHERE variable = ? AND created_at > ?",
+                    (var, _now()),
+                ).fetchone()
+                if row and row[0] >= threshold:
+                    return True
+        return False
+
+    @staticmethod
+    def _find_time_column(mappings: List[SchemaMapping]) -> str:
+        for m in mappings:
+            if m.time_column:
+                return m.column_name
+        return ""
+
+    @staticmethod
+    def _rows_to_observations(
+        rows: List[Dict[str, Any]],
+        mapping_by_col: Dict[str, SchemaMapping],
+        time_col: str,
+    ) -> List[ObservationDraft]:
+        obs: List[ObservationDraft] = []
+        for i, row in enumerate(rows):
+            ts = str(row.get(time_col, "")) if time_col else _now()
+            for col_name, mapping in mapping_by_col.items():
+                if mapping.time_column:
+                    continue
+                raw = row.get(col_name)
+                if raw is None:
+                    continue
+                try:
+                    value = float(raw)
+                except (ValueError, TypeError):
+                    continue
+                obs.append(ObservationDraft(
+                    variable=mapping.variable, value=value, unit=mapping.unit,
+                    timestamp=ts, entity_id=mapping.entity_key, row_index=i,
+                ))
+        return obs
+
+    def _save_observations(self, observations: List[ObservationDraft]) -> int:
+        import sqlite3
+        with sqlite3.connect(self.db_path) as conn:
+            count = 0
+            for obs in observations:
+                if obs.value is None or obs.timestamp is None:
+                    continue
+                conn.execute(
+                    "INSERT INTO observation_ledger "
+                    "(variable, value, unit, timestamp, entity_id, quality_score, provenance_json, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        obs.variable, obs.value, obs.unit, obs.timestamp,
+                        obs.entity_id, 1.0, json.dumps({"source": "sync_engine"}), _now(),
+                    ),
+                )
+                count += 1
+        return count

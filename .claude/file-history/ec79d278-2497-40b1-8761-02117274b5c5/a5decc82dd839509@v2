@@ -1,0 +1,228 @@
+use tonic::{Request, Response, Status};
+
+use crate::ingestion::ingestion_service_server::IngestionService;
+use crate::ingestion::{
+    AlignTemporalRequest, AlignTemporalResponse, BuildObservationsRequest,
+    BuildObservationsResponse, DeduplicateRequest, DeduplicateResponse,
+    DetectDelimiterRequest, QualityCheckRequest, QualityCheckResponse,
+    DetectDelimiterResponse, ObservationDraft, ProfileCsvRequest, ProfileCsvResponse,
+    QualityIssue,
+};
+use crate::parser;
+use crate::schema::infer_type;
+use crate::dedup;
+use crate::quality;
+use crate::temporal::{self, Frequency};
+
+#[derive(Default)]
+pub struct IngestionGrpc;
+
+#[tonic::async_trait]
+impl IngestionService for IngestionGrpc {
+    async fn profile_csv(
+        &self,
+        request: Request<ProfileCsvRequest>,
+    ) -> Result<Response<ProfileCsvResponse>, Status> {
+        let data = request.into_inner().file_bytes;
+        let (delim, _) = parser::detect_delimiter(&data);
+        let (headers, rows) = parser::parse_csv(&data, delim)
+            .map_err(|e| Status::invalid_argument(e))?;
+
+        let mut profiles = Vec::new();
+        for (i, header) in headers.iter().enumerate() {
+            let mut samples: Vec<String> = Vec::new();
+            let mut nulls = 0usize;
+            for row in rows.iter().take(50) {
+                let val = row.get(i).cloned().unwrap_or_default();
+                if val.trim().is_empty() {
+                    nulls += 1;
+                }
+                samples.push(val);
+            }
+            let (inferred, null_pct, unique_pct) = infer_type(&samples, nulls);
+            profiles.push(crate::ingestion::ColumnProfile {
+                column_name: header.clone(),
+                inferred_type: format!("{:?}", inferred).to_lowercase(),
+                null_pct,
+                unique_pct,
+                sample_values: samples.iter().take(5).cloned().collect(),
+            });
+        }
+        Ok(Response::new(ProfileCsvResponse { profiles }))
+    }
+
+    async fn build_observations(
+        &self,
+        request: Request<BuildObservationsRequest>,
+    ) -> Result<Response<BuildObservationsResponse>, Status> {
+        let input = request.into_inner();
+        let delim = if input.delimiter.is_empty() {
+            let (d, _) = parser::detect_delimiter(&input.file_bytes);
+            d
+        } else {
+            input.delimiter.as_bytes().first().copied().unwrap_or(b',')
+        };
+
+        let (headers, rows) = parser::parse_csv(&input.file_bytes, delim)
+            .map_err(|e| Status::invalid_argument(e))?;
+
+        // Build column index lookup
+        let col_index: std::collections::HashMap<String, usize> = headers
+            .iter()
+            .enumerate()
+            .map(|(i, h)| (h.clone(), i))
+            .collect();
+
+        let mut observations = Vec::new();
+        let mut issues = Vec::new();
+
+        for (row_idx, row) in rows.iter().enumerate() {
+            for mapping in &input.mappings {
+                let col_idx = match col_index.get(&mapping.column_name) {
+                    Some(&i) => i,
+                    None => {
+                        issues.push(QualityIssue {
+                            row_index: (row_idx + 1) as u32,
+                            column_name: mapping.column_name.clone(),
+                            code: "missing_column".into(),
+                            severity: "error".into(),
+                            message: format!("Column '{}' not found", mapping.column_name),
+                        });
+                        continue;
+                    }
+                };
+
+                let raw = row.get(col_idx).map(|s| s.as_str()).unwrap_or("");
+                if raw.trim().is_empty() {
+                    continue;
+                }
+
+                if mapping.time_column {
+                    continue;
+                }
+
+                match crate::schema::parse_number(raw) {
+                    Some(parsed) => {
+                        let ts = input
+                            .mappings
+                            .iter()
+                            .find(|m| m.time_column)
+                            .and_then(|tm| {
+                                let ti = col_index.get(&tm.column_name)?;
+                                let val = row.get(*ti)?;
+                                crate::schema::parse_date(val)
+                            })
+                            .unwrap_or_default();
+
+                        let entity_id = if mapping.entity_key.is_empty() {
+                            String::new()
+                        } else {
+                            col_index
+                                .get(&mapping.entity_key)
+                                .and_then(|&ei| row.get(ei))
+                                .cloned()
+                                .unwrap_or_default()
+                        };
+
+                        observations.push(ObservationDraft {
+                            variable: mapping.variable.clone(),
+                            value: parsed,
+                            unit: mapping.unit.clone(),
+                            timestamp: ts,
+                            entity_id,
+                            row_index: (row_idx + 1) as u32,
+                        });
+                    }
+                    None => {
+                        issues.push(QualityIssue {
+                            row_index: (row_idx + 1) as u32,
+                            column_name: mapping.column_name.clone(),
+                            code: "invalid_number".into(),
+                            severity: "error".into(),
+                            message: format!("Cannot parse '{}' as number", raw),
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(Response::new(BuildObservationsResponse { observations, issues }))
+    }
+
+    async fn deduplicate(
+        &self,
+        request: Request<DeduplicateRequest>,
+    ) -> Result<Response<DeduplicateResponse>, Status> {
+        let input = request.into_inner();
+        let (unique, removed) = dedup::deduplicate(&input.observations);
+        Ok(Response::new(DeduplicateResponse {
+            unique,
+            removed_count: removed,
+        }))
+    }
+
+    async fn check_quality(
+        &self,
+        request: Request<QualityCheckRequest>,
+    ) -> Result<Response<QualityCheckResponse>, Status> {
+        let input = request.into_inner();
+        let z_thresh = if input.outlier_z_threshold > 0.0 {
+            input.outlier_z_threshold
+        } else {
+            3.0
+        };
+        let (clean, issues) = quality::check_quality(
+            &input.observations,
+            z_thresh,
+            input.min_value,
+            input.max_value,
+        );
+        Ok(Response::new(QualityCheckResponse { clean, issues }))
+    }
+
+    async fn align_temporal(
+        &self,
+        request: Request<AlignTemporalRequest>,
+    ) -> Result<Response<AlignTemporalResponse>, Status> {
+        let input = request.into_inner();
+        let timestamps: Vec<String> = input.observations.iter().map(|o| o.timestamp.clone()).collect();
+        let detected = temporal::detect_frequency(&timestamps);
+        let target = Frequency::from_str(&input.target_frequency);
+
+        let tgt = if target == Frequency::Irregular {
+            detected
+        } else {
+            target
+        };
+
+        let method = if input.method.is_empty() { "mean" } else { &input.method };
+        let aligned = temporal::align_to_frequency(&input.observations, tgt, method, detected);
+
+        let in_count = input.observations.len() as i32;
+        let out_count = aligned.len() as i32;
+
+        Ok(Response::new(AlignTemporalResponse {
+            aligned,
+            detected_frequency: detected.as_str().to_string(),
+            input_count: in_count,
+            output_count: out_count,
+        }))
+    }
+
+    async fn detect_delimiter(
+        &self,
+        request: Request<DetectDelimiterRequest>,
+    ) -> Result<Response<DetectDelimiterResponse>, Status> {
+        let data = request.into_inner().file_bytes;
+        let (delim, confidence) = parser::detect_delimiter(&data);
+        let delim_str = if delim == b'\t' {
+            "\\t".to_string()
+        } else {
+            (delim as char).to_string()
+        };
+        Ok(Response::new(DetectDelimiterResponse {
+            delimiter: delim_str,
+            confidence,
+        }))
+    }
+}

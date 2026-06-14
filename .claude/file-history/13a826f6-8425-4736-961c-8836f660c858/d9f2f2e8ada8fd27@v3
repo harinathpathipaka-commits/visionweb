@@ -1,0 +1,54 @@
+use uuid::Uuid;
+
+/// Top-level goal tracking — shared across all sessions working on the same goal.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GoalState {
+    pub goal_id: Uuid,
+    pub description: String,
+    pub status: GoalStatus,
+    /// 0.0 to 1.0 — fraction of sub-goals completed.
+    pub progress: f32,
+    pub sub_goals: Vec<SubGoal>,
+    pub context: GoalContext,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum GoalStatus {
+    Pending,
+    Active,
+    Completed,
+    Failed,
+    Blocked,
+}
+
+/// A single decomposable step within a goal.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SubGoal {
+    pub id: Uuid,
+    pub description: String,
+    /// Verifiable criteria that must be met for this sub-goal to be "done".
+    pub success_criteria: Vec<String>,
+    /// IDs of sub-goals that must complete before this one can start.
+    pub depends_on: Vec<Uuid>,
+    pub status: SubGoalStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum SubGoalStatus {
+    Pending,
+    Active,
+    Done,
+    Blocked,
+}
+
+/// Mutable context shared across sessions for the same goal.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct GoalContext {
+    pub current_url: Option<String>,
+    pub last_action: Option<String>,
+    pub last_observation: Option<String>,
+    pub intent_embedding: Vec<f32>,
+    pub distraction_count: u32,
+}

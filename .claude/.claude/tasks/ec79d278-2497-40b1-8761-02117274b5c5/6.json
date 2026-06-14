@@ -1,0 +1,8 @@
+{
+  "id": "6",
+  "subject": "Phase 6-7: Database + SaaS Connectors",
+  "description": "Build connectors/ directory: base, postgres, mysql, schema_interpreter, sync_engine, saas/stripe, saas/salesforce, saas/hubspot.",
+  "status": "pending",
+  "blocks": [],
+  "blockedBy": []
+}

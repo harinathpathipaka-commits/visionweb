@@ -1,0 +1,110 @@
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional
+
+from . import BaseConnector, ConnectorCredentials, FetchResult, TableSchema
+
+
+class MySQLConnector(BaseConnector):
+    """MySQL connector using mysql-connector-python for read-only introspection and incrementatal fetch."""
+
+    def __init__(self, credentials: ConnectorCredentials):
+        super().__init__(credentials)
+        self._conn = None
+
+    def connect(self) -> None:
+        try:
+            import mysql.connector
+            self._conn = mysql.connector.connect(
+                host=self.credentials.host,
+                port=self.credentials.port,
+                database=self.credentials.database,
+                user=self.credentials.username,
+                password=self.credentials.password,
+                autocommit=True,
+            )
+            self._connected = True
+        except ImportError:
+            raise RuntimeError("mysql-connector-python is required for MySQL connections")
+        except Exception as exc:
+            raise ConnectionError(f"MySQL connection failed: {exc}") from exc
+
+    def disconnect(self) -> None:
+        if self._conn and self._conn.is_connected():
+            self._conn.close()
+        self._connected = False
+
+    def introspect(self) -> List[TableSchema]:
+        self._ensure_connected()
+        cur = self._conn.cursor(dictionary=True)
+        cur.execute(
+            """
+            SELECT TABLE_NAME
+            FROM information_schema.tables
+            WHERE TABLE_SCHEMA = %s AND TABLE_TYPE = 'BASE TABLE'
+            ORDER BY TABLE_NAME
+            """,
+            (self.credentials.database,),
+        )
+        schemas: List[TableSchema] = []
+        for row in cur.fetchall():
+            table_name = row["TABLE_NAME"]
+            cur.execute(
+                """
+                SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT
+                FROM information_schema.columns
+                WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s
+                ORDER BY ORDINAL_POSITION
+                """,
+                (self.credentials.database, table_name),
+            )
+            columns = [
+                {"name": c["COLUMN_NAME"], "type": c["DATA_TYPE"],
+                 "nullable": c["IS_NULLABLE"] == "YES", "default": c["COLUMN_DEFAULT"]}
+                for c in cur.fetchall()
+            ]
+            cur.execute(
+                "SELECT TABLE_ROWS FROM information_schema.tables "
+                "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s",
+                (self.credentials.database, table_name),
+            )
+            row_est = cur.fetchone()
+            schemas.append(TableSchema(
+                name=table_name, columns=columns,
+                row_count_estimate=row_est["TABLE_ROWS"] if row_est else 0,
+            ))
+        cur.close()
+        return schemas
+
+    def fetch(
+        self,
+        table: str,
+        columns: List[str],
+        since: Optional[str] = None,
+        cursor: Optional[str] = None,
+        limit: int = 10000,
+    ) -> FetchResult:
+        self._ensure_connected()
+        col_list = ", ".join(f"`{c}`" for c in columns)
+        query = f"SELECT {col_list} FROM `{table}`"
+        params: List[Any] = []
+
+        if cursor:
+            query += " WHERE id > %s"
+            params.append(cursor)
+        elif since:
+            query += " WHERE updated_at >= %s"
+            params.append(since)
+
+        query += f" ORDER BY id LIMIT {limit}"
+
+        cur = self._conn.cursor(dictionary=True)
+        cur.execute(query, params)
+        rows = [dict(r) for r in cur.fetchall()]
+        next_cursor = str(rows[-1].get("id", "")) if len(rows) == limit else None
+        cur.close()
+        return FetchResult(table=table, columns=columns, rows=rows, cursor=next_cursor)
+
+    def _ensure_connected(self) -> None:
+        if not self._connected or self._conn is None or not self._conn.is_connected():
+            self.connect()

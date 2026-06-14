@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "plugins": {
+    "rust-analyzer-lsp@claude-plugins-official": [
+      {
+        "scope": "user",
+        "installPath": "C:\\Users\\kusta\\.claude\\plugins\\cache\\claude-plugins-official\\rust-analyzer-lsp\\1.0.0",
+        "version": "1.0.0",
+        "installedAt": "2026-05-25T12:15:16.120Z",
+        "lastUpdated": "2026-05-25T12:15:16.120Z"
+      }
+    ]
+  }
+}

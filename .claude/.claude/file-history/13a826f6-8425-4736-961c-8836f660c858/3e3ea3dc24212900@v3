@@ -1,0 +1,16 @@
+[package]
+name = "ans-proto"
+version.workspace = true
+edition.workspace = true
+description = "Compiled protobuf definitions for the Agent Nervous System gRPC API"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+tonic.workspace = true
+prost.workspace = true
+
+[build-dependencies]
+tonic-build.workspace = true
+protoc-bin-vendored = "3"

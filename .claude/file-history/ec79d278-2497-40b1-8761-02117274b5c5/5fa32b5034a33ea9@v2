@@ -1,0 +1,75 @@
+from src.fallback_router import route_failure, FallbackAction
+from src.models import GateResult, EquationFit, FitStats
+
+
+class TestRouteFailure:
+    def test_insufficient_observations(self):
+        result = GateResult(passed=False, reason="insufficient_observations")
+        failure = route_failure(result, None, None)
+        assert isinstance(failure, FallbackAction)
+        assert failure.category == "insufficient_data"
+
+    def test_low_r_squared(self):
+        result = GateResult(passed=False, reason="low_r2_adj")
+        failure = route_failure(result, None, None)
+        assert isinstance(failure, FallbackAction)
+        assert failure.category == "human_review"
+
+    def test_drift_detected_returns_structural_change(self):
+        result = GateResult(passed=False, reason="drift_detected")
+        failure = route_failure(result, None, None, drift_detected=True)
+        assert isinstance(failure, FallbackAction)
+        assert failure.category == "structural_change"
+
+    def test_conflict_exists_returns_conflict_workflow(self):
+        result = GateResult(passed=False, reason="conflict_exists")
+        failure = route_failure(result, None, None, conflict_exists=True)
+        assert isinstance(failure, FallbackAction)
+        assert failure.category == "conflict"
+
+    def test_correlation_weak_returns_no_relationship(self):
+        result = GateResult(passed=False, reason="correlation_too_weak")
+        failure = route_failure(result, None, None, correlation_weak=True)
+        assert isinstance(failure, FallbackAction)
+        assert failure.category == "no_relationship"
+
+    def test_high_holdout_mape(self):
+        result = GateResult(passed=False, reason="high_holdout_mape")
+        eq = EquationFit(
+            family="linear",
+            parameters={"a": 2.0, "b": 1.0},
+            stats=FitStats(r2_adj=0.8, holdout_mape=0.25, aic=100.0, residual_random=True, n_obs=20),
+            sympy_expr="2*x + 1",
+        )
+        failure = route_failure(result, eq, None)
+        assert isinstance(failure, FallbackAction)
+        assert failure.category == "human_review"
+
+    def test_all_reasons_return_fallback_action(self):
+        reasons = [
+            "insufficient_observations",
+            "low_r2_adj",
+            "high_holdout_mape",
+            "residuals_not_random",
+            "drift_detected",
+            "conflict_exists",
+            "correlation_too_weak",
+        ]
+        for reason in reasons:
+            result = GateResult(passed=False, reason=reason)
+            failure = route_failure(result, None, None,
+                                    drift_detected=(reason == "drift_detected"),
+                                    conflict_exists=(reason == "conflict_exists"),
+                                    correlation_weak=(reason == "correlation_too_weak"))
+            assert isinstance(failure, FallbackAction), f"Failed for reason: {reason}"
+
+    def test_fallback_has_suggested_steps(self):
+        result = GateResult(passed=False, reason="low_r2_adj")
+        failure = route_failure(result, None, None)
+        assert len(failure.suggested_next_steps) > 0
+
+    def test_degraded_mode_for_unknown_reason(self):
+        result = GateResult(passed=False, reason="unknown_bizarre_reason")
+        failure = route_failure(result, None, None)
+        assert isinstance(failure, FallbackAction)
+        assert failure.category == "degraded"

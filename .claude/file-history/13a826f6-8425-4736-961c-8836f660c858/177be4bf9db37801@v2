@@ -1,0 +1,15 @@
+//! Cross-eye contradiction resolution engine.
+//!
+//! When two eyes disagree (e.g. Vision sees a button but DOM Reader
+//! says it's not interactable), this engine applies the resolution
+//! hierarchy to produce a consistent view.
+//!
+//! Resolution hierarchy (highest authority wins):
+//! 1. DOM Reader (ground truth for element state)
+//! 2. Page Diff (ground truth for what changed)
+//! 3. Goal Verifier (ground truth for goal progress)
+//! 4. Vision Model (best guess, overridable)
+//! 5. Error Detector (only consulted on failure)
+
+/// Resolves cross-eye contradictions and returns a unified perception.
+pub struct ContradictionResolver;

@@ -1,0 +1,295 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+
+from .models import Observation
+
+
+class Frequency(Enum):
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+    QUARTERLY = "quarterly"
+    ANNUAL = "annual"
+    IRREGULAR = "irregular"
+
+    @property
+    def rank(self) -> int:
+        return _FREQ_RANK[self]
+
+    @property
+    def approx_days(self) -> float:
+        return _FREQ_DAYS[self]
+
+
+_FREQ_RANK = {
+    Frequency.DAILY: 0,
+    Frequency.WEEKLY: 1,
+    Frequency.MONTHLY: 2,
+    Frequency.QUARTERLY: 3,
+    Frequency.ANNUAL: 4,
+    Frequency.IRREGULAR: 5,
+}
+
+_FREQ_DAYS = {
+    Frequency.DAILY: 1.0,
+    Frequency.WEEKLY: 7.0,
+    Frequency.MONTHLY: 30.44,
+    Frequency.QUARTERLY: 91.31,
+    Frequency.ANNUAL: 365.25,
+    Frequency.IRREGULAR: 0.0,
+}
+
+# Max allowed rank difference before blocking (daily cannot align with annual).
+MAX_FREQ_RANK_GAP = 2
+# Minimum observations to trust frequency detection.
+MIN_OBS_FOR_FREQ_DETECTION = 5
+
+
+def detect_frequency(timestamps: List[str]) -> Frequency:
+    """Detect the dominant frequency of a series of timestamps.
+
+    Uses median inter-arrival time (in days) to classify frequency.
+    Falls back to IRREGULAR if fewer than MIN_OBS_FOR_FREQ_DETECTION.
+    """
+    if len(timestamps) < MIN_OBS_FOR_FREQ_DETECTION:
+        return Frequency.IRREGULAR
+
+    dts = sorted(_parse_ts(t) for t in timestamps if _parse_ts(t) is not None)
+    if len(dts) < 2:
+        return Frequency.IRREGULAR
+
+    gaps: List[float] = []
+    for i in range(1, len(dts)):
+        gap = (dts[i] - dts[i - 1]).total_seconds() / 86400.0
+        if gap > 0:
+            gaps.append(gap)
+
+    if not gaps:
+        return Frequency.IRREGULAR
+
+    gaps.sort()
+    median_gap = gaps[len(gaps) // 2]
+
+    if median_gap <= 2.0:
+        return Frequency.DAILY
+    elif median_gap <= 10.0:
+        return Frequency.WEEKLY
+    elif median_gap <= 45.0:
+        return Frequency.MONTHLY
+    elif median_gap <= 120.0:
+        return Frequency.QUARTERLY
+    elif median_gap <= 400.0:
+        return Frequency.ANNUAL
+    return Frequency.IRREGULAR
+
+
+def resample(
+    observations: List[Observation],
+    target_freq: Frequency,
+    method: str = "mean",
+) -> List[Observation]:
+    """Resample observations to a target frequency.
+
+    Args:
+        observations: List of observations with timestamps.
+        target_freq: Target frequency to align to.
+        method: Aggregation method — "mean", "sum", "last", or "first".
+
+    Returns a new list of resampled observations.
+    """
+    if not observations:
+        return []
+
+    native = detect_frequency([o.timestamp for o in observations])
+    if native == Frequency.IRREGULAR or native == target_freq:
+        return list(observations)
+
+    bucketed = _bucket_by_freq(observations, target_freq)
+    agg_fn = _aggregator(method)
+
+    result: List[Observation] = []
+    for bucket_ts, obs_list in sorted(bucketed.items()):
+        if not obs_list:
+            continue
+        representative = obs_list[0]
+        values = [o.value for o in obs_list]
+        result.append(Observation(
+            variable=representative.variable,
+            value=agg_fn(values),
+            unit=representative.unit,
+            timestamp=bucket_ts,
+            entity_id=representative.entity_id,
+            quality_score=representative.quality_score,
+        ))
+    return result
+
+
+def block_incompatible_fits(
+    freq_a: Frequency,
+    freq_b: Frequency,
+) -> Tuple[bool, Optional[str]]:
+    """Check whether two frequencies are too far apart for direct fitting.
+
+    Returns (blocked, reason). Blocked if rank gap exceeds MAX_FREQ_RANK_GAP.
+    """
+    if freq_a == Frequency.IRREGULAR or freq_b == Frequency.IRREGULAR:
+        return True, "One or both variables have irregular frequency; cannot align"
+
+    gap = abs(freq_a.rank - freq_b.rank)
+    if gap > MAX_FREQ_RANK_GAP:
+        return True, (
+            f"Frequency gap too large: {freq_a.value} vs {freq_b.value} "
+            f"(max allowed: {MAX_FREQ_RANK_GAP}). Aggregate {freq_a.value} "
+            f"to at least {_min_compatible_freq(freq_a, freq_b).value} first."
+        )
+    return False, None
+
+
+def tag_native_frequency(observations: List[Observation]) -> Dict[str, Any]:
+    """Tag a set of observations with their native frequency metadata."""
+    if not observations:
+        return {"frequency": Frequency.IRREGULAR.value, "n_obs": 0, "span_days": 0.0}
+
+    timestamps = [o.timestamp for o in observations]
+    freq = detect_frequency(timestamps)
+    dts = sorted(_parse_ts(t) for t in timestamps if _parse_ts(t) is not None)
+    span = 0.0
+    if len(dts) >= 2:
+        span = (dts[-1] - dts[0]).total_seconds() / 86400.0
+
+    return {
+        "frequency": freq.value,
+        "approx_days": freq.approx_days,
+        "n_obs": len(observations),
+        "span_days": round(span, 1),
+    }
+
+
+class AlignEngine:
+    """Aligns observations from multiple variables to a common temporal frequency."""
+
+    def __init__(self):
+        self._frequencies: Dict[str, Frequency] = {}
+
+    def detect_frequency(self, timestamps: List[str]) -> Frequency:
+        return detect_frequency(timestamps)
+
+    def register_variable(self, name: str, timestamps: List[str]) -> Frequency:
+        freq = detect_frequency(timestamps)
+        self._frequencies[name] = freq
+        return freq
+
+    def align_to_common(
+        self,
+        observations_by_variable: Dict[str, List[Observation]],
+        target_freq: Optional[Frequency] = None,
+        method: str = "mean",
+    ) -> Dict[str, List[Observation]]:
+        """Align all variable observation sets to a common frequency.
+
+        If target_freq is not provided, uses the coarsest (slowest) detected frequency.
+        """
+        if target_freq is None:
+            all_obs: List[Observation] = []
+            for obs_list in observations_by_variable.values():
+                all_obs.extend(obs_list)
+            timestamps = [o.timestamp for o in all_obs]
+            target_freq = detect_frequency(timestamps)
+            if target_freq == Frequency.IRREGULAR:
+                target_freq = Frequency.MONTHLY
+
+        aligned: Dict[str, List[Observation]] = {}
+        for var, obs_list in observations_by_variable.items():
+            if not obs_list:
+                aligned[var] = []
+                continue
+            native = detect_frequency([o.timestamp for o in obs_list])
+            if native == target_freq:
+                aligned[var] = list(obs_list)
+            else:
+                aligned[var] = resample(obs_list, target_freq, method)
+        return aligned
+
+    def block_incompatible(
+        self,
+        var_a: str,
+        var_b: str,
+    ) -> Tuple[bool, Optional[str]]:
+        freq_a = self._frequencies.get(var_a, Frequency.IRREGULAR)
+        freq_b = self._frequencies.get(var_b, Frequency.IRREGULAR)
+        return block_incompatible_fits(freq_a, freq_b)
+
+
+def _bucket_by_freq(
+    observations: List[Observation],
+    freq: Frequency,
+) -> Dict[str, List[Observation]]:
+    """Bucket observations by target frequency intervals."""
+    from collections import defaultdict
+
+    buckets: Dict[str, List[Observation]] = defaultdict(list)
+    for obs in observations:
+        dt = _parse_ts(obs.timestamp)
+        if dt is None:
+            continue
+        key = _bucket_key(dt, freq)
+        buckets[key].append(obs)
+    return dict(buckets)
+
+
+def _bucket_key(dt: datetime, freq: Frequency) -> str:
+    if freq == Frequency.DAILY:
+        return dt.strftime("%Y-%m-%d")
+    elif freq == Frequency.WEEKLY:
+        return dt.strftime("%Y-W%W")
+    elif freq == Frequency.MONTHLY:
+        return dt.strftime("%Y-%m")
+    elif freq == Frequency.QUARTERLY:
+        q = (dt.month - 1) // 3 + 1
+        return f"{dt.year}-Q{q}"
+    elif freq == Frequency.ANNUAL:
+        return dt.strftime("%Y")
+    return dt.strftime("%Y-%m-%d")
+
+
+def _aggregator(method: str) -> Callable[[List[float]], float]:
+    import statistics
+
+    if method == "sum":
+        return sum
+    elif method == "last":
+        return lambda vs: vs[-1] if vs else 0.0
+    elif method == "first":
+        return lambda vs: vs[0] if vs else 0.0
+    elif method == "median":
+        return lambda vs: statistics.median(vs) if vs else 0.0
+    else:
+        return lambda vs: statistics.mean(vs) if vs else 0.0
+
+
+def _min_compatible_freq(a: Frequency, b: Frequency) -> Frequency:
+    """Return the minimum frequency needed to align two frequencies."""
+    target_rank = max(a.rank, b.rank)
+    for f in Frequency:
+        if f.rank == target_rank:
+            return f
+    return Frequency.IRREGULAR
+
+
+def _parse_ts(val: str) -> Optional[datetime]:
+    if not val:
+        return None
+    try:
+        return datetime.fromisoformat(val.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        pass
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%m/%d/%Y", "%d/%m/%Y", "%Y-%m"):
+        try:
+            return datetime.strptime(val, fmt)
+        except (ValueError, TypeError):
+            continue
+    return None

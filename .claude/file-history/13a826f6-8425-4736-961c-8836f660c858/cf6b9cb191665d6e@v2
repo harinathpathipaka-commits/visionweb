@@ -1,0 +1,6 @@
+//! API key authentication.
+//!
+//! Reads `~/.ans/api_keys.json` at startup. Keys have scoped permissions
+//! (read-only, session-create, full-access). All Layer 1 endpoints
+//! (MCP, REST, WebSocket) go through this auth layer before any
+//! internal gRPC call is made.

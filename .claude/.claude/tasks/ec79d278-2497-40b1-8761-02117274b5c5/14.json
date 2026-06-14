@@ -1,0 +1,9 @@
+{
+  "id": "14",
+  "subject": "Phase 5: Ingestion Enhancement",
+  "description": "Fix null-observation bug in build_observations, add currency/percentage/number parsing ($1,234.56, 12.5%, 2.3M), auto-detect delimiter, add Excel support, deduplication",
+  "activeForm": "Enhancing ingestion pipeline",
+  "status": "completed",
+  "blocks": [],
+  "blockedBy": []
+}

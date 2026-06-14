@@ -1,0 +1,8 @@
+# Memory Index
+
+- [Implementation style](feedback_implementation_style.md) — Read-first, plan explicitly, surgical edits only. Validated after 4-fix session with zero regressions.
+- [SDK fixes status](project_sdk_fixes_done.md) — All 4 fixes (exploration floor, data resilience, trust UX, auto graduation) done and verified. Zero-config deferred.
+- [Master issue inventory](project_issues_master.md) — 30 issues cataloged from full 5-agent exploration (2026-05-20): 4 critical, 7 high, 11 medium, 3 low, 5 documentation discrepancies. Ready for prioritized fixing.
+- [Full architecture & codebase knowledge](project_full_architecture.md) — Complete understanding: 10-layer model, 200+ file map, data flows, key algorithms (scoring/policy/MCTS/trust), DB schema, caching architecture, degradation patterns, multi-tenant isolation, dual auth, all subsystems.
+- [ARCHITECTURE_V2 complete spec](architecture_v2_complete.md) — Definitive V2 implementation reference: gateway architecture, natural language tool enrichment, 3 modes, graduated trust, 3-layer DB with single atomic write, 3-layer outcome model with decision_id anchor, dual learning loops, 3-tier privacy, 6 safety features, 3-layer failure protection, biological analogy. The blueprint for the rebuild.
+- [V2 implementation migration plan](architecture_v2_migration.md) — What survives (~60%), gets deleted (10 MCP tools + 3 files), gets rewritten (4 files), gets created (~22 new files across 7 categories). 6 risks with mitigations. 8 unresolved gaps. Recommended implementation order. Pre-launch verification checklist.

@@ -1,0 +1,119 @@
+syntax = "proto3";
+
+package ingestion;
+
+service IngestionService {
+  rpc ProfileCsv (ProfileCsvRequest) returns (ProfileCsvResponse);
+  rpc BuildObservations (BuildObservationsRequest) returns (BuildObservationsResponse);
+  rpc Deduplicate (DeduplicateRequest) returns (DeduplicateResponse);
+  rpc CheckQuality (CheckQualityRequest) returns (CheckQualityResponse);
+  rpc AlignTemporal (AlignTemporalRequest) returns (AlignTemporalResponse);
+  rpc DetectDelimiter (DetectDelimiterRequest) returns (DetectDelimiterResponse);
+}
+
+// ── Profile ──
+
+message ProfileCsvRequest {
+  bytes file_bytes = 1;
+}
+
+message ColumnProfile {
+  string column_name = 1;
+  string inferred_type = 2;
+  double null_pct = 3;
+  double unique_pct = 4;
+  repeated string sample_values = 5;
+}
+
+message ProfileCsvResponse {
+  repeated ColumnProfile profiles = 1;
+}
+
+// ── Build ──
+
+message SchemaMapping {
+  string column_name = 1;
+  string variable = 2;
+  string unit = 3;
+  bool time_column = 4;
+  string entity_key = 5;
+}
+
+message BuildObservationsRequest {
+  bytes file_bytes = 1;
+  repeated SchemaMapping mappings = 2;
+  string delimiter = 3;
+}
+
+message ObservationDraft {
+  string variable = 1;
+  double value = 2;
+  string unit = 3;
+  string timestamp = 4;
+  string entity_id = 5;
+  uint32 row_index = 6;
+}
+
+message QualityIssue {
+  uint32 row_index = 1;
+  string column_name = 2;
+  string code = 3;
+  string severity = 4;
+  string message = 5;
+}
+
+message BuildObservationsResponse {
+  repeated ObservationDraft observations = 1;
+  repeated QualityIssue issues = 2;
+}
+
+// ── Deduplicate ──
+
+message DeduplicateRequest {
+  repeated ObservationDraft observations = 1;
+}
+
+message DeduplicateResponse {
+  repeated ObservationDraft unique = 1;
+  int32 removed_count = 2;
+}
+
+// ── Quality ──
+
+message QualityCheckRequest {
+  repeated ObservationDraft observations = 1;
+  double outlier_z_threshold = 2;
+  double min_value = 3;
+  double max_value = 4;
+}
+
+message QualityCheckResponse {
+  repeated QualityIssue issues = 1;
+  repeated ObservationDraft clean = 2;
+}
+
+// ── Temporal ──
+
+message AlignTemporalRequest {
+  repeated ObservationDraft observations = 1;
+  string target_frequency = 2; // daily, weekly, monthly, quarterly, annual
+  string method = 3;           // mean, sum, last, first
+}
+
+message AlignTemporalResponse {
+  repeated ObservationDraft aligned = 1;
+  string detected_frequency = 2;
+  int32 input_count = 3;
+  int32 output_count = 4;
+}
+
+// ── Delimiter ──
+
+message DetectDelimiterRequest {
+  bytes file_bytes = 1;
+}
+
+message DetectDelimiterResponse {
+  string delimiter = 1;
+  double confidence = 2;
+}

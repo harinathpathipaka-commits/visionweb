@@ -1,0 +1,10 @@
+//! Semantic block segmentation.
+//!
+//! Groups distilled elements into semantic regions: navigation,
+//! main content, forms, sidebars, footers, ads, cookie banners.
+//! Uses heuristics (position, tag, role, ARIA landmarks) — no ML in v1.
+
+/// Categorizes a region of the page into a semantic block type.
+pub fn classify_block(_tag: &str, _role: Option<&str>, _text_density: f32) -> &'static str {
+    "unknown"
+}

@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: equation-layer-api
+  labels:
+    app: equation-layer
+    component: api
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  selector:
+    app: equation-layer
+    component: api

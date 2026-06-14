@@ -1,0 +1,72 @@
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
+
+@dataclass(frozen=True)
+class ConnectorCredentials:
+    host: str
+    port: int
+    database: str
+    username: str
+    password: str
+    extra: Dict[str, str] = None
+
+    def __post_init__(self):
+        if self.extra is None:
+            object.__setattr__(self, "extra", {})
+
+
+@dataclass(frozen=True)
+class TableSchema:
+    name: str
+    columns: List[Dict[str, Any]]
+    row_count_estimate: int
+
+
+@dataclass(frozen=True)
+class FetchResult:
+    table: str
+    columns: List[str]
+    rows: List[Dict[str, Any]]
+    cursor: Optional[str]
+
+
+class BaseConnector(ABC):
+    """Abstract connector for external data sources."""
+
+    def __init__(self, credentials: ConnectorCredentials):
+        self.credentials = credentials
+        self._connected = False
+
+    @abstractmethod
+    def connect(self) -> None: ...
+
+    @abstractmethod
+    def disconnect(self) -> None: ...
+
+    @abstractmethod
+    def introspect(self) -> List[TableSchema]: ...
+
+    @abstractmethod
+    def fetch(
+        self,
+        table: str,
+        columns: List[str],
+        since: Optional[str] = None,
+        cursor: Optional[str] = None,
+        limit: int = 10000,
+    ) -> FetchResult: ...
+
+    @property
+    def connected(self) -> bool:
+        return self._connected
+
+    def __enter__(self):
+        self.connect()
+        return self
+
+    def __exit__(self, *args):
+        self.disconnect()

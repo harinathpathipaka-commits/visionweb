@@ -1,0 +1,8 @@
+{
+  "id": "11",
+  "subject": "Phase 1.5 — Fail-Open Layer",
+  "description": "Create fail-open.ts — 3-layer failure protection: local disk queue on async fail, circuit breaker for upstreams, degrade to zero footprint.",
+  "status": "completed",
+  "blocks": [],
+  "blockedBy": []
+}

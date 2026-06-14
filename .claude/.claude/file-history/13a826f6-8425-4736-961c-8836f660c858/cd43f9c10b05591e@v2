@@ -1,0 +1,38 @@
+//! Thread-safe goal state store.
+//!
+//! Wraps `Arc<RwLock<HashMap<Uuid, GoalState>>>` with broadcast
+//! notifications on every state mutation. All sessions working on
+//! the same goal share this store.
+
+use ans_core::goal::GoalState;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+use uuid::Uuid;
+
+/// Shared goal state store. Cheap to clone (Arc).
+pub struct GoalStateStore {
+    inner: Arc<RwLock<HashMap<Uuid, GoalState>>>,
+}
+
+impl GoalStateStore {
+    /// Create an empty goal store.
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+}
+
+impl Default for GoalStateStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Clone for GoalStateStore {
+    fn clone(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
+        }
+    }
+}

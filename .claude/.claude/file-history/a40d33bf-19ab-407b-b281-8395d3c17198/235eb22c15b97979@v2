@@ -1,0 +1,110 @@
+# ── Stage 1: Rust Build ───────────────────────────────────────────
+FROM rust:1.85-slim-bookworm AS rust-builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    protobuf-compiler pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Cargo manifests first (cache layer)
+COPY Cargo.toml Cargo.lock ./
+COPY crates/ans-proto/Cargo.toml crates/ans-proto/
+COPY crates/ans-core/Cargo.toml crates/ans-core/
+COPY crates/ans-cdp/Cargo.toml crates/ans-cdp/
+COPY crates/ans-daemon/Cargo.toml crates/ans-daemon/
+COPY crates/ans-distill/Cargo.toml crates/ans-distill/
+COPY crates/ans-diff/Cargo.toml crates/ans-diff/
+COPY crates/ans-immune/Cargo.toml crates/ans-immune/
+COPY crates/ans-goal/Cargo.toml crates/ans-goal/
+COPY crates/ans-signal/Cargo.toml crates/ans-signal/
+COPY crates/ans-ipc/Cargo.toml crates/ans-ipc/
+COPY crates/ans-storage/Cargo.toml crates/ans-storage/
+COPY crates/ans-budget/Cargo.toml crates/ans-budget/
+COPY crates/ans-bench/Cargo.toml crates/ans-bench/
+COPY crates/ans-gateway/Cargo.toml crates/ans-gateway/
+COPY crates/ans-stealth/Cargo.toml crates/ans-stealth/
+
+# Dummy source stubs for dep resolution
+RUN mkdir -p $(find crates -mindepth 1 -maxdepth 1 -type d | while read d; do echo "$d/src"; done) \
+    && for d in crates/ans-*/src; do echo 'fn main() {}' > "$d/lib.rs"; done \
+    && echo 'fn main() {}' > crates/ans-daemon/src/main.rs \
+    && echo 'fn main() {}' > crates/ans-proto/build.rs
+
+RUN cargo build --release 2>/dev/null || true
+
+# Real source
+COPY crates/ crates/
+COPY proto/ proto/
+COPY static/ static/
+
+RUN touch crates/ans-*/src/*.rs && cargo build --release -p ans-daemon
+
+# ── Stage 2: Python Deps ──────────────────────────────────────────
+FROM python:3.12-slim-bookworm AS python-builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    protobuf-compiler libprotobuf-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY nerves/pyproject.toml .
+
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir \
+    grpcio>=1.60 \
+    grpcio-tools>=1.60 \
+    pyarrow>=15 \
+    pydantic>=2 \
+    httpx>=0.26 \
+    tenacity>=8 \
+    structlog>=24 \
+    numpy>=1.26 \
+    openai>=1.60 \
+    lancedb>=0.17
+
+# ── Stage 3: Runtime ──────────────────────────────────────────────
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium chromium-sandbox ca-certificates libssl3 curl \
+    python3 python3-pip python3-venv \
+    libprotobuf32 \
+    fonts-noto-color-emoji \
+    && rm -rf /var/lib/apt/lists/*
+
+# Non-root user
+RUN useradd --create-home --shell /bin/bash ans \
+    && mkdir -p /app /data /home/ans/.ans /home/ans/.ans/rules \
+    && chown -R ans:ans /app /data /home/ans/.ans
+
+# Rust binary
+COPY --from=rust-builder /build/target/release/ans-daemon /usr/local/bin/ans-daemon
+
+# Python packages
+COPY --from=python-builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/dist-packages
+
+# Nerves code
+COPY --chown=ans:ans nerves/ /app/nerves/
+
+# Runtime config
+COPY --chown=ans:ans ans.toml /app/ans.toml
+COPY --chown=ans:ans docker/config/api_keys.json /home/ans/.ans/api_keys.json
+
+ENV CHROME_BIN=/usr/bin/chromium \
+    CHROME_FLAGS="--headless --no-sandbox --disable-gpu --disable-dev-shm-usage" \
+    PYTHONPATH=/app/nerves \
+    PYTHONUNBUFFERED=1 \
+    ANS_GRPC_HOST=127.0.0.1 \
+    ANS_GRPC_PORT=50051
+
+USER ans
+WORKDIR /app
+
+EXPOSE 50051 50052
+
+HEALTHCHECK --interval=15s --timeout=3s --retries=3 \
+    CMD curl -sf http://localhost:50052/api/v1/health || exit 1
+
+ENTRYPOINT ["ans-daemon"]
+CMD ["--grpc-port", "50051", "--gateway-port", "50052", "--nerves-dir", "/app/nerves", "--prewarm", "2"]

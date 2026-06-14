@@ -1,0 +1,50 @@
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
+
+#[cfg(feature = "python")]
+mod parser;
+#[cfg(feature = "python")]
+mod schema;
+#[cfg(feature = "python")]
+mod dedup;
+#[cfg(feature = "python")]
+mod quality;
+#[cfg(feature = "python")]
+mod temporal;
+
+#[cfg(feature = "python")]
+fn _parse_csv_py(data: Vec<u8>) -> PyResult<(Vec<String>, Vec<Vec<String>>)> {
+    let (delim, _) = parser::detect_delimiter(&data);
+    parser::parse_csv(&data, delim)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))
+}
+
+#[cfg(feature = "python")]
+fn _detect_delimiter_py(data: Vec<u8>) -> PyResult<String> {
+    let (delim, _) = parser::detect_delimiter(&data);
+    if delim == b'\t' {
+        Ok("\\t".to_string())
+    } else {
+        Ok((delim as char).to_string())
+    }
+}
+
+#[cfg(feature = "python")]
+fn _parse_number_py(value: &str) -> Option<f64> {
+    schema::parse_number(value)
+}
+
+#[cfg(feature = "python")]
+fn _parse_date_py(value: &str) -> Option<String> {
+    schema::parse_date(value)
+}
+
+#[cfg(feature = "python")]
+#[pymodule]
+fn ingestion_grpc(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(_parse_csv_py, m)?)?;
+    m.add_function(wrap_pyfunction!(_detect_delimiter_py, m)?)?;
+    m.add_function(wrap_pyfunction!(_parse_number_py, m)?)?;
+    m.add_function(wrap_pyfunction!(_parse_date_py, m)?)?;
+    Ok(())
+}

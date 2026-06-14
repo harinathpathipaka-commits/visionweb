@@ -1,0 +1,4 @@
+# Memory Index
+
+- [Implementation style](feedback_implementation_style.md) — Read-first, plan explicitly, surgical edits only. Validated after 4-fix session with zero regressions.
+- [SDK fixes status](project_sdk_fixes_done.md) — All 4 fixes (exploration floor, data resilience, trust UX, auto graduation) done and verified. Zero-config deferred.

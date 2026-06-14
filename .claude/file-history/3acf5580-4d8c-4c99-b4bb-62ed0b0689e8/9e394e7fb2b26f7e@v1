@@ -1,0 +1,60 @@
+/**
+ * LayerInfinite MCP Server — enrichment/format-recommend.ts
+ * ══════════════════════════════════════════════════════════════
+ * Recommend-mode description formatting. Informational only —
+ * provides historical success data with no directional guidance.
+ * ══════════════════════════════════════════════════════════════
+ */
+
+import type { ScoredAction } from '../types.js';
+
+/**
+ * Format a tool description for Recommend mode.
+ * Adds historical context as natural language — purely informational.
+ */
+export function formatRecommendEnrichment(
+  description: string,
+  toolName: string,
+  taskType: string,
+  score: ScoredAction | null,
+  rank: number | null,
+): string {
+  const base = description;
+
+  // No historical data
+  if (!score || score.sampleSize < 1) {
+    return base;
+  }
+
+  const { successRate, sampleSize, trendLabel } = score;
+  const parts = [base, '', `Historically for "${taskType}" tasks:`];
+
+  if (sampleSize < 3) {
+    parts.push(`${toolName} has been used ${sampleSize} time${sampleSize === 1 ? '' : 's'} (insufficient data for a reliable recommendation).`);
+  } else if (sampleSize < 10) {
+    parts.push(`${toolName} has a ${successRate}% success rate (limited data: ${sampleSize} outcomes).`);
+    if (trendLabel) parts.push(formatTrend(trendLabel));
+  } else {
+    parts.push(`${toolName} has a ${successRate}% success rate across ${sampleSize} executions.`);
+    if (trendLabel) parts.push(formatTrend(trendLabel));
+  }
+
+  if (rank) {
+    parts.push(`This is the #${rank} recommended tool for this task.`);
+  }
+
+  return parts.filter(Boolean).join('\n');
+}
+
+function formatTrend(trendLabel: string): string {
+  switch (trendLabel) {
+    case 'strongly_improving': return 'Success rate is improving significantly.';
+    case 'improving': return 'Success rate has been improving.';
+    case 'slightly_improving': return 'Success rate shows a slight positive trend.';
+    case 'stable': return 'Success rate is stable.';
+    case 'slightly_declining': return 'Success rate shows a slight decline.';
+    case 'declining': return 'Success rate has been declining.';
+    case 'sharply_declining': return 'Success rate is declining significantly.';
+    default: return '';
+  }
+}

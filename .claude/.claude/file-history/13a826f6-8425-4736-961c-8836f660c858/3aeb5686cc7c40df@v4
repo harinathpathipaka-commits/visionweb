@@ -1,0 +1,19 @@
+[package]
+name = "ans-storage"
+version.workspace = true
+edition.workspace = true
+description = "LanceDB wrapper — DecisionRecord CRUD, vector search, goal state persistence"
+
+[dependencies]
+ans-proto.workspace = true
+ans-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+arrow.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,21 @@
+import asyncio, json
+from ans_nerves.llm.client import get_llm_client
+from ans_nerves.llm.prompts import DECOMPOSER_SYSTEM, DECOMPOSER_JSON_SCHEMA
+
+async def main():
+    c = get_llm_client()
+    r = await c.complete_structured(
+        system_prompt=DECOMPOSER_SYSTEM,
+        user_prompt="Goal: Analyze browser-use repo at github.com/browser-use/browser-use",
+        json_schema=DECOMPOSER_JSON_SCHEMA,
+        max_tokens=4096,
+    )
+    print("LEN:", len(r.content))
+    print("FULL RAW:", repr(r.content[:2000]))
+    try:
+        j = json.loads(r.content)
+        print("PARSE OK, sub_goals:", len(j.get("sub_goals", [])))
+    except json.JSONDecodeError as e:
+        print("PARSE FAIL:", e)
+
+asyncio.run(main())

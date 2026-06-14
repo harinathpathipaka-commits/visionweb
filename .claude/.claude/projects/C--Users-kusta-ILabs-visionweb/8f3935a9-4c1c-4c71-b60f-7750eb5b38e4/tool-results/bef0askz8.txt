@@ -1,0 +1,970 @@
+   Compiling ans-proto v0.1.0 (C:\Users\kusta\ILabs\visionweb\crates\ans-proto)
+    Checking ans-stealth v0.1.0 (C:\Users\kusta\ILabs\visionweb\crates\ans-stealth)
+warning: unnecessary hashes around raw string literal
+  --> crates\ans-stealth\src\patches.rs:70:5
+   |
+70 | /     r#"
+71 | | (function() {
+72 | |     var results = {};
+73 | |     try {
+...  |
+96 | | })()
+97 | | "#
+   | |__^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+   = note: `-W clippy::needless-raw-string-hashes` implied by `-W clippy::pedantic`
+   = help: to override `-W clippy::pedantic` add `#[allow(clippy::needless_raw_string_hashes)]`
+help: remove all the hashes around the string literal
+   |
+70 ~     r"
+71 | (function() {
+...
+96 | })()
+97 ~ "
+   |
+
+warning: unnecessary hashes around raw string literal
+   --> crates\ans-stealth\src\patches.rs:104:5
+    |
+104 | /     r#"
+105 | | (function() {
+106 | |     if (navigator.webdriver === undefined) return;
+107 | |     Object.defineProperty(Object.getPrototypeOf(navigator), 'webdriver', {
+...   |
+113 | | })();
+114 | | "#
+    | |__^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+104 ~     r"
+105 | (function() {
+...
+113 | })();
+114 ~ "
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> crates\ans-stealth\src\patches.rs:119:5
+    |
+119 | /     r#"
+120 | | (function() {
+121 | |     if (typeof window.chrome !== 'undefined' && window.chrome && window.chrome.runtime) return;
+122 | |     var c = window.chrome || {};
+...   |
+144 | | })();
+145 | | "#
+    | |__^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+119 ~     r"
+120 | (function() {
+...
+144 | })();
+145 ~ "
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> crates\ans-stealth\src\patches.rs:150:5
+    |
+150 | /     r#"
+151 | | (function() {
+152 | |     var pluginData = [
+153 | |         { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format', mimeTypes: [{ type...
+...   |
+213 | | })();
+214 | | "#
+    | |__^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+150 ~     r"
+151 | (function() {
+...
+213 | })();
+214 ~ "
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> crates\ans-stealth\src\patches.rs:219:5
+    |
+219 | /     r#"
+220 | | (function() {
+221 | |     Object.defineProperty(navigator, 'languages', {
+222 | |         get: function() { return ['en-US', 'en']; },
+...   |
+231 | | })();
+232 | | "#
+    | |__^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+219 ~     r"
+220 | (function() {
+...
+231 | })();
+232 ~ "
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> crates\ans-stealth\src\patches.rs:237:5
+    |
+237 | /     r#"
+238 | | (function() {
+239 | |     var frame = 100;
+240 | |     var toolbar = 40;
+...   |
+261 | | })();
+262 | | "#
+    | |__^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+237 ~     r"
+238 | (function() {
+...
+261 | })();
+262 ~ "
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> crates\ans-stealth\src\patches.rs:267:5
+    |
+267 | /     r#"
+268 | | (function() {
+269 | |     Object.defineProperty(navigator, 'hardwareConcurrency', {
+270 | |         get: function() { return 8; },
+...   |
+274 | | })();
+275 | | "#
+    | |__^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+267 ~     r"
+268 | (function() {
+...
+274 | })();
+275 ~ "
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> crates\ans-stealth\src\patches.rs:280:5
+    |
+280 | /     r#"
+281 | | (function() {
+282 | |     Object.defineProperty(navigator, 'deviceMemory', {
+283 | |         get: function() { return 8; },
+...   |
+287 | | })();
+288 | | "#
+    | |__^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+280 ~     r"
+281 | (function() {
+...
+287 | })();
+288 ~ "
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> crates\ans-stealth\src\patches.rs:293:5
+    |
+293 | /     r#"
+294 | | (function() {
+295 | |     var Notification = window.Notification || {};
+296 | |     var perm = 'default';
+...   |
+310 | | })();
+311 | | "#
+    | |__^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+293 ~     r"
+294 | (function() {
+...
+310 | })();
+311 ~ "
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> crates\ans-stealth\src\patches.rs:316:5
+    |
+316 | /     r#"
+317 | | (function() {
+318 | |     var origQuery = window.navigator.permissions.query;
+319 | |     if (!origQuery) return;
+...   |
+332 | | })();
+333 | | "#
+    | |__^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+316 ~     r"
+317 | (function() {
+...
+332 | })();
+333 ~ "
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> crates\ans-stealth\src\patches.rs:341:9
+    |
+341 | /         r#"
+342 | | (function() {{
+343 | |     var vendorStr = '{vendor}';
+344 | |     var rendererStr = '{renderer}';
+...   |
+373 | | }})();
+374 | | "#
+    | |__^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+341 ~         r"
+342 | (function() {{
+...
+373 | }})();
+374 ~ "
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> crates\ans-stealth\src\patches.rs:379:5
+    |
+379 | /     r#"
+380 | | (function() {
+381 | |     if (!navigator.mediaDevices) {
+382 | |         navigator.mediaDevices = {};
+...   |
+393 | | })();
+394 | | "#
+    | |__^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+379 ~     r"
+380 | (function() {
+...
+393 | })();
+394 ~ "
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> crates\ans-stealth\src\patches.rs:399:5
+    |
+399 | /     r#"
+400 | | (function() {
+401 | |     var origGet = Date.prototype.getTimezoneOffset;
+402 | |     Date.prototype.getTimezoneOffset = function() {
+...   |
+405 | | })();
+406 | | "#
+    | |__^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+399 ~     r"
+400 | (function() {
+...
+405 | })();
+406 ~ "
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> crates\ans-stealth\src\patches.rs:411:5
+    |
+411 | /     r#"
+412 | | (function() {
+413 | |     var origResolved = Intl.DateTimeFormat.prototype.resolvedOptions;
+414 | |     Intl.DateTimeFormat.prototype.resolvedOptions = function() {
+...   |
+419 | | })();
+420 | | "#
+    | |__^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+411 ~     r"
+412 | (function() {
+...
+419 | })();
+420 ~ "
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> crates\ans-stealth\src\patches.rs:425:5
+    |
+425 | /     r#"
+426 | | (function() {
+427 | |     var origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+428 | |     HTMLCanvasElement.prototype.toDataURL = function() {
+...   |
+463 | | })();
+464 | | "#
+    | |__^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+425 ~     r"
+426 | (function() {
+...
+463 | })();
+464 ~ "
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> crates\ans-stealth\src\patches.rs:469:5
+    |
+469 | /     r#"
+470 | | (function() {
+471 | |     if (!window.AudioContext && !window.webkitAudioContext) return;
+472 | |     var Context = window.AudioContext || window.webkitAudioContext;
+...   |
+514 | | })();
+515 | | "#
+    | |__^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+469 ~     r"
+470 | (function() {
+...
+514 | })();
+515 ~ "
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> crates\ans-stealth\src\patches.rs:520:5
+    |
+520 | /     r#"
+521 | | (function() {
+522 | |     if (typeof window.queryLocalFonts === 'function') {
+523 | |         window.queryLocalFonts = function() {
+...   |
+535 | | })();
+536 | | "#
+    | |__^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+520 ~     r"
+521 | (function() {
+...
+535 | })();
+536 ~ "
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> crates\ans-stealth\src\patches.rs:542:9
+    |
+542 | /         r#"
+543 | | (function() {{
+544 | |     var w = {width};
+545 | |     var h = {height};
+...   |
+569 | | }})();
+570 | | "#,
+    | |__^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+542 ~         r"
+543 | (function() {{
+...
+569 | }})();
+570 ~ ",
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> crates\ans-stealth\src\patches.rs:578:5
+    |
+578 | /     r#"
+579 | | (function() {
+580 | |     if (navigator.getBattery) {
+581 | |         navigator.getBattery = function() {
+...   |
+594 | | })();
+595 | | "#
+    | |__^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+578 ~     r"
+579 | (function() {
+...
+594 | })();
+595 ~ "
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> crates\ans-stealth\src\patches.rs:600:5
+    |
+600 | /     r#"
+601 | | (function() {
+602 | |     if (navigator.connection) {
+603 | |         Object.defineProperty(navigator.connection, 'rtt', {
+...   |
+624 | | })();
+625 | | "#
+    | |__^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+600 ~     r"
+601 | (function() {
+...
+624 | })();
+625 ~ "
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> crates\ans-stealth\src\patches.rs:630:5
+    |
+630 | /     r#"
+631 | | (function() {
+632 | |     var origStack = Error.stackTraceLimit;
+633 | |     var origPrepare = Error.prepareStackTrace;
+...   |
+646 | | })();
+647 | | "#
+    | |__^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+630 ~     r"
+631 | (function() {
+...
+646 | })();
+647 ~ "
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> crates\ans-stealth\src\patches.rs:652:5
+    |
+652 | /     r#"
+653 | | (function() {
+654 | |     if (window.performance && performance.timing) {
+655 | |         Object.defineProperty(performance.timing, 'domContentLoadedEventStart', {
+...   |
+666 | | })();
+667 | | "#
+    | |__^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+652 ~     r"
+653 | (function() {
+...
+666 | })();
+667 ~ "
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> crates\ans-stealth\src\patches.rs:675:9
+    |
+675 | /         r#"
+676 | | (function() {{
+677 | |     var plat = '{platform}';
+678 | |     Object.defineProperty(navigator, 'platform', {{
+...   |
+693 | | }})();
+694 | | "#
+    | |__^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+675 ~         r"
+676 | (function() {{
+...
+693 | }})();
+694 ~ "
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> crates\ans-stealth\src\patches.rs:699:5
+    |
+699 | /     r#"
+700 | | (function() {
+701 | |     if (window.Sensor && window.AmbientLightSensor) {
+702 | |         window.AmbientLightSensor = undefined;
+...   |
+713 | | })();
+714 | | "#
+    | |__^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+699 ~     r"
+700 | (function() {
+...
+713 | })();
+714 ~ "
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> crates\ans-stealth\src\patches.rs:719:5
+    |
+719 | /     r#"
+720 | | (function() {
+721 | |     if (navigator.keyboard) {
+722 | |         Object.defineProperty(navigator.keyboard, 'getLayoutMap', {
+...   |
+734 | | })();
+735 | | "#
+    | |__^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+719 ~     r"
+720 | (function() {
+...
+734 | })();
+735 ~ "
+    |
+
+warning: unnecessary hashes around raw string literal
+   --> crates\ans-stealth\src\patches.rs:740:5
+    |
+740 | /     r#"
+741 | | (function() {
+742 | |     if (navigator.getInstalledRelatedApps) {
+743 | |         navigator.getInstalledRelatedApps = function() {
+...   |
+747 | | })();
+748 | | "#
+    | |__^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+help: remove all the hashes around the string literal
+    |
+740 ~     r"
+741 | (function() {
+...
+747 | })();
+748 ~ "
+    |
+
+warning: hypotenuse can be computed more accurately
+  --> crates\ans-stealth\src\humanize.rs:20:16
+   |
+20 |     let dist = (dx * dx + dy * dy).sqrt();
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider using: `dx.hypot(dy)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#imprecise_flops
+   = note: `-W clippy::imprecise-flops` implied by `-W clippy::nursery`
+   = help: to override `-W clippy::nursery` add `#[allow(clippy::imprecise_flops)]`
+
+warning: multiply and add expressions can be calculated more efficiently and accurately
+  --> crates\ans-stealth\src\humanize.rs:35:16
+   |
+35 |     let cp1 = (from.0 + dx * 0.33 + wobble_x, from.1 + dy * 0.33 + wobble_y);
+   |                ^^^^^^^^^^^^^^^^^^ help: consider using: `dx.mul_add(0.33, from.0)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#suboptimal_flops
+   = note: `-W clippy::suboptimal-flops` implied by `-W clippy::nursery`
+   = help: to override `-W clippy::nursery` add `#[allow(clippy::suboptimal_flops)]`
+
+warning: multiply and add expressions can be calculated more efficiently and accurately
+  --> crates\ans-stealth\src\humanize.rs:35:47
+   |
+35 |     let cp1 = (from.0 + dx * 0.33 + wobble_x, from.1 + dy * 0.33 + wobble_y);
+   |                                               ^^^^^^^^^^^^^^^^^^ help: consider using: `dy.mul_add(0.33, from.1)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#suboptimal_flops
+
+warning: multiply and add expressions can be calculated more efficiently and accurately
+  --> crates\ans-stealth\src\humanize.rs:36:16
+   |
+36 |     let cp2 = (from.0 + dx * 0.66 - wobble_x, from.1 + dy * 0.66 - wobble_y);
+   |                ^^^^^^^^^^^^^^^^^^ help: consider using: `dx.mul_add(0.66, from.0)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#suboptimal_flops
+
+warning: multiply and add expressions can be calculated more efficiently and accurately
+  --> crates\ans-stealth\src\humanize.rs:36:47
+   |
+36 |     let cp2 = (from.0 + dx * 0.66 - wobble_x, from.1 + dy * 0.66 - wobble_y);
+   |                                               ^^^^^^^^^^^^^^^^^^ help: consider using: `dy.mul_add(0.66, from.1)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#suboptimal_flops
+
+warning: multiply and add expressions can be calculated more efficiently and accurately
+  --> crates\ans-stealth\src\humanize.rs:47:17
+   |
+47 |           let x = mt * mt * mt * from.0
+   |  _________________^
+48 | |             + 3.0 * mt * mt * t * cp1.0
+49 | |             + 3.0 * mt * t * t * cp2.0
+50 | |             + t * t * t * to.0;
+   | |______________________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#suboptimal_flops
+help: consider using
+   |
+47 ~         let x = (t * t * t).mul_add(to.0, mt * mt * mt * from.0
+48 ~             + 3.0 * mt * mt * t * cp1.0 + 3.0 * mt * t * t * cp2.0);
+   |
+
+warning: multiply and add expressions can be calculated more efficiently and accurately
+  --> crates\ans-stealth\src\humanize.rs:47:17
+   |
+47 |           let x = mt * mt * mt * from.0
+   |  _________________^
+48 | |             + 3.0 * mt * mt * t * cp1.0
+49 | |             + 3.0 * mt * t * t * cp2.0
+   | |______________________________________^ help: consider using: `(3.0 * mt * t * t).mul_add(cp2.0, mt * mt * mt * from.0 + 3.0 * mt * mt * t * cp1.0)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#suboptimal_flops
+
+warning: multiply and add expressions can be calculated more efficiently and accurately
+  --> crates\ans-stealth\src\humanize.rs:47:17
+   |
+47 |           let x = mt * mt * mt * from.0
+   |  _________________^
+48 | |             + 3.0 * mt * mt * t * cp1.0
+   | |_______________________________________^ help: consider using: `(mt * mt * mt).mul_add(from.0, 3.0 * mt * mt * t * cp1.0)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#suboptimal_flops
+
+warning: multiply and add expressions can be calculated more efficiently and accurately
+  --> crates\ans-stealth\src\humanize.rs:51:17
+   |
+51 |           let y = mt * mt * mt * from.1
+   |  _________________^
+52 | |             + 3.0 * mt * mt * t * cp1.1
+53 | |             + 3.0 * mt * t * t * cp2.1
+54 | |             + t * t * t * to.1;
+   | |______________________________^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#suboptimal_flops
+help: consider using
+   |
+51 ~         let y = (t * t * t).mul_add(to.1, mt * mt * mt * from.1
+52 ~             + 3.0 * mt * mt * t * cp1.1 + 3.0 * mt * t * t * cp2.1);
+   |
+
+warning: multiply and add expressions can be calculated more efficiently and accurately
+  --> crates\ans-stealth\src\humanize.rs:51:17
+   |
+51 |           let y = mt * mt * mt * from.1
+   |  _________________^
+52 | |             + 3.0 * mt * mt * t * cp1.1
+53 | |             + 3.0 * mt * t * t * cp2.1
+   | |______________________________________^ help: consider using: `(3.0 * mt * t * t).mul_add(cp2.1, mt * mt * mt * from.1 + 3.0 * mt * mt * t * cp1.1)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#suboptimal_flops
+
+warning: multiply and add expressions can be calculated more efficiently and accurately
+  --> crates\ans-stealth\src\humanize.rs:51:17
+   |
+51 |           let y = mt * mt * mt * from.1
+   |  _________________^
+52 | |             + 3.0 * mt * mt * t * cp1.1
+   | |_______________________________________^ help: consider using: `(mt * mt * mt).mul_add(from.1, 3.0 * mt * mt * t * cp1.1)`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#suboptimal_flops
+
+warning: initializer for `thread_local` value can be made `const`
+   --> crates\ans-stealth\src\humanize.rs:110:35
+    |
+110 |         static STATE: Cell<u64> = Cell::new(0xDEAD_BEEF_CAFE_BABE);
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with: `const { Cell::new(0xDEAD_BEEF_CAFE_BABE) }`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#missing_const_for_thread_local
+    = note: `-W clippy::missing-const-for-thread-local` implied by `-W clippy::all`
+    = help: to override `-W clippy::all` add `#[allow(clippy::missing_const_for_thread_local)]`
+
+warning: multiply and add expressions can be calculated more efficiently and accurately
+   --> crates\ans-stealth\src\humanize.rs:124:5
+    |
+124 |     min + fast_random() * (max - min)
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider using: `fast_random().mul_add(max - min, min)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#suboptimal_flops
+
+warning: adding items after statements is confusing, since items exist from the start of the scope
+   --> crates\ans-stealth\src\profiles.rs:114:5
+    |
+114 |     use std::time::{SystemTime, UNIX_EPOCH};
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#items_after_statements
+    = note: `-W clippy::items-after-statements` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::items_after_statements)]`
+
+warning: adding items after statements is confusing, since items exist from the start of the scope
+   --> crates\ans-stealth\src\profiles.rs:114:21
+    |
+114 |     use std::time::{SystemTime, UNIX_EPOCH};
+    |                     ^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#items_after_statements
+
+warning: adding items after statements is confusing, since items exist from the start of the scope
+   --> crates\ans-stealth\src\profiles.rs:114:33
+    |
+114 |     use std::time::{SystemTime, UNIX_EPOCH};
+    |                                 ^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#items_after_statements
+
+warning: called `map(<f>).unwrap_or(<a>)` on a `Result` value
+   --> crates\ans-stealth\src\profiles.rs:115:17
+    |
+115 |       let nanos = SystemTime::now()
+    |  _________________^
+116 | |         .duration_since(UNIX_EPOCH)
+117 | |         .map(|d| d.as_nanos())
+118 | |         .unwrap_or(0);
+    | |_____________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#map_unwrap_or
+    = note: `-W clippy::map-unwrap-or` implied by `-W clippy::pedantic`
+    = help: to override `-W clippy::pedantic` add `#[allow(clippy::map_unwrap_or)]`
+help: use `map_or(<a>, <f>)` instead
+    |
+117 -         .map(|d| d.as_nanos())
+118 -         .unwrap_or(0);
+117 +         .map_or(0, |d| d.as_nanos());
+    |
+
+warning: `ans-stealth` (lib) generated 43 warnings (run `cargo clippy --fix --lib -p ans-stealth -- ` to apply 40 suggestions)
+warning: used `expect()` on an `Option` value
+   --> crates\ans-stealth\src\humanize.rs:144:20
+    |
+144 |         let last = path.last().expect("bezier_path always returns at least one point");
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: if this value is `None`, it will panic
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#expect_used
+    = note: requested on the command line with `-W clippy::expect-used`
+
+warning: hypotenuse can be computed more accurately
+   --> crates\ans-stealth\src\humanize.rs:156:31
+    |
+156 |             let dist_before = (prev.0 * prev.0 + prev.1 * prev.1).sqrt();
+    |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider using: `prev.0.hypot(prev.1)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#imprecise_flops
+
+warning: hypotenuse can be computed more accurately
+   --> crates\ans-stealth\src\humanize.rs:157:30
+    |
+157 |             let dist_after = (curr.0 * curr.0 + curr.1 * curr.1).sqrt();
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider using: `curr.0.hypot(curr.1)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#imprecise_flops
+
+warning: used `expect()` on a `Result` value
+   --> crates\ans-stealth\src\profiles.rs:169:20
+    |
+169 |         let json = serde_json::to_string(&p).expect("FingerprintProfile serialization is infallible");
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: if this value is an `Err`, it will panic
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#expect_used
+
+warning: used `expect()` on a `Result` value
+   --> crates\ans-stealth\src\profiles.rs:170:38
+    |
+170 |         let p2: FingerprintProfile = serde_json::from_str(&json).expect("FingerprintProfile deserialization is infallible");
+    |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: if this value is an `Err`, it will panic
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#expect_used
+
+warning: `ans-stealth` (lib test) generated 48 warnings (43 duplicates) (run `cargo clippy --fix --lib -p ans-stealth --tests -- ` to apply 2 suggestions)
+    Checking ans-core v0.1.0 (C:\Users\kusta\ILabs\visionweb\crates\ans-core)
+    Checking ans-distill v0.1.0 (C:\Users\kusta\ILabs\visionweb\crates\ans-distill)
+    Checking ans-diff v0.1.0 (C:\Users\kusta\ILabs\visionweb\crates\ans-diff)
+    Checking ans-immune v0.1.0 (C:\Users\kusta\ILabs\visionweb\crates\ans-immune)
+    Checking ans-budget v0.1.0 (C:\Users\kusta\ILabs\visionweb\crates\ans-budget)
+    Checking ans-signal v0.1.0 (C:\Users\kusta\ILabs\visionweb\crates\ans-signal)
+    Checking ans-storage v0.1.0 (C:\Users\kusta\ILabs\visionweb\crates\ans-storage)
+    Checking ans-goal v0.1.0 (C:\Users\kusta\ILabs\visionweb\crates\ans-goal)
+    Checking ans-gateway v0.1.0 (C:\Users\kusta\ILabs\visionweb\crates\ans-gateway)
+    Checking ans-cdp v0.1.0 (C:\Users\kusta\ILabs\visionweb\crates\ans-cdp)
+    Checking ans-bench v0.1.0 (C:\Users\kusta\ILabs\visionweb\crates\ans-bench)
+warning: redundant clone
+   --> crates\ans-gateway\src\lib.rs:216:36
+    |
+216 |                     let rest = rest.clone();
+    |                                    ^^^^^^^^ help: remove this
+    |
+note: this value is dropped without further use
+   --> crates\ans-gateway\src\lib.rs:216:32
+    |
+216 |                     let rest = rest.clone();
+    |                                ^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#redundant_clone
+    = note: `-W clippy::redundant-clone` implied by `-W clippy::nursery`
+    = help: to override `-W clippy::nursery` add `#[allow(clippy::redundant_clone)]`
+
+warning: used `expect()` on a `Result` value
+   --> crates\ans-gateway\src\lib.rs:107:25
+    |
+107 | /                         axum::response::Response::builder()
+108 | |                             .status(axum::http::StatusCode::UNAUTHORIZED)
+109 | |                             .body(axum::body::Body::from(body))
+110 | |                             .expect("building a 401 response is infallible")
+    | |____________________________________________________________________________^
+    |
+    = note: if this value is an `Err`, it will panic
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#expect_used
+    = note: requested on the command line with `-W clippy::expect-used`
+
+warning: `ans-gateway` (lib) generated 2 warnings (run `cargo clippy --fix --lib -p ans-gateway -- ` to apply 1 suggestion)
+warning: `ans-gateway` (lib test) generated 2 warnings (2 duplicates)
+    Checking ans-ipc v0.1.0 (C:\Users\kusta\ILabs\visionweb\crates\ans-ipc)
+    Checking ans-daemon v0.1.0 (C:\Users\kusta\ILabs\visionweb\crates\ans-daemon)
+warning: redundant redefinition of a binding `addr`
+   --> crates\ans-ipc\tests\integration_test.rs:234:13
+    |
+234 |             let addr = addr;
+    |             ^^^^^^^^^^^^^^^^
+    |
+help: `addr` is initially defined here
+   --> crates\ans-ipc\tests\integration_test.rs:230:9
+    |
+230 |     let addr = start_test_server().await;
+    |         ^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#redundant_locals
+    = note: `-W clippy::redundant-locals` implied by `-W clippy::all`
+    = help: to override `-W clippy::all` add `#[allow(clippy::redundant_locals)]`
+
+warning: redundant redefinition of a binding `addr`
+   --> crates\ans-ipc\tests\integration_test.rs:271:13
+    |
+271 |             let addr = addr;
+    |             ^^^^^^^^^^^^^^^^
+    |
+help: `addr` is initially defined here
+   --> crates\ans-ipc\tests\integration_test.rs:266:9
+    |
+266 |     let addr = start_test_server().await;
+    |         ^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#redundant_locals
+
+warning: redundant redefinition of a binding `addr`
+   --> crates\ans-ipc\tests\integration_test.rs:306:13
+    |
+306 |             let addr = addr;
+    |             ^^^^^^^^^^^^^^^^
+    |
+help: `addr` is initially defined here
+   --> crates\ans-ipc\tests\integration_test.rs:266:9
+    |
+266 |     let addr = start_test_server().await;
+    |         ^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#redundant_locals
+
+warning: redundant redefinition of a binding `addr`
+   --> crates\ans-ipc\tests\integration_test.rs:338:9
+    |
+338 |         let addr = addr;
+    |         ^^^^^^^^^^^^^^^^
+    |
+help: `addr` is initially defined here
+   --> crates\ans-ipc\tests\integration_test.rs:332:9
+    |
+332 |     let addr = start_test_server().await;
+    |         ^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#redundant_locals
+
+warning: redundant redefinition of a binding `addr`
+   --> crates\ans-ipc\tests\integration_test.rs:349:9
+    |
+349 |         let addr = addr;
+    |         ^^^^^^^^^^^^^^^^
+    |
+help: `addr` is initially defined here
+   --> crates\ans-ipc\tests\integration_test.rs:332:9
+    |
+332 |     let addr = start_test_server().await;
+    |         ^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#redundant_locals
+
+warning: redundant redefinition of a binding `addr`
+   --> crates\ans-ipc\tests\integration_test.rs:368:9
+    |
+368 |         let addr = addr;
+    |         ^^^^^^^^^^^^^^^^
+    |
+help: `addr` is initially defined here
+   --> crates\ans-ipc\tests\integration_test.rs:332:9
+    |
+332 |     let addr = start_test_server().await;
+    |         ^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#redundant_locals
+
+warning: redundant redefinition of a binding `addr`
+   --> crates\ans-ipc\tests\integration_test.rs:386:9
+    |
+386 |         let addr = addr;
+    |         ^^^^^^^^^^^^^^^^
+    |
+help: `addr` is initially defined here
+   --> crates\ans-ipc\tests\integration_test.rs:332:9
+    |
+332 |     let addr = start_test_server().await;
+    |         ^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#redundant_locals
+
+warning: redundant redefinition of a binding `addr`
+   --> crates\ans-ipc\tests\integration_test.rs:444:13
+    |
+444 |             let addr = addr;
+    |             ^^^^^^^^^^^^^^^^
+    |
+help: `addr` is initially defined here
+   --> crates\ans-ipc\tests\integration_test.rs:439:9
+    |
+439 |     let addr = start_test_server().await;
+    |         ^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#redundant_locals
+
+warning: redundant redefinition of a binding `addr`
+   --> crates\ans-ipc\tests\integration_test.rs:471:13
+    |
+471 |             let addr = addr;
+    |             ^^^^^^^^^^^^^^^^
+    |
+help: `addr` is initially defined here
+   --> crates\ans-ipc\tests\integration_test.rs:439:9
+    |
+439 |     let addr = start_test_server().await;
+    |         ^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#redundant_locals
+
+warning: `ans-ipc` (test "integration_test") generated 9 warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 12.50s

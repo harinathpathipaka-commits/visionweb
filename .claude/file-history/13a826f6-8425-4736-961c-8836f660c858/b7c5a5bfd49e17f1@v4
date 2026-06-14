@@ -1,0 +1,27 @@
+[package]
+name = "ans-daemon"
+version.workspace = true
+edition.workspace = true
+description = "Agent Nervous System daemon — binary entry point"
+
+[[bin]]
+name = "ans-daemon"
+path = "src/main.rs"
+
+[dependencies]
+ans-proto.workspace = true
+ans-core.workspace = true
+ans-ipc = { path = "../ans-ipc" }
+ans-storage = { path = "../ans-storage" }
+ans-gateway = { path = "../ans-gateway" }
+tokio.workspace = true
+clap.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+toml.workspace = true
+serde.workspace = true
+anyhow.workspace = true
+color-eyre.workspace = true
+
+[lints]
+workspace = true

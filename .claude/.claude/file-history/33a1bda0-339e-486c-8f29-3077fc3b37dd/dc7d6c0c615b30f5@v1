@@ -1,0 +1,297 @@
+"""Tests for AgentLoop fast-mode behavior — verifies config-driven toggles.
+
+Fast mode (ANS_MODE=fast) should:
+1. Skip Vision eye entirely (skip_vision_in_fast=True)
+2. Skip PageDiff eye entirely (skip_diff_in_fast=True)
+3. Use _fallback_synthesize instead of LLM synthesize (fast_coordinator=True)
+4. Skip GoalVerifier on intermediate steps; only verify on errors or "done"
+"""
+
+from __future__ import annotations
+
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from ans_nerves.config import RuntimeConfig
+from ans_nerves.eyes.base import EyeReport
+from ans_nerves.planner.loop import AgentLoop
+from ans_nerves.planner.planner import PlannedAction
+
+
+def _make_runtime(**overrides) -> RuntimeConfig:
+    """Build a RuntimeConfig with defaults suitable for testing."""
+    defaults = {
+        "mode": "thorough",
+        "prewarm_chrome": False,
+        "cache_decompositions": True,
+        "skip_vision_in_fast": True,
+        "skip_diff_in_fast": True,
+        "fast_coordinator": True,
+    }
+    defaults.update(overrides)
+    return RuntimeConfig(**defaults)
+
+
+def _make_mock_grpc(session_id: str = "s1") -> MagicMock:
+    """Return a MagicMock gRPC client with common async returns."""
+    grpc = MagicMock()
+    grpc.create_session = AsyncMock(return_value=MagicMock(session_id=session_id))
+    grpc.get_distilled_dom = AsyncMock(return_value={
+        "url": "https://example.com", "title": "Test",
+        "elements": [{"selector": "#btn", "tag": "button", "text": "Click",
+                       "is_visible": True, "is_enabled": True}],
+    })
+    grpc.capture_screenshot = AsyncMock(return_value={"data": "fake_b64"})
+    grpc.compute_diff = AsyncMock(return_value={"added": 0, "summary": "no change"})
+    grpc.execute_action = AsyncMock(return_value={"message": "OK"})
+    return grpc
+
+
+def _mock_decomposer(sub_goal_desc: str = "Test sub-goal") -> MagicMock:
+    """Return a decomposer that produces one sub-goal without LLM."""
+    sub = MagicMock()
+    sub.description = sub_goal_desc
+    sub.success_criteria = ["Done"]
+    sub.depends_on = []
+    spec = MagicMock()
+    spec.sub_goals = [sub]
+    spec.risk_factors = []
+    dec = MagicMock()
+    dec.decompose = AsyncMock(return_value=spec)
+    return dec
+
+
+def _mock_planner_done() -> MagicMock:
+    """Return a planner that immediately signals 'done'."""
+    planner = MagicMock()
+    planner.plan_next_action = AsyncMock(return_value=PlannedAction(
+        action_type="done", selector="", value="", tool="done",
+        source="warm", confidence=0.9, reasoning="Sub-goal complete",
+    ))
+    planner.total_records = 0
+    return planner
+
+
+def _mock_intelligence() -> MagicMock:
+    """Return a DecisionIntelligence mock that skips embedding/LanceDB."""
+    intel = MagicMock()
+    intel.record_action = AsyncMock(return_value="rec-0000000000000001")
+    return intel
+
+
+def _dummy_signal(loop):
+    """Return a RoutedSignal suitable as a synthesize return value."""
+    return loop._coordinator._fallback_synthesize([])
+
+
+class TestFastModeCoordinator:
+    """Verify fast_coordinator=True skips LLM synthesis."""
+
+    @pytest.mark.asyncio
+    async def test_fast_mode_uses_fallback_synthesize(self):
+        """Fast mode + fast_coordinator=True uses _fallback_synthesize, not LLM."""
+        loop = AgentLoop(session_id="test", grpc=_make_mock_grpc(), max_steps=2)
+        loop._intelligence = _mock_intelligence()
+        loop._decomposer = _mock_decomposer()
+        loop._planner = _mock_planner_done()
+        loop._runtime = _make_runtime(mode="fast", fast_coordinator=True)
+
+        syn_mock = AsyncMock()
+        fb_mock = MagicMock(wraps=loop._coordinator._fallback_synthesize)
+        loop._coordinator.synthesize = syn_mock
+        loop._coordinator._fallback_synthesize = fb_mock
+
+        result = await loop.run(goal="Test goal")
+
+        syn_mock.assert_not_called()
+        fb_mock.assert_called()
+        assert result.success
+
+    @pytest.mark.asyncio
+    async def test_thorough_mode_uses_llm_synthesize(self):
+        """Thorough mode still calls coordinator.synthesize() (LLM path)."""
+        loop = AgentLoop(session_id="test", grpc=_make_mock_grpc(), max_steps=2)
+        loop._intelligence = _mock_intelligence()
+        loop._decomposer = _mock_decomposer()
+        loop._planner = _mock_planner_done()
+        loop._runtime = _make_runtime(mode="thorough", fast_coordinator=False)
+
+        syn_mock = AsyncMock(return_value=_dummy_signal(loop))
+        fb_mock = MagicMock()
+        loop._coordinator.synthesize = syn_mock
+        loop._coordinator._fallback_synthesize = fb_mock
+
+        result = await loop.run(goal="Test goal")
+
+        syn_mock.assert_called()
+        fb_mock.assert_not_called()
+        assert result.success
+
+
+class TestFastModeEyes:
+    """Verify Vision/PageDiff/GoalVerifier gating in fast mode."""
+
+    @pytest.mark.asyncio
+    async def test_fast_mode_skips_vision(self):
+        """Vision eye must NOT run in fast mode with skip_vision_in_fast=True."""
+        loop = AgentLoop(session_id="test", grpc=_make_mock_grpc(), max_steps=2)
+        loop._intelligence = _mock_intelligence()
+        loop._decomposer = _mock_decomposer()
+        loop._planner = _mock_planner_done()
+        loop._runtime = _make_runtime(mode="fast", skip_vision_in_fast=True)
+
+        vis_mock = MagicMock()
+        vis_mock.observe = AsyncMock(
+            return_value=EyeReport(eye_name="vision", confidence=0.5, content={}),
+        )
+        loop._eyes["vision"] = vis_mock
+
+        await loop.run(goal="Test goal")
+        vis_mock.observe.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_fast_mode_skips_diff(self):
+        """PageDiff eye must NOT run in fast mode with skip_diff_in_fast=True."""
+        loop = AgentLoop(session_id="test", grpc=_make_mock_grpc(), max_steps=2)
+        loop._intelligence = _mock_intelligence()
+        loop._decomposer = _mock_decomposer()
+        loop._planner = _mock_planner_done()
+        loop._runtime = _make_runtime(mode="fast", skip_diff_in_fast=True)
+
+        diff_mock = MagicMock()
+        diff_mock.observe = AsyncMock(
+            return_value=EyeReport(eye_name="page_diff", confidence=0.5, content={}),
+        )
+        loop._eyes["page_diff"] = diff_mock
+
+        await loop.run(goal="Test goal")
+        diff_mock.observe.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_fast_mode_skips_verifier_on_click_step(self):
+        """GoalVerifier must NOT run on click step in fast mode; only on 'done'."""
+        loop = AgentLoop(session_id="test", grpc=_make_mock_grpc(), max_steps=3)
+        loop._intelligence = _mock_intelligence()
+        loop._decomposer = _mock_decomposer()
+        loop._runtime = _make_runtime(mode="fast")
+
+        # Planner: click then done
+        planner = MagicMock()
+        planner.plan_next_action = AsyncMock(side_effect=[
+            PlannedAction("click", "#btn", "", "click", "warm", 0.8, "Click button"),
+            PlannedAction("done", "", "", "done", "warm", 0.9, "Done"),
+        ])
+        planner.total_records = 0
+        loop._planner = planner
+
+        ver_mock = MagicMock()
+        ver_mock.observe = AsyncMock(return_value=EyeReport(
+            eye_name="goal_verifier", confidence=0.5,
+            content={"criteria_met": False, "reasoning": "Not yet"},
+        ))
+        loop._eyes["goal_verifier"] = ver_mock
+
+        await loop.run(goal="Test goal")
+
+        # Verifier never runs: click→skipped (fast), done→breaks before verifier
+        assert ver_mock.observe.call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_fast_mode_runs_verifier_on_errors(self):
+        """GoalVerifier should still run when errors accumulate to 2+."""
+        loop = AgentLoop(
+            session_id="test", grpc=_make_mock_grpc(),
+            max_steps=8, max_errors_per_subgoal=5,
+        )
+        loop._intelligence = _mock_intelligence()
+        loop._decomposer = _mock_decomposer()
+        loop._runtime = _make_runtime(mode="fast")
+
+        # Two errors then success
+        loop._grpc.execute_action = AsyncMock(side_effect=[
+            Exception("element not found"),
+            Exception("timeout"),
+            {"message": "OK"},
+        ])
+
+        # Planner: 3 attempts then done
+        planner = MagicMock()
+        planner.plan_next_action = AsyncMock(side_effect=[
+            PlannedAction("click", "#bad1", "", "click", "warm", 0.8, "Try 1"),
+            PlannedAction("click", "#bad2", "", "click", "warm", 0.7, "Try 2"),
+            PlannedAction("click", "#ok", "", "click", "warm", 0.9, "Try 3"),
+            PlannedAction("done", "", "", "done", "warm", 0.9, "Done"),
+        ])
+        planner.total_records = 0
+        loop._planner = planner
+
+        ver_mock = MagicMock()
+        ver_mock.observe = AsyncMock(return_value=EyeReport(
+            eye_name="goal_verifier", confidence=0.9,
+            content={"criteria_met": True, "reasoning": "Recovered"},
+        ))
+        loop._eyes["goal_verifier"] = ver_mock
+
+        await loop.run(goal="Test goal")
+
+        # Verifier must run: error step 2 (errors >= 2) + "done" step
+        assert ver_mock.observe.call_count >= 1
+
+
+class TestThoroughMode:
+    """Verify thorough mode preserves existing behavior."""
+
+    @pytest.mark.asyncio
+    async def test_thorough_mode_runs_vision(self):
+        """Vision eye runs in thorough mode with screenshot data (step 3)."""
+        loop = AgentLoop(session_id="test", grpc=_make_mock_grpc(), max_steps=5)
+        loop._intelligence = _mock_intelligence()
+        loop._decomposer = _mock_decomposer()
+        loop._runtime = _make_runtime(mode="thorough", skip_vision_in_fast=False)
+
+        # Need 3+ steps: Vision runs every 3rd cycle in thorough mode
+        planner = MagicMock()
+        planner.plan_next_action = AsyncMock(side_effect=[
+            PlannedAction("click", "#a", "", "click", "warm", 0.8, "Step 1"),
+            PlannedAction("click", "#b", "", "click", "warm", 0.8, "Step 2"),
+            PlannedAction("done", "", "", "done", "warm", 0.9, "Step 3"),
+        ])
+        planner.total_records = 0
+        loop._planner = planner
+
+        vis_mock = MagicMock()
+        vis_mock.observe = AsyncMock(
+            return_value=EyeReport(eye_name="vision", confidence=0.5, content={}),
+        )
+        loop._eyes["vision"] = vis_mock
+
+        await loop.run(goal="Test goal")
+        assert vis_mock.observe.call_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_thorough_mode_runs_verifier_every_step(self):
+        """GoalVerifier runs on every step in thorough mode."""
+        loop = AgentLoop(session_id="test", grpc=_make_mock_grpc(), max_steps=3)
+        loop._intelligence = _mock_intelligence()
+        loop._decomposer = _mock_decomposer()
+        loop._runtime = _make_runtime(mode="thorough")
+
+        planner = MagicMock()
+        planner.plan_next_action = AsyncMock(side_effect=[
+            PlannedAction("click", "#btn", "", "click", "warm", 0.8, "Step 1"),
+            PlannedAction("done", "", "", "done", "warm", 0.9, "Step 2"),
+        ])
+        planner.total_records = 0
+        loop._planner = planner
+
+        ver_mock = MagicMock()
+        ver_mock.observe = AsyncMock(return_value=EyeReport(
+            eye_name="goal_verifier", confidence=0.5,
+            content={"criteria_met": False, "reasoning": "Not done"},
+        ))
+        loop._eyes["goal_verifier"] = ver_mock
+
+        await loop.run(goal="Test goal")
+        # click step → verifier runs; done step → breaks before verifier
+        assert ver_mock.observe.call_count == 1

@@ -1,0 +1,24 @@
+"""Cross-Eye Coordinator implementation."""
+
+from dataclasses import dataclass, field
+
+from ans_nerves.eyes.base import EyeReport
+
+
+@dataclass
+class RoutedSignal:
+    """Unified perception produced after synthesizing all eye reports."""
+
+    unified_perception: str = ""
+    alerts: list[dict] = field(default_factory=list)
+    confidence: float = 1.0
+    recommended_action_hint: str | None = None
+    contradictions: list[str] = field(default_factory=list)
+
+
+class CrossEyeCoordinator:
+    """Synthesizes all 5 eye reports into unified situational awareness."""
+
+    async def synthesize(self, reports: list[EyeReport]) -> RoutedSignal:
+        """Combine all eye reports, resolve contradictions, produce unified signal."""
+        return RoutedSignal()

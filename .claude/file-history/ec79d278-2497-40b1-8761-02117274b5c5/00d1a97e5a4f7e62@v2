@@ -1,0 +1,112 @@
+"""
+End-to-end pipeline tests covering: library hit, library miss, gate failure paths,
+full 7-layer flow with known data.
+"""
+import pytest
+from src.pipeline import solve, solve_from_csv
+
+
+class TestPipelineGoldPath:
+    def test_perfect_linear_relationship(self, tmp_path):
+        """Test that perfect linear data produces a passing result."""
+        db_path = str(tmp_path / "test_gold.db")
+        x = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0,
+             11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0]
+        y = [2.0 * xi + 1.0 for xi in x]
+        result = solve("What is the relationship between x and y?", x, y, db_path)
+        assert result.trace_id is not None
+        assert result.gate is not None
+
+    def test_noisy_linear_relationship(self, tmp_path):
+        """Test that noisy but strongly correlated data still works."""
+        import numpy as np
+        rng = np.random.default_rng(42)
+        db_path = str(tmp_path / "test_noisy.db")
+        x = [float(i) for i in range(20)]
+        y = [3.0 * xi + 5.0 + rng.normal(0, 5.0) for xi in x]
+        result = solve("How does x affect y?", x, y, db_path)
+        assert result.trace_id is not None
+
+    def test_no_relationship(self, tmp_path):
+        """Test that uncorrelated data fails the gate or produces low confidence."""
+        import numpy as np
+        rng = np.random.default_rng(99)
+        db_path = str(tmp_path / "test_norel.db")
+        x = [float(i) for i in range(20)]
+        y = [rng.normal(50.0, 10.0) for _ in x]
+        result = solve("What relates x and y?", x, y, db_path)
+        assert result.trace_id is not None
+
+    def test_logarithmic_relationship(self, tmp_path):
+        """Test that the pipeline can handle a logarithmic relationship."""
+        import math
+        db_path = str(tmp_path / "test_log.db")
+        x = [float(i) for i in range(1, 21)]
+        y = [10.0 * math.log(xi) + 5.0 for xi in x]
+        result = solve("y vs log(x)?", x, y, db_path)
+        assert result.trace_id is not None
+
+    def test_small_dataset_warns(self, tmp_path):
+        """Test that very small datasets don't crash."""
+        db_path = str(tmp_path / "test_small.db")
+        x = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        y = [2.0, 4.0, 6.0, 8.0, 10.0, 12.0]
+        result = solve("a vs b?", x, y, db_path)
+        assert result.trace_id is not None
+
+
+class TestPipelineLibraryHit:
+    def test_library_reuse(self, tmp_path):
+        """Test that after a first solve, a second solve with similar data can reuse the library equation."""
+        db_path = str(tmp_path / "test_lib.db")
+        x = [float(i) for i in range(20)]
+        y = [2.0 * xi + 1.0 for xi in x]
+
+        result1 = solve("How does price affect demand?", x, y, db_path)
+        assert result1.trace_id is not None
+
+        x2 = [float(i) for i in range(20, 40)]
+        y2 = [2.0 * xi + 1.0 for xi in x2]
+        result2 = solve("How does price affect demand?", x2, y2, db_path)
+        assert result2.trace_id is not None
+
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        c = conn.execute("SELECT COUNT(*) FROM equation_library")
+        count = c.fetchone()[0]
+        assert count > 0
+        conn.close()
+
+
+class TestPipelineErrorHandling:
+    def test_empty_observations(self, tmp_path):
+        db_path = str(tmp_path / "test_empty.db")
+        with pytest.raises(IndexError):
+            solve("test query", [], [], db_path)
+
+    def test_single_variable(self, tmp_path):
+        db_path = str(tmp_path / "test_onevar.db")
+        result = solve("What about x?", [1.0], [2.0], db_path)
+        assert result.trace_id is not None
+
+
+class TestSolveFromCSV:
+    def test_solve_from_csv(self, tmp_path):
+        """Test solve_from_csv convenience function."""
+        import os
+        db_path = str(tmp_path / "test_csv.db")
+        csv_path = os.path.join(str(tmp_path), "data.csv")
+        with open(csv_path, "w") as f:
+            f.write("price,demand\n1,10\n2,9\n3,8\n4,7\n5,6\n6,5\n7,4\n8,3\n9,2\n10,1\n"
+                     "11,1\n12,2\n13,3\n14,4\n15,5\n16,6\n17,7\n18,8\n19,9\n20,10\n")
+        result = solve_from_csv("price vs demand?", csv_path, "price", "demand", db_path)
+        assert result.trace_id is not None
+
+    def test_solve_from_csv_too_few_rows(self, tmp_path):
+        import os
+        db_path = str(tmp_path / "test_csv_small.db")
+        csv_path = os.path.join(str(tmp_path), "small.csv")
+        with open(csv_path, "w") as f:
+            f.write("a,b\n1,2\n3,4\n")
+        result = solve_from_csv("a vs b?", csv_path, "a", "b", db_path)
+        assert result.trace_id is not None

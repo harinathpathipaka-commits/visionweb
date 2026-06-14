@@ -1,0 +1,131 @@
+"""Tests for Decision Intelligence layer."""
+
+from unittest.mock import MagicMock, patch
+
+from ans_nerves.scoring.intelligence import (
+    DecisionIntelligence,
+    ActionRecord,
+    ScoredAction,
+)
+
+
+class TestDecisionIntelligence:
+    def setup_method(self):
+        self.di = DecisionIntelligence()
+
+    def test_total_records_starts_at_zero(self):
+        assert self.di.total_records >= 0
+
+    def test_record_action_returns_id(self):
+        record = ActionRecord(
+            session_id="s1", goal_id="g1",
+            action_type="click", selector="#btn",
+            tool="playwright", action_succeeded=True,
+            goal_advanced=True,
+        )
+        rid = self.di.record_action(record)
+        assert len(rid) == 16
+
+    def test_record_batch_returns_all_ids(self):
+        records = [
+            ActionRecord(session_id="s1", goal_id="g1",
+                         action_type="click", selector="#btn1"),
+            ActionRecord(session_id="s1", goal_id="g1",
+                         action_type="type", selector="#input"),
+        ]
+        ids = self.di.record_batch(records)
+        assert len(ids) == 2
+        assert all(len(rid) == 16 for rid in ids)
+
+    def test_query_best_actions_returns_scored_actions(self):
+        # Store some records first
+        self.di.record_action(ActionRecord(
+            session_id="s1", goal_id="g1",
+            action_type="click", selector="#search-btn",
+            action_succeeded=True, goal_advanced=True,
+            goal_description="Find flights",
+        ))
+        results = self.di.query_best_actions(
+            action_type="click",
+            goal_description="Find flights",
+            k=3,
+        )
+        assert isinstance(results, list)
+        for r in results:
+            assert isinstance(r, ScoredAction)
+
+    def test_query_best_actions_respects_min_score(self):
+        results = self.di.query_best_actions(
+            action_type="nonexistent",
+            k=5,
+            min_score=0.999,
+        )
+        assert len(results) == 0
+
+    def test_report_outcome_updates_existing(self):
+        record = ActionRecord(
+            session_id="s1", goal_id="g1",
+            action_type="click", selector="#btn",
+            action_succeeded=True,
+        )
+        rid = self.di.record_action(record)
+        updated = self.di.report_outcome(rid, business_outcome=0.95)
+        assert updated
+
+    def test_report_outcome_nonexistent(self):
+        assert not self.di.report_outcome("nonexistent_id", business_outcome=0.5)
+
+    def test_record_action_with_failure(self):
+        record = ActionRecord(
+            session_id="s1", goal_id="g1",
+            action_type="click", selector="#missing",
+            action_succeeded=False,
+            error_message="element not found",
+            goal_advanced=False,
+        )
+        rid = self.di.record_action(record)
+        assert len(rid) == 16
+
+    def test_store_property(self):
+        assert self.di.store is not None
+        assert self.di.store.count() >= 0
+
+
+class TestActionRecord:
+    def test_defaults(self):
+        r = ActionRecord()
+        assert r.session_id == ""
+        assert r.action_type == ""
+        assert not r.action_succeeded
+
+    def test_full_record(self):
+        r = ActionRecord(
+            session_id="s1", goal_id="g1",
+            action_type="click", selector="#btn",
+            value="submit", tool="playwright",
+            context_type="search", goal_description="Find flights",
+            page_type="search_form", action_succeeded=True,
+            results_produced="search results loaded",
+            goal_advanced=True, criterion_met="results_visible",
+            execution_time_ms=150,
+        )
+        assert r.action_type == "click"
+        assert r.tool == "playwright"
+        assert r.execution_time_ms == 150
+
+
+class TestScoredAction:
+    def test_defaults(self):
+        sa = ScoredAction()
+        assert sa.id == ""
+        assert sa.composite_score == 0.0
+
+    def test_full_action(self):
+        sa = ScoredAction(
+            id="abc123", action_type="click", selector="#btn",
+            tool="playwright", composite_score=0.85,
+            outcome_score=1.0, result_score=0.7,
+            distance=0.15,
+        )
+        assert sa.composite_score == 0.85
+        assert sa.distance == 0.15

@@ -1,0 +1,163 @@
+//! Concurrent scaling benchmarks.
+//!
+//! Measures how the system scales under increasing concurrency:
+//! - Distillation throughput with N parallel distill operations
+//! - Immune scanning throughput with M parallel scans
+//!
+//! Uses `tokio::runtime::Runtime::block_on` to parallelize work within
+//! synchronous Criterion benchmark iterations.
+
+use ans_core::distill::DistillMode;
+use ans_distill::Distiller;
+use ans_immune::detector::InjectionDetector;
+use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use serde_json::json;
+use std::sync::Arc;
+use tokio::runtime::Runtime;
+
+fn build_dom(leaf_count: usize) -> serde_json::Value {
+    let leaves: Vec<_> = (0..leaf_count)
+        .map(|i| {
+            json!({
+                "nodeType": 1,
+                "nodeName": "span",
+                "attributes": [{"name": "class", "value": format!("item-{}", i)}],
+                "children": [{
+                    "nodeType": 3,
+                    "nodeValue": format!("Leaf {}", i)
+                }]
+            })
+        })
+        .collect();
+
+    json!({
+        "root": {
+            "nodeType": 9, "nodeName": "#document",
+            "children": [{
+                "nodeType": 1, "nodeName": "HTML",
+                "children": [{
+                    "nodeType": 1, "nodeName": "HEAD", "children": []
+                }, {
+                    "nodeType": 1, "nodeName": "BODY",
+                    "children": [{
+                        "nodeType": 1, "nodeName": "div",
+                        "children": leaves
+                    }]
+                }]
+            }]
+        }
+    })
+}
+
+// ── Concurrent distillation ──────────────────────────────────
+
+fn bench_concurrent_distill(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
+    let dom = Arc::new(build_dom(500));
+
+    for concurrency in [1, 4, 8, 16] {
+        let dom = Arc::clone(&dom);
+        let rt_handle = rt.handle().clone();
+
+        let mut group = c.benchmark_group("concurrent_distill");
+        group.throughput(Throughput::Elements(500 * concurrency as u64));
+        group.bench_function(format!("{}_tasks", concurrency), |b| {
+            b.iter(|| {
+                rt_handle.block_on(async {
+                    let mut handles = Vec::new();
+                    for _ in 0..concurrency {
+                        let dom = Arc::clone(&dom);
+                        handles.push(tokio::task::spawn_blocking(move || {
+                            Distiller.process(
+                                black_box(&dom),
+                                DistillMode::AllFields,
+                                "https://example.com",
+                                "Concurrent Page",
+                            )
+                        }));
+                    }
+                    for h in handles {
+                        let _ = h.await;
+                    }
+                });
+            });
+        });
+        group.finish();
+    }
+}
+
+// ── Concurrent immune scanning ───────────────────────────────
+
+fn bench_concurrent_immune(c: &mut Criterion) {
+    let rt = Runtime::new().unwrap();
+    let mut html = String::with_capacity(50_000);
+    html.push_str("<html><body>");
+    for i in 0..1000 {
+        html.push_str(&format!(
+            "<div id='d{}'><input id='f{}' placeholder='Field {}' /></div>",
+            i, i, i
+        ));
+    }
+    html.push_str("</body></html>");
+    let html = Arc::new(html);
+
+    for concurrency in [1, 4, 8, 16] {
+        let html = Arc::clone(&html);
+        let rt_handle = rt.handle().clone();
+
+        let mut group = c.benchmark_group("concurrent_immune");
+        group.throughput(Throughput::Elements(1000 * concurrency as u64));
+        group.bench_function(format!("{}_tasks", concurrency), |b| {
+            b.iter(|| {
+                rt_handle.block_on(async {
+                    let mut handles = Vec::new();
+                    for _ in 0..concurrency {
+                        let html = Arc::clone(&html);
+                        handles.push(tokio::task::spawn_blocking(move || {
+                            InjectionDetector.scan("https://example.com", &html)
+                        }));
+                    }
+                    for h in handles {
+                        let _ = h.await;
+                    }
+                });
+            });
+        });
+        group.finish();
+    }
+}
+
+// ── Latency distribution (single-task p50/p95) ──────────────
+
+fn bench_single_distill_latency(c: &mut Criterion) {
+    let dom = build_dom(1000);
+    c.bench_function("latency/distill_1k", |b| {
+        b.iter(|| {
+            Distiller.process(
+                black_box(&dom),
+                DistillMode::AllFields,
+                "https://example.com",
+                "Latency Test",
+            )
+        });
+    });
+}
+
+fn bench_single_immune_latency(c: &mut Criterion) {
+    let detector = InjectionDetector;
+    let html = "<html><body><div>Test content for scanning</div></body></html>";
+    c.bench_function("latency/immune_scan", |b| {
+        b.iter(|| {
+            let _ = detector.scan("https://example.com", black_box(html));
+        });
+    });
+}
+
+criterion_group!(
+    benches,
+    bench_concurrent_distill,
+    bench_concurrent_immune,
+    bench_single_distill_latency,
+    bench_single_immune_latency,
+);
+criterion_main!(benches);

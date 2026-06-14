@@ -1,0 +1,244 @@
+from __future__ import annotations
+
+import math
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+from scipy import stats as sp_stats
+
+
+def extract_trend(
+    y: List[float],
+    x: Optional[List[float]] = None,
+) -> Dict[str, float]:
+    """Fit a linear trend y = a + b*x. Returns slope, intercept, r²."""
+    n = len(y)
+    if n < 3:
+        return {"slope": 0.0, "intercept": float(np.mean(y)) if y else 0.0, "r2": 0.0}
+
+    x_arr = np.array(x if x else range(n), dtype=np.float64)
+    y_arr = np.array(y, dtype=np.float64)
+
+    # Linear fit
+    A = np.column_stack([np.ones(n), x_arr])
+    coeffs = np.linalg.lstsq(A, y_arr, rcond=None)[0]
+    intercept, slope = float(coeffs[0]), float(coeffs[1])
+
+    y_pred = intercept + slope * x_arr
+    ss_res = float(np.sum((y_arr - y_pred) ** 2))
+    ss_tot = float(np.sum((y_arr - np.mean(y_arr)) ** 2))
+    r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
+
+    return {"slope": slope, "intercept": intercept, "r2": r2}
+
+
+def detect_seasonality(
+    y: List[float],
+    max_period: int = 52,
+    min_period: int = 2,
+) -> Optional[int]:
+    """Detect dominant seasonal period using autocorrelation.
+
+    Returns the period (in index units) with highest autocorrelation above threshold,
+    or None if no clear seasonality.
+    """
+    n = len(y)
+    if n < 2 * min_period:
+        return None
+
+    y_arr = np.array(y, dtype=np.float64)
+    y_centered = y_arr - np.mean(y_arr)
+    var = float(np.var(y_centered))
+    if var < 1e-12:
+        return None
+
+    best_period = None
+    best_acf = -1.0
+
+    for lag in range(min_period, min(max_period, n // 2)):
+        if n <= lag:
+            break
+        # Autocorrelation at lag
+        acf = float(np.corrcoef(y_centered[:-lag], y_centered[lag:])[0, 1])
+        if acf > best_acf and acf > 0.3:  # Minimum correlation threshold
+            best_acf = acf
+            best_period = lag
+
+    return best_period
+
+
+def decompose(
+    y: List[float],
+    period: Optional[int] = None,
+) -> Dict[str, List[float]]:
+    """Decompose series into trend, seasonal, and residual components.
+
+    Uses additive decomposition: y = trend + seasonal + residual.
+    """
+    n = len(y)
+    y_arr = np.array(y, dtype=np.float64)
+
+    if period is None:
+        period = detect_seasonality(y) or max(2, n // 4)
+
+    # Trend via centered moving average
+    half = period // 2
+    trend = np.full(n, np.nan)
+    for i in range(half, n - half):
+        trend[i] = float(np.mean(y_arr[i - half : i + half + 1]))
+    # Fill edges with nearest
+    first_valid = half
+    last_valid = n - half - 1
+    if first_valid < n:
+        trend[:first_valid] = trend[first_valid]
+    if last_valid >= 0:
+        trend[last_valid + 1 :] = trend[last_valid]
+
+    # If all NaN (small series), use linear trend
+    if np.all(np.isnan(trend)):
+        t_result = extract_trend(y)
+        trend = np.array([t_result["intercept"] + t_result["slope"] * i for i in range(n)])
+
+    # Seasonal: average detrended values per period position
+    detrended = y_arr - trend
+    seasonal = np.zeros(n)
+    for i in range(period):
+        indices = list(range(i, n, period))
+        if indices:
+            seasonal[i::period] = float(np.mean(detrended[indices]))
+    # Center seasonal component
+    seasonal -= np.mean(seasonal)
+
+    # Residual
+    residual = detrended - seasonal
+
+    return {
+        "trend": trend.tolist(),
+        "seasonal": seasonal.tolist(),
+        "residual": residual.tolist(),
+        "period": period,
+    }
+
+
+def forecast(
+    y: List[float],
+    horizon: int,
+    period: Optional[int] = None,
+    x_values: Optional[List[float]] = None,
+    confidence: float = 0.95,
+) -> Dict:
+    """Forecast future values with expanding confidence intervals.
+
+    Combines linear trend extrapolation + seasonal pattern + uncertainty bands.
+    Returns {forecasts, ci_lower, ci_upper, trend_slope, trend_r2, period}.
+    """
+    n = len(y)
+    if n < 3 or horizon < 1:
+        return _empty_forecast(horizon)
+
+    y_arr = np.array(y, dtype=np.float64)
+
+    # Detect seasonality
+    if period is None:
+        period = detect_seasonality(y)
+
+    # Extract linear trend on the time index
+    t_index = np.array(x_values if x_values else range(n), dtype=np.float64)
+    trend_result = extract_trend(y, list(t_index))
+    slope = trend_result["slope"]
+    intercept = trend_result["intercept"]
+
+    # Compute residuals from trend
+    trend_line = intercept + slope * t_index
+    residuals = y_arr - trend_line
+    residual_std = float(np.std(residuals))
+
+    # If seasonal, extract seasonal pattern
+    seasonal_pattern: List[float] = []
+    if period and period > 1 and n >= period:
+        comp = decompose(list(y_arr), period)
+        seasonal_raw = comp["seasonal"]
+        # Extract one full period's seasonal pattern
+        seasonal_pattern = [float(np.mean(seasonal_raw[i::period])) for i in range(period)]
+        # Center
+        sp_mean = float(np.mean(seasonal_pattern))
+        seasonal_pattern = [s - sp_mean for s in seasonal_pattern]
+
+    # Generate forecasts
+    last_t = t_index[-1]
+    t_step = float(np.mean(np.diff(t_index))) if len(t_index) > 1 else 1.0
+
+    forecasts = []
+    ci_lower = []
+    ci_upper = []
+    z_score = float(sp_stats.norm.ppf((1.0 + confidence) / 2.0))
+
+    for h in range(1, horizon + 1):
+        t_future = last_t + h * t_step
+        trend_val = intercept + slope * t_future
+
+        # Add seasonal component
+        seasonal_val = 0.0
+        if seasonal_pattern:
+            seasonal_val = seasonal_pattern[(n + h - 1) % len(seasonal_pattern)]
+
+        forecast_val = trend_val + seasonal_val
+
+        # Expanding uncertainty with horizon
+        horizon_std = residual_std * math.sqrt(1.0 + h)  # sqrt(1+h) accounts for compounding
+        half_width = z_score * max(horizon_std, residual_std * 0.1)
+
+        forecasts.append(round(forecast_val, 6))
+        ci_lower.append(round(forecast_val - half_width, 6))
+        ci_upper.append(round(forecast_val + half_width, 6))
+
+    return {
+        "forecasts": forecasts,
+        "ci_lower": ci_lower,
+        "ci_upper": ci_upper,
+        "trend_slope": round(slope, 6),
+        "trend_intercept": round(intercept, 6),
+        "trend_r2": round(trend_result["r2"], 6),
+        "residual_std": round(residual_std, 6),
+        "period": period,
+        "n_obs": n,
+        "horizon": horizon,
+        "confidence": confidence,
+    }
+
+
+def forecast_from_ledger(
+    db_path: str,
+    variable: str,
+    horizon: int,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+) -> Dict:
+    """Forecast a variable using observations from the ledger."""
+    from .ledger_query import query_time_series
+
+    values, timestamps = query_time_series(db_path, variable, start_time, end_time)
+    if len(values) < 3:
+        return {"error": f"Insufficient data: {len(values)} observations", "forecasts": []}
+
+    result = forecast(values, horizon)
+    result["variable"] = variable
+    result["first_seen"] = timestamps[0] if timestamps else None
+    result["last_seen"] = timestamps[-1] if timestamps else None
+    return result
+
+
+def _empty_forecast(horizon: int) -> Dict:
+    return {
+        "forecasts": [0.0] * horizon,
+        "ci_lower": [0.0] * horizon,
+        "ci_upper": [0.0] * horizon,
+        "trend_slope": 0.0,
+        "trend_intercept": 0.0,
+        "trend_r2": 0.0,
+        "residual_std": 0.0,
+        "period": None,
+        "n_obs": 0,
+        "horizon": horizon,
+        "confidence": 0.95,
+    }

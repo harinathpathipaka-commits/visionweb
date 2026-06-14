@@ -1,0 +1,7 @@
+//! REST API for non-MCP agents.
+//!
+//! Simple HTTP endpoints for agents that don't speak MCP.
+//! Built on axum + tower middleware (auth, rate limiting, budget check).
+
+/// The REST API router — mounted at `/api/v1/`.
+pub struct ApiRouter;

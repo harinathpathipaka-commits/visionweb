@@ -1,0 +1,252 @@
+ans.toml:44:min_score_to_sanitize = 0.7
+Cargo.lock:267: "anstyle-parse",
+Cargo.lock:272: "utf8parse",
+Cargo.lock:282:name = "anstyle-parse"
+Cargo.lock:287: "utf8parse",
+Cargo.lock:1192:name = "httparse"
+Cargo.lock:1216: "httparse",
+Cargo.lock:1495: "lexical-parse-float",
+Cargo.lock:1496: "lexical-parse-integer",
+Cargo.lock:1503:name = "lexical-parse-float"
+Cargo.lock:1508: "lexical-parse-integer",
+Cargo.lock:1513:name = "lexical-parse-integer"
+Cargo.lock:2922: "httparse",
+Cargo.lock:2979:name = "utf8parse"
+Cargo.lock:3103: "wasmparser",
+Cargo.lock:3115: "wasmparser",
+Cargo.lock:3119:name = "wasmparser"
+Cargo.lock:3332: "wit-parser",
+Cargo.lock:3381: "wasmparser",
+Cargo.lock:3382: "wit-parser",
+Cargo.lock:3386:name = "wit-parser"
+Cargo.lock:3400: "wasmparser",
+IMPLEMENTATION_PLAN.md:41:        │  distraction-free, injection-sanitized view
+IMPLEMENTATION_PLAN.md:170:→ { "type": "prompt_injection.detected", "severity": "high", "action": "sanitized" }
+IMPLEMENTATION_PLAN.md:582:    pub page_content: String,       // <ans:page> block — sanitized
+IMPLEMENTATION_PLAN.md:589:**Integration with Immune System:** Both distraction classifier and injection detector run at intake, before any eye perceives content. Combined pipeline: `distraction classify → injection scan → sanitize/suppress → agent perceives`. Total budget: <10ms for both combined.
+IMPLEMENTATION_PLAN.md:1026:                    click-search, parse-results, sort-price, select-cheapest,
+IMPLEMENTATION_PLAN.md:1035:        → Content boundary markers wrap sanitized page content
+IMPLEMENTATION_PLAN.md:1137:│  <ans:page>    — sanitized page content  │
+IMPLEMENTATION_PLAN.md:1146:  Agent perceives clean, sanitized,
+IMPLEMENTATION_PLAN.md:1353:| **5: Immune System + Injection Defense** | 12-15 | Heuristic distraction classifier, prompt injection detector, content boundary markers, immune decision pipeline (heuristic-only v1) | 1 Rust | Distractions blocked <1ms; injection sanitized; boundary markers wrap all agent context |
+IMPLEMENTATION_PLAN.md:1357:| **9: Hardening** | 18-24 | E2E scenarios, perf benchmarks, memory profiling, error injection, security review (incl. prompt injection red-team), docs | 5 | Production-ready; injection defense validated |
+IMPLEMENTATION_PLAN.md:1426:6. Prompt injection red-team: inject instruction-override text via hidden div, aria-label, CSS pseudo-element, zero-width chars, homoglyphs → verify ALL are sanitized
+IMPLEMENTATION_PLAN.md:1499:  min_score_to_sanitize: 0.7
+proto\ans.proto:289:  string action = 3;           // allow, sanitize, block
+V2_ROADMAP.md:79:- **Injection Alert Dashboard:** Every prompt injection detection with source page, flagged content, action taken (sanitized/blocked), severity score. Red-team audit trail
+V2_ROADMAP.md:104:ans config validate        # Validate ans.toml
+crates\ans-daemon\src\main.rs:37:    let cli = Cli::parse();
+crates\ans-cdp\src\process.rs:247:    #[error("HTTP response parse error: {0}")]
+crates\ans-immune\src\serialization.rs:81:            "content sanitized: injection score {:.0}%",
+crates\ans-cdp\src\command.rs:1://! Typed CDP command builders and response parsers.
+crates\ans-cdp\src\command.rs:4://! builder function that produces the JSON-RPC wire format and parser
+crates\ans-cdp\src\command.rs:47:/// A parsed CDP response.
+crates\ans-cdp\src\command.rs:97:pub fn parse_message(text: &str) -> Option<CdpMessage> {
+crates\ans-cdp\src\command.rs:230:// ── Response parsers ─────────────────────────────────────────────────
+crates\ans-cdp\src\command.rs:239:pub fn parse_navigation_result(result: &Json) -> NavigationResult {
+crates\ans-cdp\src\command.rs:247:pub fn parse_dom_node_id(result: &Json) -> Result<i32, CdpError> {
+crates\ans-cdp\src\command.rs:258:pub fn parse_query_selector_result(result: &Json) -> Result<i32, CdpError> {
+crates\ans-cdp\src\command.rs:270:pub fn parse_outer_html(result: &Json) -> Result<String, CdpError> {
+crates\ans-cdp\src\command.rs:289:pub fn parse_box_model(result: &Json) -> Result<BoxModel, CdpError> {
+crates\ans-cdp\src\command.rs:304:pub fn parse_evaluate_result(result: &Json) -> Result<Json, CdpError> {
+crates\ans-cdp\src\command.rs:316:pub fn parse_screenshot_result(result: &Json) -> Result<Vec<u8>, CdpError> {
+crates\ans-cdp\src\command.rs:329:pub fn parse_frame_tree(result: &Json) -> Json {
+crates\ans-cdp\src\command.rs:343:pub fn parse_page_info(frame_tree: &Json) -> PageInfo {
+crates\ans-cdp\src\client.rs:70:                        if let Some(cdp_msg) = command::parse_message(&text_str) {
+crates\ans-cdp\src\client.rs:185:        let _nav = command::parse_navigation_result(&result);
+crates\ans-cdp\src\client.rs:194:        let tree = command::parse_frame_tree(&frame_tree);
+crates\ans-cdp\src\client.rs:195:        let info = command::parse_page_info(&tree);
+crates\ans-cdp\src\client.rs:297:        command::parse_screenshot_result(&result)
+crates\ans-cdp\src\client.rs:309:        let root_id = command::parse_dom_node_id(&doc_result)
+crates\ans-cdp\src\client.rs:328:        let node_id = command::parse_query_selector_result(&qs_result)
+crates\ans-cdp\src\client.rs:336:        let box_model = command::parse_box_model(&box_result)
+crates\ans-cdp\src\client.rs:429:        let eval_result = command::parse_evaluate_result(&result)
+crates\ans-cdp\src\client.rs:493:                if let Ok(val) = command::parse_evaluate_result(&result) {
+crates\ans-cdp\src\client.rs:523:        let val = command::parse_evaluate_result(&result)
+crates\ans-goal\src\serialization.rs:26:    let goal_id = Uuid::parse_str(&proto.goal_id).ok()?;
+crates\ans-goal\src\serialization.rs:59:        id: Uuid::parse_str(&proto.id).unwrap_or_else(|_| Uuid::new_v4()),
+crates\ans-goal\src\serialization.rs:65:            .filter_map(|id| Uuid::parse_str(id).ok())
+crates\ans-gateway\src\auth.rs:5://! WebSocket endpoints validate the `X-API-Key` header through this
+crates\ans-gateway\src\auth.rs:94:    pub fn validate(&self, api_key: &str) -> Option<&ApiKeyEntry> {
+crates\ans-gateway\src\auth.rs:117:    #[error("failed to parse api_keys.json: {0}")]
+crates\ans-gateway\src\auth.rs:149:/// Axum extractor that validates API keys.
+crates\ans-gateway\src\auth.rs:174:/// Tower service that validates the API key before each request.
+crates\ans-gateway\src\auth.rs:213:                Some(key) if registry.validate(&key).is_some() => {
+crates\ans-gateway\src\auth.rs:264:        assert!(registry.validate("secret-123").is_some());
+crates\ans-gateway\src\auth.rs:265:        assert!(registry.validate("wrong-key").is_none());
+crates\ans-core\src\immune.rs:92:    pub fn parse(s: &str) -> Self {
+crates\ans-core\src\immune.rs:153:            Self::Sanitize(_) => "sanitize",
+crates\ans-ipc\src\server.rs:119:        let goal_id = parse_uuid(&req.goal_id, "goal_id")?;
+crates\ans-ipc\src\server.rs:144:        let session_id = parse_uuid(&req.session_id, "session_id")?;
+crates\ans-ipc\src\server.rs:157:        let session_id = parse_uuid(&req.session_id, "session_id")?;
+crates\ans-ipc\src\server.rs:180:        let session_id = parse_uuid(&req.session_id, "session_id")?;
+crates\ans-ipc\src\server.rs:210:        let session_id = parse_uuid(&req.session_id, "session_id")?;
+crates\ans-ipc\src\server.rs:211:        let mode = parse_distill_mode(&req.mode)?;
+crates\ans-ipc\src\server.rs:229:        let session_id = parse_uuid(&req.session_id, "session_id")?;
+crates\ans-ipc\src\server.rs:334:        let goal_id = Uuid::parse_str(&req.goal_id)
+crates\ans-ipc\src\server.rs:352:        let goal_id = Uuid::parse_str(&req.goal_id)
+crates\ans-ipc\src\server.rs:389:                Uuid::parse_str(&req.goal_id)
+crates\ans-ipc\src\server.rs:421:        let _session_id = parse_uuid(&req.session_id, "session_id")?;
+crates\ans-ipc\src\server.rs:545:        let session_id = parse_uuid(&req.session_id, "session_id")?;
+crates\ans-ipc\src\server.rs:692:fn parse_distill_mode(s: &str) -> Result<DistillMode, Status> {
+crates\ans-ipc\src\server.rs:705:fn parse_uuid(s: &str, field: &str) -> Result<Uuid, Status> {
+crates\ans-ipc\src\server.rs:706:    Uuid::parse_str(s).map_err(|_| Status::invalid_argument(format!("invalid {} UUID", field)))
+crates\ans-distill\src\engine.rs:134:    let attributes = parse_attributes(node);
+crates\ans-distill\src\engine.rs:208:fn parse_attributes(node: &Json) -> HashMap<String, String> {
+crates\ans-ipc\src\session.rs:130:                let pixels = action.value.as_deref().and_then(|v| v.parse().ok());
+crates\ans-ipc\src\session.rs:163:                    .and_then(|v| v.parse().ok())
+crates\ans-storage\src\serialization.rs:15:        session_id: uuid::Uuid::parse_str(&req.session_id).ok()?,
+crates\ans-storage\src\serialization.rs:16:        goal_id: uuid::Uuid::parse_str(&req.goal_id).unwrap_or_else(|_| uuid::Uuid::nil()),
+target\debug\.fingerprint\arrow-array-610b5dcac0aa57a5\lib-arrow_array.json:1:[Omitted long matching line]
+target\debug\.fingerprint\arrow-array-455e2878c3f707d5\lib-arrow_array.json:1:[Omitted long matching line]
+target\debug\.fingerprint\arrow-array-38c7e16ccaa1a24a\lib-arrow_array.json:1:[Omitted long matching line]
+target\debug\.fingerprint\arrow-69523ad83dfddf75\lib-arrow.json:1:[Omitted long matching line]
+target\debug\.fingerprint\arrow-10394a68de1fe823\lib-arrow.json:1:[Omitted long matching line]
+target\debug\.fingerprint\arrow-1d82d717b90c2778\lib-arrow.json:1:[Omitted long matching line]
+target\debug\.fingerprint\arrow-3d37936a22d39a8d\lib-arrow.json:1:[Omitted long matching line]
+target\debug\.fingerprint\anstream-724227da3ca113a3\lib-anstream.json:1:[Omitted long matching line]
+target\debug\.fingerprint\arrow-cast-d4369857ae3b0987\lib-arrow_cast.json:1:[Omitted long matching line]
+target\debug\.fingerprint\arrow-c275a0885193d5c2\lib-arrow.json:1:[Omitted long matching line]
+target\debug\.fingerprint\arrow-cast-7df2b8790fd6ec82\lib-arrow_cast.json:1:[Omitted long matching line]
+target\debug\.fingerprint\arrow-cast-96e61f284bfbf69f\lib-arrow_cast.json:1:[Omitted long matching line]
+target\debug\.fingerprint\arrow-array-ba7f610eb96e8ffe\lib-arrow_array.json:1:[Omitted long matching line]
+target\debug\.fingerprint\anstream-1918eed04daad88b\lib-anstream.json:1:[Omitted long matching line]
+target\debug\.fingerprint\arrow-eaf0e661a2ad2980\lib-arrow.json:1:[Omitted long matching line]
+target\debug\.fingerprint\anstyle-parse-b7577198bca5236e\lib-anstyle_parse.json:1:{"rustc":8891013984288978370,"features":"[\"default\", \"utf8\"]","declared_features":"[\"core\", \"default\", \"utf8\"]","target":10225663410500332907,"profile":5311044704302230991,"path":15517485313948288292,"deps":[[17716308468579268865,"utf8parse",false,10399862768240441225]],"local":[{"CheckDepInfo":{"dep_info":"debug\\.fingerprint\\anstyle-parse-b7577198bca5236e\\dep-lib-anstyle_parse","checksum":false}}],"rustflags":[],"config":8247474407144887393,"compile_kind":0}
+target\debug\.fingerprint\arrow-cast-69485a5c622bb86b\lib-arrow_cast.json:1:[Omitted long matching line]
+target\debug\.fingerprint\arrow-data-84237372103453e3\lib-arrow_data.json:1:[Omitted long matching line]
+target\debug\.fingerprint\arrow-data-fdb415e3e456f225\lib-arrow_data.json:1:[Omitted long matching line]
+target\debug\.fingerprint\arrow-array-68ae13ebf6880770\lib-arrow_array.json:1:[Omitted long matching line]
+target\debug\.fingerprint\anstyle-parse-5c2fac0cb9b35d36\lib-anstyle_parse.json:1:{"rustc":8891013984288978370,"features":"[\"default\", \"utf8\"]","declared_features":"[\"core\", \"default\", \"utf8\"]","target":10225663410500332907,"profile":17646343673514590993,"path":15517485313948288292,"deps":[[17716308468579268865,"utf8parse",false,11419905563764805585]],"local":[{"CheckDepInfo":{"dep_info":"debug\\.fingerprint\\anstyle-parse-5c2fac0cb9b35d36\\dep-lib-anstyle_parse","checksum":false}}],"rustflags":[],"config":8247474407144887393,"compile_kind":0}
+target\debug\.fingerprint\arrow-data-205490b0d024b99f\lib-arrow_data.json:1:[Omitted long matching line]
+target\debug\.fingerprint\arrow-cast-64040f66fb994c6b\lib-arrow_cast.json:1:[Omitted long matching line]
+target\debug\.fingerprint\arrow-data-be5276f6b52d4c02\lib-arrow_data.json:1:[Omitted long matching line]
+target\debug\.fingerprint\arrow-array-fcdb648dbeb6a1fb\lib-arrow_array.json:1:[Omitted long matching line]
+target\debug\.fingerprint\arrow-cace0707bfb0d85d\lib-arrow.json:1:[Omitted long matching line]
+target\debug\.fingerprint\arrow-cast-44f4c672898166a4\lib-arrow_cast.json:1:[Omitted long matching line]
+target\debug\.fingerprint\hyper-e01c566b6679a083\lib-hyper.json:1:[Omitted long matching line]
+target\debug\.fingerprint\hyper-7253118010b72594\lib-hyper.json:1:[Omitted long matching line]
+target\debug\.fingerprint\hyper-b48fa4e6b5b062b4\lib-hyper.json:1:[Omitted long matching line]
+target\debug\.fingerprint\hyper-38f10dc420e909aa\lib-hyper.json:1:[Omitted long matching line]
+target\debug\.fingerprint\httparse-90f31d91bdb30080\lib-httparse.json:1:{"rustc":8891013984288978370,"features":"[\"default\", \"std\"]","declared_features":"[\"default\", \"std\"]","target":2257539891522735522,"profile":6272744226771020950,"path":16033194171786814605,"deps":[[6163892036024256188,"build_script_build",false,9530009394905213476]],"local":[{"CheckDepInfo":{"dep_info":"debug\\.fingerprint\\httparse-90f31d91bdb30080\\dep-lib-httparse","checksum":false}}],"rustflags":[],"config":8247474407144887393,"compile_kind":0}
+target\debug\.fingerprint\hyper-30fb873279167f18\lib-hyper.json:1:[Omitted long matching line]
+target\debug\.fingerprint\hyper-15be2d5cbb825270\lib-hyper.json:1:[Omitted long matching line]
+target\debug\.fingerprint\httparse-5d4990411b7dd362\build-script-build-script-build.json:1:{"rustc":8891013984288978370,"features":"[\"default\", \"std\"]","declared_features":"[\"default\", \"std\"]","target":17883862002600103897,"profile":16555127815671124681,"path":13483748392740786305,"deps":[],"local":[{"CheckDepInfo":{"dep_info":"debug\\.fingerprint\\httparse-5d4990411b7dd362\\dep-build-script-build-script-build","checksum":false}}],"rustflags":[],"config":8247474407144887393,"compile_kind":0}
+target\debug\.fingerprint\hyper-0f79489c4bdd3edf\lib-hyper.json:1:[Omitted long matching line]
+target\debug\.fingerprint\hyper-ee4807aec427ce48\lib-hyper.json:1:[Omitted long matching line]
+target\debug\.fingerprint\httparse-1d44b1d5b2b84e1d\lib-httparse.json:1:{"rustc":8891013984288978370,"features":"[\"default\", \"std\"]","declared_features":"[\"default\", \"std\"]","target":2257539891522735522,"profile":1568806740615973024,"path":16033194171786814605,"deps":[[6163892036024256188,"build_script_build",false,9530009394905213476]],"local":[{"CheckDepInfo":{"dep_info":"debug\\.fingerprint\\httparse-1d44b1d5b2b84e1d\\dep-lib-httparse","checksum":false}}],"rustflags":[],"config":8247474407144887393,"compile_kind":0}
+target\debug\.fingerprint\lexical-parse-integer-a5ed5b4ef63d2967\lib-lexical_parse_integer.json:1:[Omitted long matching line]
+target\debug\.fingerprint\lexical-parse-integer-117434d5e00ad1b7\lib-lexical_parse_integer.json:1:[Omitted long matching line]
+target\debug\.fingerprint\lexical-parse-float-20101819d05c3531\lib-lexical_parse_float.json:1:[Omitted long matching line]
+target\debug\.fingerprint\lexical-core-50aefbcb3282a57d\lib-lexical_core.json:1:[Omitted long matching line]
+target\debug\.fingerprint\lexical-util-e2d96f4e8dab5d52\lib-lexical_util.json:1:[Omitted long matching line]
+target\debug\.fingerprint\lexical-parse-float-d6cab8f936d71a92\lib-lexical_parse_float.json:1:[Omitted long matching line]
+target\debug\.fingerprint\lexical-core-7bb2dd4cf5b26522\lib-lexical_core.json:1:[Omitted long matching line]
+target\debug\.fingerprint\lexical-util-ca7282e7d796c8d3\lib-lexical_util.json:1:[Omitted long matching line]
+target\debug\.fingerprint\toml-128959c07a74a9de\lib-toml.json:1:[Omitted long matching line]
+target\debug\.fingerprint\utf8parse-46f71c82dab93346\lib-utf8parse.json:1:{"rustc":8891013984288978370,"features":"[\"default\"]","declared_features":"[\"default\", \"nightly\"]","target":13040855110431087744,"profile":2241668132362809309,"path":9028357250381973301,"deps":[],"local":[{"CheckDepInfo":{"dep_info":"debug\\.fingerprint\\utf8parse-46f71c82dab93346\\dep-lib-utf8parse","checksum":false}}],"rustflags":[],"config":8247474407144887393,"compile_kind":0}
+target\debug\.fingerprint\utf8parse-0ffb4e421f1f174f\lib-utf8parse.json:1:{"rustc":8891013984288978370,"features":"[\"default\"]","declared_features":"[\"default\", \"nightly\"]","target":13040855110431087744,"profile":15657897354478470176,"path":9028357250381973301,"deps":[],"local":[{"CheckDepInfo":{"dep_info":"debug\\.fingerprint\\utf8parse-0ffb4e421f1f174f\\dep-lib-utf8parse","checksum":false}}],"rustflags":[],"config":8247474407144887393,"compile_kind":0}
+target\debug\.fingerprint\tower-http-d9b6d6f71246c1b1\lib-tower_http.json:1:[Omitted long matching line]
+target\debug\.fingerprint\tower-http-871456eadedc9071\lib-tower_http.json:1:[Omitted long matching line]
+target\debug\.fingerprint\toml_edit-2e4fcfab2780b6c4\lib-toml_edit.json:1:[Omitted long matching line]
+target\debug\.fingerprint\tower-http-4b5c7f2b1afa622d\lib-tower_http.json:1:[Omitted long matching line]
+target\debug\.fingerprint\toml-bca570dc6010cd90\lib-toml.json:1:[Omitted long matching line]
+target\debug\.fingerprint\toml_edit-d43204a3d7740f9c\lib-toml_edit.json:1:[Omitted long matching line]
+target\debug\.fingerprint\tower-http-3a31bf72a1106cd2\lib-tower_http.json:1:[Omitted long matching line]
+target\debug\.fingerprint\toml-a6f4d412a3b1518b\lib-toml.json:1:[Omitted long matching line]
+target\debug\.fingerprint\toml_edit-91520cec2536c166\lib-toml_edit.json:1:[Omitted long matching line]
+target\debug\.fingerprint\toml_edit-5284c6282bd9b3d5\lib-toml_edit.json:1:[Omitted long matching line]
+target\debug\.fingerprint\toml-4fdaed08cdc41dac\lib-toml.json:1:[Omitted long matching line]
+target\debug\.fingerprint\tungstenite-e7ba671472c73d53\lib-tungstenite.json:1:[Omitted long matching line]
+target\debug\.fingerprint\tungstenite-c18be2139778e6e7\lib-tungstenite.json:1:[Omitted long matching line]
+target\debug\.fingerprint\tungstenite-c03c952a04804bb3\lib-tungstenite.json:1:[Omitted long matching line]
+target\debug\.fingerprint\tower-http-ffd765eb858f599f\lib-tower_http.json:1:[Omitted long matching line]
+target\debug\.fingerprint\tungstenite-b872c634d306e4bb\lib-tungstenite.json:1:[Omitted long matching line]
+target\debug\.fingerprint\tower-http-f9bae03b08d2fd08\lib-tower_http.json:1:[Omitted long matching line]
+target\debug\.fingerprint\tungstenite-635cf9ca166398e9\lib-tungstenite.json:1:[Omitted long matching line]
+target\debug\.fingerprint\tower-http-f35b070540ec43bf\lib-tower_http.json:1:[Omitted long matching line]
+target\debug\.fingerprint\tower-http-e7dc103220e748ed\lib-tower_http.json:1:[Omitted long matching line]
+target\debug\.fingerprint\tower-http-e827cbf9921936c2\lib-tower_http.json:1:[Omitted long matching line]
+target\debug\.fingerprint\tungstenite-52bfc13fb9e6b131\lib-tungstenite.json:1:[Omitted long matching line]
+target\debug\.fingerprint\tungstenite-0ac6fc2768995c0b\lib-tungstenite.json:1:[Omitted long matching line]
+target\debug\deps\winnow-d12b79d17ec3867a.d:1:[Omitted long matching line]
+target\debug\deps\winnow-d12b79d17ec3867a.d:3:[Omitted long matching line]
+target\debug\deps\winnow-d12b79d17ec3867a.d:5:[Omitted long matching line]
+target\debug\deps\winnow-d12b79d17ec3867a.d:13:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winnow-0.7.15\src\parser.rs:
+target\debug\deps\winnow-d12b79d17ec3867a.d:34:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winnow-0.7.15\src\../examples/css/parser.rs:
+target\debug\deps\winnow-a26d39b53fbfb5cd.d:1:[Omitted long matching line]
+target\debug\deps\winnow-a26d39b53fbfb5cd.d:3:[Omitted long matching line]
+target\debug\deps\winnow-a26d39b53fbfb5cd.d:11:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winnow-0.7.15\src\parser.rs:
+target\debug\deps\winnow-a26d39b53fbfb5cd.d:32:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\winnow-0.7.15\src\../examples/css/parser.rs:
+target\debug\deps\uuid-9c0474f772f370e3.d:1:[Omitted long matching line]
+target\debug\deps\uuid-9c0474f772f370e3.d:3:[Omitted long matching line]
+target\debug\deps\uuid-9c0474f772f370e3.d:5:[Omitted long matching line]
+target\debug\deps\uuid-9c0474f772f370e3.d:12:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\uuid-1.23.1\src\parser.rs:
+target\debug\deps\uuid-44bc363942f17617.d:1:[Omitted long matching line]
+target\debug\deps\uuid-44bc363942f17617.d:3:[Omitted long matching line]
+target\debug\deps\uuid-44bc363942f17617.d:5:[Omitted long matching line]
+target\debug\deps\uuid-44bc363942f17617.d:12:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\uuid-1.23.1\src\parser.rs:
+target\debug\deps\uuid-3a6781bd62a35e13.d:1:[Omitted long matching line]
+target\debug\deps\uuid-3a6781bd62a35e13.d:3:[Omitted long matching line]
+target\debug\deps\uuid-3a6781bd62a35e13.d:10:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\uuid-1.23.1\src\parser.rs:
+target\debug\deps\uuid-2936479eb3cd5d41.d:1:[Omitted long matching line]
+target\debug\deps\uuid-2936479eb3cd5d41.d:3:[Omitted long matching line]
+target\debug\deps\uuid-2936479eb3cd5d41.d:5:[Omitted long matching line]
+target\debug\deps\uuid-2936479eb3cd5d41.d:12:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\uuid-1.23.1\src\parser.rs:
+target\debug\deps\uuid-1c3efc2bb3fd6f18.d:1:[Omitted long matching line]
+target\debug\deps\uuid-1c3efc2bb3fd6f18.d:3:[Omitted long matching line]
+target\debug\deps\uuid-1c3efc2bb3fd6f18.d:5:[Omitted long matching line]
+target\debug\deps\uuid-1c3efc2bb3fd6f18.d:12:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\uuid-1.23.1\src\parser.rs:
+target\debug\deps\utf8parse-46f71c82dab93346.d:1:C:\Users\kusta\ILabs\visionweb\target\debug\deps\utf8parse-46f71c82dab93346.d: C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\utf8parse-0.2.2\src\lib.rs C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\utf8parse-0.2.2\src\types.rs
+target\debug\deps\utf8parse-46f71c82dab93346.d:3:C:\Users\kusta\ILabs\visionweb\target\debug\deps\libutf8parse-46f71c82dab93346.rmeta: C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\utf8parse-0.2.2\src\lib.rs C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\utf8parse-0.2.2\src\types.rs
+target\debug\deps\utf8parse-46f71c82dab93346.d:5:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\utf8parse-0.2.2\src\lib.rs:
+target\debug\deps\utf8parse-46f71c82dab93346.d:6:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\utf8parse-0.2.2\src\types.rs:
+target\debug\deps\utf8parse-0ffb4e421f1f174f.d:1:C:\Users\kusta\ILabs\visionweb\target\debug\deps\utf8parse-0ffb4e421f1f174f.d: C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\utf8parse-0.2.2\src\lib.rs C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\utf8parse-0.2.2\src\types.rs
+target\debug\deps\utf8parse-0ffb4e421f1f174f.d:3:C:\Users\kusta\ILabs\visionweb\target\debug\deps\libutf8parse-0ffb4e421f1f174f.rlib: C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\utf8parse-0.2.2\src\lib.rs C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\utf8parse-0.2.2\src\types.rs
+target\debug\deps\utf8parse-0ffb4e421f1f174f.d:5:C:\Users\kusta\ILabs\visionweb\target\debug\deps\libutf8parse-0ffb4e421f1f174f.rmeta: C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\utf8parse-0.2.2\src\lib.rs C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\utf8parse-0.2.2\src\types.rs
+target\debug\deps\utf8parse-0ffb4e421f1f174f.d:7:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\utf8parse-0.2.2\src\lib.rs:
+target\debug\deps\utf8parse-0ffb4e421f1f174f.d:8:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\utf8parse-0.2.2\src\types.rs:
+target\debug\deps\url-e21d08a1fa4d1f28.d:1:[Omitted long matching line]
+target\debug\deps\url-e21d08a1fa4d1f28.d:3:[Omitted long matching line]
+target\debug\deps\url-e21d08a1fa4d1f28.d:8:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\url-2.5.8\src\parser.rs:
+target\debug\deps\url-b98cefb290ff41e6.d:1:[Omitted long matching line]
+target\debug\deps\url-b98cefb290ff41e6.d:3:[Omitted long matching line]
+target\debug\deps\url-b98cefb290ff41e6.d:5:[Omitted long matching line]
+target\debug\deps\url-b98cefb290ff41e6.d:10:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\url-2.5.8\src\parser.rs:
+target\debug\deps\toml_edit-d43204a3d7740f9c.d:1:[Omitted long matching line]
+target\debug\deps\toml_edit-d43204a3d7740f9c.d:3:[Omitted long matching line]
+target\debug\deps\toml_edit-d43204a3d7740f9c.d:16:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\mod.rs:
+target\debug\deps\toml_edit-d43204a3d7740f9c.d:17:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\array.rs:
+target\debug\deps\toml_edit-d43204a3d7740f9c.d:18:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\datetime.rs:
+target\debug\deps\toml_edit-d43204a3d7740f9c.d:19:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\document.rs:
+target\debug\deps\toml_edit-d43204a3d7740f9c.d:20:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\error.rs:
+target\debug\deps\toml_edit-d43204a3d7740f9c.d:21:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\inline_table.rs:
+target\debug\deps\toml_edit-d43204a3d7740f9c.d:22:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\key.rs:
+target\debug\deps\toml_edit-d43204a3d7740f9c.d:23:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\numbers.rs:
+target\debug\deps\toml_edit-d43204a3d7740f9c.d:24:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\state.rs:
+target\debug\deps\toml_edit-d43204a3d7740f9c.d:25:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\strings.rs:
+target\debug\deps\toml_edit-d43204a3d7740f9c.d:26:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\table.rs:
+target\debug\deps\toml_edit-d43204a3d7740f9c.d:27:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\trivia.rs:
+target\debug\deps\toml_edit-d43204a3d7740f9c.d:28:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\value.rs:
+target\debug\deps\toml_edit-91520cec2536c166.d:1:[Omitted long matching line]
+target\debug\deps\toml_edit-91520cec2536c166.d:3:[Omitted long matching line]
+target\debug\deps\toml_edit-91520cec2536c166.d:5:[Omitted long matching line]
+target\debug\deps\toml_edit-91520cec2536c166.d:18:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\mod.rs:
+target\debug\deps\toml_edit-91520cec2536c166.d:19:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\array.rs:
+target\debug\deps\toml_edit-91520cec2536c166.d:20:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\datetime.rs:
+target\debug\deps\toml_edit-91520cec2536c166.d:21:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\document.rs:
+target\debug\deps\toml_edit-91520cec2536c166.d:22:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\error.rs:
+target\debug\deps\toml_edit-91520cec2536c166.d:23:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\inline_table.rs:
+target\debug\deps\toml_edit-91520cec2536c166.d:24:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\key.rs:
+target\debug\deps\toml_edit-91520cec2536c166.d:25:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\numbers.rs:
+target\debug\deps\toml_edit-91520cec2536c166.d:26:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\state.rs:
+target\debug\deps\toml_edit-91520cec2536c166.d:27:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\strings.rs:
+target\debug\deps\toml_edit-91520cec2536c166.d:28:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\table.rs:
+target\debug\deps\toml_edit-91520cec2536c166.d:29:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\trivia.rs:
+target\debug\deps\toml_edit-91520cec2536c166.d:30:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\value.rs:
+target\debug\deps\toml_edit-5284c6282bd9b3d5.d:1:[Omitted long matching line]
+target\debug\deps\toml_edit-5284c6282bd9b3d5.d:3:[Omitted long matching line]
+target\debug\deps\toml_edit-5284c6282bd9b3d5.d:5:[Omitted long matching line]
+target\debug\deps\toml_edit-5284c6282bd9b3d5.d:18:C:\Users\kusta\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\toml_edit-0.22.27\src\parser\mod.rs:
+
+[Showing results with pagination = limit: 250]

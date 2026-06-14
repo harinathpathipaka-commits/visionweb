@@ -1,0 +1,260 @@
+//! Goal lifecycle manager.
+//!
+//! Creates goals, decomposes them into sub-goals with a basic heuristic
+//! (Python coordinator over gRPC is Phase 4), tracks progress in the
+//! shared [`GoalStateStore`].
+
+use std::collections::HashMap;
+
+use ans_core::goal::{GoalContext, GoalState, GoalStatus, SubGoal, SubGoalStatus};
+use uuid::Uuid;
+
+use crate::store::{GoalStateStore, GoalStoreError};
+
+/// Manages the lifecycle of all active goals.
+///
+/// Cloning shares the underlying store (Arc pointer copy).
+#[derive(Clone)]
+pub struct GoalManager {
+    store: GoalStateStore,
+}
+
+impl GoalManager {
+    /// Create a new, empty goal manager.
+    #[must_use] 
+    pub fn new() -> Self {
+        Self {
+            store: GoalStateStore::new(256),
+        }
+    }
+
+    /// Create a goal and decompose into sub-goals.
+    ///
+    /// Decomposition uses a keyword-based heuristic. Full LLM decomposition
+    /// via the Python coordinator is deferred to Phase 4.
+    pub fn create_goal(
+        &self,
+        description: &str,
+        context: HashMap<String, String>,
+        _max_steps: u32,
+    ) -> Result<GoalState, GoalStoreError> {
+        let goal_id = Uuid::new_v4();
+        let sub_goals = decompose_heuristic(description);
+        let url = context.get("current_url").cloned();
+
+        let total = sub_goals.len() as f32;
+        let done = sub_goals
+            .iter()
+            .filter(|s| s.status == SubGoalStatus::Done)
+            .count() as f32;
+        let progress = if total > 0.0 { done / total } else { 0.0 };
+
+        let status = if progress >= 1.0 {
+            GoalStatus::Completed
+        } else {
+            GoalStatus::Active
+        };
+
+        let state = GoalState {
+            goal_id,
+            description: description.to_string(),
+            status,
+            progress,
+            sub_goals,
+            context: GoalContext {
+                current_url: url,
+                last_action: None,
+                last_observation: None,
+                intent_embedding: vec![],
+                distraction_count: 0,
+            },
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        self.store.insert(state.clone())?;
+        Ok(state)
+    }
+
+    /// Retrieve a goal state by ID.
+    #[must_use] 
+    pub fn get_goal_state(&self, goal_id: &Uuid) -> Option<GoalState> {
+        self.store.get(goal_id)
+    }
+
+    /// Update progress and status for an existing goal.
+    pub fn update_progress(
+        &self,
+        goal_id: Uuid,
+        progress: f32,
+        status: GoalStatus,
+    ) -> Result<GoalState, GoalStoreError> {
+        self.store.update_progress(goal_id, progress, status)
+    }
+
+    /// List all active goal IDs.
+    #[must_use] 
+    pub fn list_ids(&self) -> Vec<Uuid> {
+        self.store.list_ids()
+    }
+
+    /// Number of active goals.
+    #[allow(dead_code)]
+    #[must_use] 
+    pub fn active_count(&self) -> usize {
+        self.store.len()
+    }
+
+    /// Underlying store reference — for subscribers.
+    #[must_use] 
+    pub const fn store(&self) -> &GoalStateStore {
+        &self.store
+    }
+
+    /// Subscribe to goal state change notifications.
+    #[must_use] 
+    pub fn subscribe(
+        &self,
+    ) -> tokio::sync::broadcast::Receiver<crate::store::GoalStateNotification> {
+        self.store.subscribe()
+    }
+}
+
+impl Default for GoalManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ── Heuristic decomposition ──────────────────────────────────────────
+
+/// Action verbs mapped to their typical pre-requisites and verification steps.
+const NAVIGATION_VERBS: &[&str] = &[
+    "go to", "navigate", "visit", "open", "browse", "find", "search",
+];
+
+const INPUT_VERBS: &[&str] = &[
+    "fill", "type", "enter", "input", "write", "set", "select", "choose", "pick", "check", "click",
+    "submit",
+];
+
+const EXTRACTION_VERBS: &[&str] = &[
+    "read", "extract", "get", "fetch", "download", "scrape", "collect", "copy", "export", "save",
+];
+
+fn decompose_heuristic(description: &str) -> Vec<SubGoal> {
+    let lower = description.to_lowercase();
+    let has_navigation = NAVIGATION_VERBS.iter().any(|v| lower.contains(v));
+    let has_input = INPUT_VERBS.iter().any(|v| lower.contains(v));
+    let has_extraction = EXTRACTION_VERBS.iter().any(|v| lower.contains(v));
+
+    let mut sub_goals = Vec::with_capacity(3);
+    let mut prev_id: Option<Uuid> = None;
+
+    // 1. Navigation phase
+    if has_navigation {
+        let id = Uuid::new_v4();
+        let deps = vec![];
+        sub_goals.push(SubGoal {
+            id,
+            description: format!("Navigate to the target page for: {description}"),
+            success_criteria: vec!["Page loaded successfully".into()],
+            depends_on: deps,
+            status: SubGoalStatus::Active,
+        });
+        prev_id = Some(id);
+    }
+
+    // 2. Interaction phase
+    if has_input {
+        let id = Uuid::new_v4();
+        let deps: Vec<Uuid> = prev_id.into_iter().collect();
+        sub_goals.push(SubGoal {
+            id,
+            description: format!("Interact with the page to complete: {description}"),
+            success_criteria: vec!["All required fields populated".into()],
+            depends_on: deps,
+            status: SubGoalStatus::Pending,
+        });
+        prev_id = Some(id);
+    }
+
+    // 3. Verification / extraction phase
+    if has_extraction || !sub_goals.is_empty() {
+        let id = Uuid::new_v4();
+        let deps: Vec<Uuid> = prev_id.into_iter().collect();
+        sub_goals.push(SubGoal {
+            id,
+            description: format!("Verify result for: {description}"),
+            success_criteria: vec!["Expected outcome confirmed".into()],
+            depends_on: deps,
+            status: SubGoalStatus::Pending,
+        });
+    }
+
+    // Fallback — single sub-goal for unrecognized descriptions
+    if sub_goals.is_empty() {
+        sub_goals.push(SubGoal {
+            id: Uuid::new_v4(),
+            description: format!("Complete: {description}"),
+            success_criteria: vec!["Task completed successfully".into()],
+            depends_on: vec![],
+            status: SubGoalStatus::Active,
+        });
+    }
+
+    sub_goals
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_and_retrieve_goal() {
+        let mgr = GoalManager::new();
+        let state = mgr
+            .create_goal("Book a flight to NYC", HashMap::new(), 50)
+            .unwrap();
+
+        assert_eq!(state.description, "Book a flight to NYC");
+        assert_eq!(state.status, GoalStatus::Active);
+        assert!(!state.sub_goals.is_empty());
+
+        let retrieved = mgr.get_goal_state(&state.goal_id).unwrap();
+        assert_eq!(retrieved.goal_id, state.goal_id);
+    }
+
+    #[test]
+    fn test_decomposition_navigation_input() {
+        let mgr = GoalManager::new();
+        let state = mgr
+            .create_goal(
+                "Navigate to google.com and search for Rust",
+                HashMap::new(),
+                50,
+            )
+            .unwrap();
+
+        assert!(state.sub_goals.len() >= 2);
+        // First sub-goal should be navigation
+        assert!(state
+            .sub_goals
+            .first()
+            .unwrap()
+            .description
+            .contains("Navigate"));
+    }
+
+    #[test]
+    fn test_update_progress() {
+        let mgr = GoalManager::new();
+        let state = mgr.create_goal("Test goal", HashMap::new(), 50).unwrap();
+
+        let updated = mgr
+            .update_progress(state.goal_id, 0.5, GoalStatus::Active)
+            .unwrap();
+        assert!((updated.progress - 0.5).abs() < 0.01);
+    }
+}
