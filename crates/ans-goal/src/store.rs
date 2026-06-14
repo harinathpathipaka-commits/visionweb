@@ -104,11 +104,13 @@ impl GoalStateStore {
 
     /// Update progress and status for an existing goal. Lightweight; doesn't
     /// require constructing a full `GoalState`.
+    /// If `custom_message` is provided, it overrides the auto-generated notification.
     pub fn update_progress(
         &self,
         goal_id: Uuid,
         progress: f32,
         status: GoalStatus,
+        custom_message: Option<String>,
     ) -> Result<GoalState, GoalStoreError> {
         let mut map = self
             .inner
@@ -128,11 +130,15 @@ impl GoalStateStore {
 
         let snapshot = state.clone();
 
+        let notification_msg = custom_message.unwrap_or_else(|| {
+            format!("Progress: {:.0}%", state.progress * 100.0)
+        });
+
         let _ = self.tx.send(GoalStateNotification {
             goal_id,
             progress: state.progress,
             status: state.status,
-            message: format!("Progress: {:.0}%", state.progress * 100.0),
+            message: notification_msg,
         });
 
         tracing::info!(%goal_id, progress = %state.progress, "Goal progress updated");
@@ -278,7 +284,7 @@ mod tests {
         store.insert(make_goal(id, "Test goal")).unwrap();
 
         let mut rx = store.subscribe();
-        store.update_progress(id, 0.5, GoalStatus::Active).unwrap();
+        store.update_progress(id, 0.5, GoalStatus::Active, None).unwrap();
 
         let notification = rx.try_recv().unwrap();
         assert_eq!(notification.goal_id, id);
@@ -309,7 +315,7 @@ mod tests {
         let id = Uuid::new_v4();
         store.insert(make_goal(id, "Test")).unwrap();
 
-        let updated = store.update_progress(id, 1.0, GoalStatus::Active).unwrap();
+        let updated = store.update_progress(id, 1.0, GoalStatus::Active, None).unwrap();
         assert_eq!(updated.status, GoalStatus::Completed);
     }
 }

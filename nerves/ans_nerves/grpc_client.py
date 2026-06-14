@@ -349,6 +349,7 @@ class GrpcClient:
         progress: float,
         status: str = "",
         sub_goals: list[dict] | None = None,
+        message: str = "",
     ) -> Any:
         async def _rpc() -> Any:
             stub = await self._ensure_connected()
@@ -367,6 +368,7 @@ class GrpcClient:
                 ProgressUpdate(
                     goal_id=goal_id, progress=progress,
                     status=status, sub_goals=pb_sub_goals,
+                    message=message,
                 )
             )
         return await self._call(_rpc, "update_goal_progress")

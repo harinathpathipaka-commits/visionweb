@@ -169,6 +169,9 @@ class TestAgentLoop:
 
         mock_decomp = MagicMock()
         mock_decomp.decompose = AsyncMock(return_value=mock_goal_spec)
+        # Re-decomposition path: when errors >= max, the loop tries to break
+        # the sub-goal into finer steps. Return None = can't decompose further.
+        mock_decomp.decompose_single_sub_goal = AsyncMock(return_value=None)
         self.loop._decomposer = mock_decomp
 
         # Planner keeps suggesting click
@@ -197,7 +200,7 @@ class TestAgentLoop:
         result = await self.loop.run("Click broken button")
 
         assert not result.success
-        assert "escalated" in result.summary.lower() or result.total_errors >= 3
+        assert result.total_errors >= 3 or "escalated" in result.summary.lower() or "failed" in result.summary.lower()
 
     @pytest.mark.asyncio
     async def test_max_steps_gates_loop(self):
@@ -224,6 +227,14 @@ class TestAgentLoop:
         mock_planner.total_records = 0
         self.loop._planner = mock_planner
         self.loop._max_steps = 5
+
+        # Verifier must NOT confirm — otherwise loop exits on step 1
+        never_done_verifier = MagicMock()
+        never_done_verifier.observe = AsyncMock(return_value=EyeReport(
+            eye_name="goal_verifier", confidence=0.5,
+            content={"criteria_met": False, "reasoning": "Not done yet"},
+        ))
+        self.loop._eyes["goal_verifier"] = never_done_verifier
 
         result = await self.loop.run("Endless goal")
         assert result.total_steps == 5

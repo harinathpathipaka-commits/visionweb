@@ -1,16 +1,14 @@
-# ── Builder Stage ─────────────────────────────────────────────────────
-FROM rust:1.85-slim-bookworm AS builder
+# ── Stage 1: Rust Build ───────────────────────────────────────────
+FROM rust:1.86-slim-bookworm AS rust-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    protobuf-compiler \
-    pkg-config \
-    libssl-dev \
+    protobuf-compiler pkg-config libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 
-# Cache dependencies by copying manifests first
-COPY Cargo.toml Cargo.lock* ./
+# Cargo manifests first (cache layer)
+COPY Cargo.toml Cargo.lock ./
 COPY crates/ans-proto/Cargo.toml crates/ans-proto/
 COPY crates/ans-core/Cargo.toml crates/ans-core/
 COPY crates/ans-cdp/Cargo.toml crates/ans-cdp/
@@ -23,57 +21,89 @@ COPY crates/ans-signal/Cargo.toml crates/ans-signal/
 COPY crates/ans-ipc/Cargo.toml crates/ans-ipc/
 COPY crates/ans-storage/Cargo.toml crates/ans-storage/
 COPY crates/ans-budget/Cargo.toml crates/ans-budget/
+COPY crates/ans-bench/Cargo.toml crates/ans-bench/
 COPY crates/ans-gateway/Cargo.toml crates/ans-gateway/
+COPY crates/ans-stealth/Cargo.toml crates/ans-stealth/
 
-# Dummy source for dependency resolution
-RUN mkdir -p crates/ans-proto/src crates/ans-core/src crates/ans-cdp/src \
-    crates/ans-daemon/src crates/ans-distill/src crates/ans-diff/src \
-    crates/ans-immune/src crates/ans-goal/src crates/ans-signal/src \
-    crates/ans-ipc/src crates/ans-storage/src crates/ans-budget/src \
-    crates/ans-gateway/src \
-    && for d in crates/*/src; do echo 'fn main() {}' > "$d/lib.rs"; done \
+# Dummy source stubs for dep resolution
+RUN mkdir -p $(find crates -mindepth 1 -maxdepth 1 -type d | while read d; do echo "$d/src"; done) \
+    && for d in crates/ans-*/src; do echo 'fn main() {}' > "$d/lib.rs"; done \
     && echo 'fn main() {}' > crates/ans-daemon/src/main.rs \
     && echo 'fn main() {}' > crates/ans-proto/build.rs
 
 RUN cargo build --release 2>/dev/null || true
 
-# Copy real source
+# Real source
 COPY crates/ crates/
+COPY proto/ proto/
+COPY static/ static/
 
-# Build with touch to invalidate cached dummy
-RUN touch crates/*/src/*.rs && cargo build --release
+RUN touch crates/ans-*/src/*.rs && cargo build --release -p ans-daemon
 
-# ── Runtime Stage ──────────────────────────────────────────────────────
-FROM debian:bookworm-slim
+# ── Stage 2: Python Deps ──────────────────────────────────────────
+FROM python:3.12-slim-bookworm AS python-builder
 
-# Install Chromium for CDP browser control
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    chromium \
-    chromium-sandbox \
-    ca-certificates \
-    libssl3 \
-    curl \
+    protobuf-compiler libprotobuf-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
-RUN useradd --create-home --shell /bin/bash ans && \
-    mkdir -p /data && chown ans:ans /data
+WORKDIR /app
+COPY nerves/pyproject.toml .
 
-# Chrome environment
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir \
+    grpcio>=1.60 \
+    grpcio-tools>=1.60 \
+    pyarrow>=15 \
+    pydantic>=2 \
+    httpx>=0.26 \
+    tenacity>=8 \
+    structlog>=24 \
+    numpy>=1.26 \
+    openai>=1.60 \
+    lancedb>=0.17
+
+# ── Stage 3: Runtime ──────────────────────────────────────────────
+FROM python:3.12-slim-bookworm
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium chromium-sandbox ca-certificates libssl3 curl \
+    libprotobuf32 \
+    fonts-noto-color-emoji \
+    && rm -rf /var/lib/apt/lists/*
+
+# Non-root user
+RUN useradd --create-home --shell /bin/bash ans \
+    && mkdir -p /app /data /home/ans/.ans /home/ans/.ans/rules \
+    && chown -R ans:ans /app /data /home/ans/.ans
+
+# Rust binary
+COPY --from=rust-builder /build/target/release/ans-daemon /usr/local/bin/ans-daemon
+
+# Python packages (same Python 3.12 base as builder — site-packages path matches)
+COPY --from=python-builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+
+# Nerves code
+COPY --chown=ans:ans nerves/ /app/nerves/
+
+# Runtime config
+COPY --chown=ans:ans ans.toml /app/ans.toml
+COPY --chown=ans:ans docker/config/api_keys.json /home/ans/.ans/api_keys.json
+
 ENV CHROME_BIN=/usr/bin/chromium \
     CHROME_FLAGS="--headless --no-sandbox --disable-gpu --disable-dev-shm-usage" \
-    ANS_GRPC_PORT=50051 \
-    ANS_GATEWAY_PORT=50052
-
-COPY --from=builder /build/target/release/ans-daemon /usr/local/bin/ans-daemon
+    PYTHONPATH=/app/nerves \
+    PYTHONUNBUFFERED=1 \
+    ANS_GRPC_HOST=127.0.0.1 \
+    ANS_GRPC_PORT=50051
 
 USER ans
-WORKDIR /data
+WORKDIR /app
 
 EXPOSE 50051 50052
 
 HEALTHCHECK --interval=15s --timeout=3s --retries=3 \
-    CMD curl -sf http://localhost:${ANS_GATEWAY_PORT}/api/v1/health || exit 1
+    CMD curl -sf http://localhost:50052/api/v1/health || exit 1
 
 ENTRYPOINT ["ans-daemon"]
-CMD ["--grpc-port", "50051", "--gateway-port", "50052"]
+CMD ["--grpc-port", "50051", "--gateway-port", "50052", "--gateway-bind", "0.0.0.0", "--nerves-dir", "/app/nerves", "--prewarm", "2"]

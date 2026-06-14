@@ -19,12 +19,13 @@ pub mod rest;
 pub mod ws;
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 use axum::routing::{get, post};
 use axum::Router;
 
-use std::sync::Arc;
-
 use ans_goal::GoalStateStore;
+use ans_goal::GoalManager;
+use ans_ipc::session::SessionManager;
 use auth::SharedKeyRegistry;
 use client::InternalClient;
 use mcp::McpServer;
@@ -47,35 +48,129 @@ impl Gateway {
     ///
     /// If `goal_store` is provided, a background task bridges goal state
     /// notifications to all connected WebSocket clients.
+    ///
+    /// If `sessions` and `goals` are provided (error recovery mode),
+    /// the WebSocket server can dispatch human actions to CDP backends
+    /// and unblock paused sessions.
     pub async fn init(
         grpc_port: u16,
         goal_store: Option<GoalStateStore>,
+        sessions: Option<SessionManager>,
+        goals: Option<GoalManager>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let key_registry = Arc::new(auth::KeyRegistry::load(None)?);
         let internal = InternalClient::connect(grpc_port).await?;
         let metrics = Arc::new(Metrics::new());
         let mcp = McpServer::new(internal.clone());
         let rest = ApiRouter::new(internal.clone());
-        let ws = WebSocketServer::new(internal);
+        let ws = if let (Some(sm), Some(gm)) = (sessions, goals) {
+            WebSocketServer::new().with_managers(sm, gm)
+        } else {
+            WebSocketServer::new()
+        };
 
-        // Bridge goal state changes to WebSocket clients
+        // Bridge goal state changes to WebSocket clients.
+        // When a goal enters Blocked status (human intervention needed),
+        // a `session_paused` event is pushed with the recovery context.
         if let Some(store) = &goal_store {
             let ws_clone = ws.clone();
             let mut rx = store.subscribe();
+            let sm_for_bridge = ws.sessions().cloned();
             tokio::spawn(async move {
                 while let Ok(notification) = rx.recv().await {
+                    let status_str = format!("{:?}", notification.status);
                     let json = serde_json::to_string(&serde_json::json!({
                         "type": "goal_update",
                         "goal_id": notification.goal_id.to_string(),
                         "progress": notification.progress,
-                        "status": format!("{:?}", notification.status),
+                        "status": status_str,
                         "message": notification.message,
                     }))
                     .unwrap_or_default();
                     ws_clone.push_event(&json);
+
+                    // ── Live view: detect agent_step → emit live screenshot ──
+                    let maybe_ctx: Option<serde_json::Value> =
+                        serde_json::from_str(&notification.message).ok();
+                    if let Some(ref ctx) = maybe_ctx {
+                        if ctx.get("type").and_then(|v| v.as_str()) == Some("agent_step") {
+                            let sid_str = ctx.get("session_id").and_then(|v| v.as_str());
+                            if let (Some(sm), Some(sid_str)) = (&sm_for_bridge, sid_str) {
+                                if let Ok(session_id) = uuid::Uuid::parse_str(sid_str) {
+                                    let screenshot_b64 = sm
+                                        .capture_screenshot(
+                                            session_id,
+                                            ans_core::backend::ImageFormat::Png,
+                                            false,
+                                        )
+                                        .await
+                                        .ok()
+                                        .map(|bytes| {
+                                            use base64::Engine;
+                                            base64::engine::general_purpose::STANDARD.encode(&bytes)
+                                        });
+                                    let step_evt = serde_json::json!({
+                                        "type": "agent_step",
+                                        "session_id": sid_str,
+                                        "action": ctx.get("action").and_then(|v| v.as_str()).unwrap_or(""),
+                                        "step": ctx.get("step").and_then(|v| v.as_i64()).unwrap_or(0),
+                                        "page_url": ctx.get("page_url").and_then(|v| v.as_str()).unwrap_or(""),
+                                        "page_title": ctx.get("page_title").and_then(|v| v.as_str()).unwrap_or(""),
+                                        "page_type": ctx.get("page_type").and_then(|v| v.as_str()).unwrap_or(""),
+                                        "sub_goal": ctx.get("sub_goal").and_then(|v| v.as_str()).unwrap_or(""),
+                                        "screenshot_base64": screenshot_b64.unwrap_or_default(),
+                                    });
+                                    ws_clone.push_event(
+                                        &serde_json::to_string(&step_evt).unwrap_or_default(),
+                                    );
+                                }
+                            }
+                        }
+                    }
+
+                    // ── Error recovery: detect Blocked → emit session_paused ──
+                    if notification.status == ans_core::goal::GoalStatus::Blocked {
+                        // Parse recovery context from message (JSON packed by Python)
+                        let ctx: Option<serde_json::Value> =
+                            serde_json::from_str(&notification.message).ok();
+                        let sid_str = ctx.as_ref()
+                            .and_then(|c| c.get("session_id"))
+                            .and_then(|v| v.as_str());
+                        if let (Some(sm), Some(sid_str)) = (&sm_for_bridge, sid_str) {
+                            if let Ok(session_id) = uuid::Uuid::parse_str(sid_str) {
+                                // Capture live screenshot for the dashboard
+                                let screenshot_b64 = sm
+                                    .capture_screenshot(
+                                        session_id,
+                                        ans_core::backend::ImageFormat::Png,
+                                        false,
+                                    )
+                                    .await
+                                    .ok()
+                                    .map(|bytes| {
+                                        use base64::Engine;
+                                        base64::engine::general_purpose::STANDARD.encode(&bytes)
+                                    });
+
+                                let paused_evt = serde_json::json!({
+                                    "type": "session_paused",
+                                    "session_id": sid_str,
+                                    "goal_id": notification.goal_id.to_string(),
+                                    "block_reason": ctx.as_ref().and_then(|c| c.get("block_reason").and_then(|v| v.as_str())).unwrap_or("unknown"),
+                                    "page_url": ctx.as_ref().and_then(|c| c.get("page_url").and_then(|v| v.as_str())).unwrap_or(""),
+                                    "sub_goal": ctx.as_ref().and_then(|c| c.get("sub_goal").and_then(|v| v.as_str())).unwrap_or(""),
+                                    "step_count": ctx.as_ref().and_then(|c| c.get("step_count").and_then(|v| v.as_i64())).unwrap_or(0),
+                                    "screenshot_base64": screenshot_b64.unwrap_or_default(),
+                                });
+                                ws_clone.push_event(
+                                    &serde_json::to_string(&paused_evt).unwrap_or_default(),
+                                );
+                            }
+                        }
+                    }
                 }
             });
-            tracing::info!("WebSocket bridge: forwarding goal updates to clients");
+            tracing::info!("WebSocket bridge: forwarding goal updates + recovery events to clients");
         }
 
         Ok(Self {
@@ -196,7 +291,7 @@ impl Gateway {
                 }),
             )
             .route(
-                "/api/v1/sessions/{id}/navigate",
+                "/api/v1/sessions/:id/navigate",
                 post({
                     let rest = rest.clone();
                     move |axum::extract::Path(id): axum::extract::Path<String>,
@@ -206,7 +301,7 @@ impl Gateway {
                 }),
             )
             .route(
-                "/api/v1/sessions/{id}/execute",
+                "/api/v1/sessions/:id/execute",
                 post({
                     let rest = rest.clone();
                     move |axum::extract::Path(id): axum::extract::Path<String>,
@@ -216,7 +311,7 @@ impl Gateway {
                 }),
             )
             .route(
-                "/api/v1/sessions/{id}/screenshot",
+                "/api/v1/sessions/:id/screenshot",
                 post({
                     let rest = rest.clone();
                     move |axum::extract::Path(id): axum::extract::Path<String>,
@@ -226,7 +321,7 @@ impl Gateway {
                 }),
             )
             .route(
-                "/api/v1/sessions/{id}/dom",
+                "/api/v1/sessions/:id/dom",
                 get({
                     let rest = rest.clone();
                     move |axum::extract::Path(id): axum::extract::Path<String>| async move {
@@ -245,11 +340,20 @@ impl Gateway {
                 }),
             )
             .route(
-                "/api/v1/goals/{id}",
+                "/api/v1/goals/:id",
                 get({
                     let rest = rest.clone();
                     move |axum::extract::Path(id): axum::extract::Path<String>| async move {
                         rest.get_goal(&id).await
+                    }
+                }),
+            )
+            .route(
+                "/api/v1/goals/:id/cancel",
+                post({
+                    let rest = rest.clone();
+                    move |axum::extract::Path(id): axum::extract::Path<String>| async move {
+                        rest.cancel_goal(&id).await
                     }
                 }),
             )
@@ -264,7 +368,18 @@ impl Gateway {
 
         tracing::info!("Gateway starting on {}", addr);
 
-        let listener = tokio::net::TcpListener::bind(addr).await?;
+        // SO_REUSEADDR prevents "address already in use" on restart
+        let socket = socket2::Socket::new(
+            socket2::Domain::IPV4,
+            socket2::Type::STREAM,
+            Some(socket2::Protocol::TCP),
+        )?;
+        socket.set_reuse_address(true)?;
+        socket.bind(&socket2::SockAddr::from(addr))?;
+        socket.listen(128)?;
+        socket.set_nonblocking(true)?;
+
+        let listener = tokio::net::TcpListener::from_std(socket.into())?;
         axum::serve(listener, router).await?;
 
         Ok(())

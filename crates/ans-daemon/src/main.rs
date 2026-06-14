@@ -25,6 +25,10 @@ struct Cli {
     #[arg(long, default_value = "50052")]
     gateway_port: u16,
 
+    /// Gateway bind address (use 0.0.0.0 for Docker, 127.0.0.1 for local)
+    #[arg(long, default_value = "127.0.0.1")]
+    gateway_bind: IpAddr,
+
     /// Path to ans.toml configuration file
     #[arg(long, default_value = "ans.toml")]
     config: PathBuf,
@@ -69,8 +73,11 @@ async fn main() {
     };
     let server = IpcServer::new()
         .with_nerves_dir(nerves_abs)
-        .with_pool_size(cli.prewarm);
+        .with_pool_size(cli.prewarm)
+        .with_grpc_port(cli.grpc_port);
     let goal_store = server.goal_store(); // clone before server moves into spawn
+    let sessions = server.session_manager(); // clone before server moves into spawn
+    let goals = server.goal_manager(); // clone for error recovery resume
     let grpc_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), cli.grpc_port);
 
     let grpc_handle = tokio::spawn(async move {
@@ -83,9 +90,16 @@ async fn main() {
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
 
     // ── Start gateway ────────────────────────────────────────────────
-    let gw_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), cli.gateway_port);
+    let gw_addr = SocketAddr::new(cli.gateway_bind, cli.gateway_port);
 
-    let gw_handle = match ans_gateway::Gateway::init(cli.grpc_port, Some(goal_store)).await {
+    let gw_handle = match ans_gateway::Gateway::init(
+        cli.grpc_port,
+        Some(goal_store),
+        Some(sessions),
+        Some(goals),
+    )
+    .await
+    {
         Ok(gateway) => {
             tracing::info!("Gateway starting on {}", gw_addr);
             tokio::spawn(async move {

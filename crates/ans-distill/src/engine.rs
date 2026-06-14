@@ -38,7 +38,7 @@ impl Distiller {
     ///
     /// `raw_dom` is the full response value from the CDP command.
     /// `mode` controls the distillation aggressiveness.
-    #[must_use] 
+    #[must_use]
     pub fn process(
         &self,
         raw_dom: &Json,
@@ -50,6 +50,12 @@ impl Distiller {
         let mut ctx = WalkContext::new(mode);
 
         walk_node(root, 0, &mut ctx);
+
+        // ── Post-processing: resolve <label for="id"> associations ──
+        // Build a map from element id → label text by scanning
+        // all distilled elements for <label for="..."> elements.
+        let label_map = build_label_map(&ctx.elements);
+        enrich_interactive_labels(&mut ctx.interactive, &label_map);
 
         // Segment into semantic blocks
         let semantic_blocks = semantic::segment_blocks(&ctx.elements);
@@ -90,7 +96,7 @@ impl WalkContext {
         }
     }
 
-    const fn at_capacity(&self) -> bool {
+    fn at_capacity(&self) -> bool {
         self.elements.len() >= MAX_ELEMENTS
     }
 }
@@ -186,6 +192,7 @@ fn walk_element(node: &Json, depth: usize, ctx: &mut WalkContext) {
         is_visible,
         bounding_box: None, // Bounding boxes require separate CDP calls (Phase 2 refinement)
         children,
+        element_index: ctx.elements.len(),
     };
 
     if ctx.at_capacity() {
@@ -199,7 +206,7 @@ fn walk_element(node: &Json, depth: usize, ctx: &mut WalkContext) {
     // Identify interactive elements
     if is_interactive {
         let el = &ctx.elements[idx];
-        if let Some(interactive) = build_interactive(el, idx) {
+        if let Some(interactive) = build_interactive(el) {
             ctx.interactive.push(interactive);
         }
     }
@@ -265,9 +272,16 @@ fn collect_text(node: &Json, _tag: &str) -> String {
     collect_text_recursive(node, &mut buf);
     // Normalize whitespace
     let result: String = buf.split_whitespace().collect::<Vec<_>>().join(" ");
-    // Truncate for memory safety
+    // Truncate for memory safety — use char_indices to avoid
+    // slicing in the middle of a multi-byte UTF-8 character.
     if result.len() > 500 {
-        result[..500].to_string()
+        let truncate_at = result
+            .char_indices()
+            .take_while(|&(i, _)| i < 500)
+            .map(|(i, c)| i + c.len_utf8())
+            .last()
+            .unwrap_or(500);
+        result[..truncate_at.min(result.len())].to_string()
     } else {
         result
     }
@@ -329,7 +343,7 @@ fn is_element_visible(attrs: &HashMap<String, String>, _node: &Json) -> bool {
 }
 
 /// Build an [`InteractiveElement`] from a distilled element if it's interactive.
-fn build_interactive(el: &DistilledElement, _idx: usize) -> Option<InteractiveElement> {
+fn build_interactive(el: &DistilledElement) -> Option<InteractiveElement> {
     let element_type = match el.tag.as_str() {
         "a" => InteractiveType::Link,
         "button" => InteractiveType::Button,
@@ -361,6 +375,8 @@ fn build_interactive(el: &DistilledElement, _idx: usize) -> Option<InteractiveEl
         is_visible: el.is_visible,
         is_enabled: !el.attributes.contains_key("disabled"),
         bounding_box: el.bounding_box,
+        element_index: el.element_index,
+        name: el.attributes.get("name").cloned(),
     })
 }
 
@@ -385,7 +401,52 @@ fn build_selector(el: &DistilledElement) -> String {
             sel.push_str(&classes.join("."));
         }
     }
+    // Fallback to [name="..."] for form fields without id/class
+    if !sel.contains('.') && !sel.contains('#') {
+        if let Some(name) = el.attributes.get("name") {
+            if !name.is_empty() {
+                sel.push_str(&format!("[name=\"{}\"]", name.replace('"', "\\\"")));
+            }
+        }
+    }
     sel
+}
+
+/// Build a map from element `id` → label text by scanning all
+/// distilled elements for `<label for="...">` associations.
+fn build_label_map(elements: &[DistilledElement]) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for el in elements {
+        if el.tag == "label" {
+            if let Some(for_id) = el.attributes.get("for") {
+                let trimmed = for_id.trim();
+                if !trimmed.is_empty() && !el.text.trim().is_empty() {
+                    map.insert(trimmed.to_string(), el.text.trim().to_string());
+                }
+            }
+        }
+    }
+    map
+}
+
+/// Enrich interactive elements with resolved label text.
+/// If the interactive element already has text (e.g., button text),
+/// it's kept. Otherwise we look up the element's id in the label map.
+fn enrich_interactive_labels(
+    interactive: &mut [InteractiveElement],
+    label_map: &HashMap<String, String>,
+) {
+    for entry in interactive.iter_mut() {
+        if !entry.label.trim().is_empty() {
+            continue; // already has meaningful label text
+        }
+        // Extract id from selector (e.g. "#email" → "email")
+        if let Some(id) = entry.selector.strip_prefix('#') {
+            if let Some(label_text) = label_map.get(id) {
+                entry.label = label_text.clone();
+            }
+        }
+    }
 }
 
 fn is_valid_css_id(id: &str) -> bool {

@@ -14,16 +14,19 @@ from typing import Any
 # Vision Eye — screenshot + DOM → structured visual report
 # ─────────────────────────────────────────────────────────────
 
-VISION_SYSTEM = """You are the Vision Eye of an autonomous browser agent. Your job is to analyse a screenshot and distilled DOM of a web page and produce a structured report of what is visible.
+VISION_SYSTEM = """You are the Vision Eye of an autonomous browser agent. Your job is to analyse a screenshot of a web page and produce a structured report of what is visible.
 
 You are NOT the agent making decisions. You are a sensory organ — observe and report facts, nothing more.
 
+The screenshot may contain Set-of-Marks (SOM) annotations: numbered circles drawn over interactive elements (e.g., a red circle with "0" over the first input, a green circle with "3" over a button). These numbers are the element_index — use them to precisely identify elements.
+
 Rules:
 1. List only elements that are ACTUALLY visible in the screenshot — not just present in the DOM.
-2. Flag any overlays, popups, cookie banners, or modals blocking the main content.
-3. Identify the page type (search_form, search_results, product_page, checkout, login, error, article, dashboard, captcha, paywall, unknown).
-4. Note any anomalies: broken layouts, missing images, error messages, unexpected redirects.
-5. Provide bounding box estimates for key interactive elements."""
+2. When SOM numbers are visible on elements, include the element_index in your visible_elements output. This lets the Planner precisely target that element.
+3. Flag any overlays, popups, cookie banners, or modals blocking the main content.
+4. Identify the page type (search_form, search_results, product_page, checkout, login, error, article, dashboard, captcha, paywall, form, unknown).
+5. Note any anomalies: broken layouts, missing images, error messages, unexpected redirects.
+6. Provide bounding box estimates for key interactive elements."""
 
 VISION_JSON_SCHEMA = {
     "type": "object",
@@ -43,6 +46,10 @@ VISION_JSON_SCHEMA = {
                 "type": "object",
                 "properties": {
                     "selector": {"type": "string"},
+                    "element_index": {
+                        "type": "integer",
+                        "description": "The SOM number shown on the element in the annotated screenshot. Include when the number is visible.",
+                    },
                     "element_type": {"type": "string"},
                     "label": {"type": "string"},
                     "is_visible": {"type": "boolean"},
@@ -371,12 +378,21 @@ DECOMPOSER_SYSTEM = """You are the Goal Decomposer of an autonomous browser agen
 
 You are NOT the agent executing the goal. Your output drives the verification loop.
 
+CRITICAL — DATA EXTRACTION:
+Before creating sub-goals, extract all form data from the goal text into a clear mapping. Users write goals in free-form natural language (e.g., "sign up with email john@test.com, password Abc@123, name John"). You MUST identify:
+  - Which value is the email? (look for email patterns containing '@' with a domain)
+  - Which value is the password? (look for phrases like "password", "pass", "pwd")
+  - Which value is the name? (look for phrases like "name", "full name", "username")
+  - Which value is the company? (look for phrases like "company", "organization")
+  - Any other fields mentioned (phone, address, etc.)
+
 Rules:
-1. Break the goal into the SMALLEST meaningful steps. A sub-goal should be one action or one verification.
-2. Each sub-goal MUST have at least one success criterion that can be checked from page state (URL, DOM, visible text).
-3. Order sub-goals logically. Mark dependencies where step B cannot start before step A completes.
-4. Be specific: "Fill the From field with 'Delhi'" not "Fill the form".
-5. Include error recovery sub-goals for known failure modes (e.g., "If CAPTCHA appears, stop and report")."""
+1. Break the goal into the SMALLEST meaningful steps. Each form field fill should be its own sub-goal.
+2. Each sub-goal MUST have at least one success criterion that can be checked from page state.
+3. Order sub-goals logically. Navigation first, then fields top-to-bottom, then submit.
+4. Be specific and include the EXACT VALUE: "Type 'john@test.com' into the email input field" NOT "Fill the email field".
+5. Include error recovery: "If the page shows 'email already taken', stop and report."
+6. NEVER include social login or third-party auth as sub-goals. The user wants to fill the form directly."""
 
 DECOMPOSER_JSON_SCHEMA = {
     "type": "object",
@@ -422,9 +438,15 @@ def build_decomposer_user_prompt(
             "<context>\n" + json.dumps(context, indent=2) + "\n</context>"
         )
     parts.append(
-        "Decompose this goal into sub-goals with verifiable success criteria. "
-        "Each sub-goal should be small enough that success can be verified "
-        "by checking the page URL, DOM elements, or visible text."
+        "FIRST: extract all form data from the goal. Identify which value is "
+        "the email (contains '@'), which is the password, which is the name, "
+        "which is the company. Map each to its field type.\n\n"
+        "THEN: decompose into sub-goals. Each form field fill must be its own "
+        "sub-goal with the EXACT value. Example: 'Type opus4.6test1@gmail.com "
+        "into the email input field.' NOT 'Fill the form.'\n\n"
+        "SOCIAL LOGIN: Only include Google/Facebook/GitHub login steps if the "
+        "user EXPLICITLY asked for them (e.g., 'login with Google'). "
+        "If the user provided email/password, they want direct form filling."
     )
     return "\n\n".join(parts)
 
@@ -512,26 +534,41 @@ PLANNER_SYSTEM = """You are the Action Planner of an autonomous browser agent. Y
 
 You are the DECISION MAKER. Output exactly one action that brings the agent closer to its goal.
 
-Rules:
+RULES:
+0. CRITICAL: NEVER repeat an action marked [FAILED] in the action history. It did NOT work — it will fail again. Try a different selector, approach, or ask_user if stuck.
 1. Choose the most impactful single action. One click, one fill, one navigation.
-2. Use specific CSS selectors when you can identify them from the page state.
-3. Prefer interacting with interactive elements (buttons, inputs, links, selects) over passive observation.
+2. Use element_index (Set-of-Marks number) to disambiguate elements with identical CSS selectors. Always output BOTH element_index AND selector.
+3. Prefer interacting with elements (buttons, inputs, links, selects) over passive observation.
 4. If an overlay/popup/cookie-banner blocks the page, dismiss it FIRST.
 5. If the goal is complete (all sub-goals verified), output action_type="done".
-6. If you're stuck or unsure, output action_type="wait" with a reasoning that helps diagnose.
-7. When memory recommendations are provided, use them as STRONG hints — but override if the current page state contradicts them.
+6. If stuck or unsure, output action_type="wait" with reasoning. Don't guess.
+7. Memory recommendations are STRONG hints — override if page state contradicts them.
 
-Action types you can output:
-- click: Click a specific element by CSS selector
-- type: Type text into an input field (use value= for the text)
+CONSTRAINTS:
+- MATCH VALUE TO FIELD TYPE: email addresses go in email fields (input_type=email, name=email, placeholder "Email"). Passwords go in password fields (input_type=password). Names go in name fields. Company names go in company fields. NEVER put a name in an email field or an email in a password field.
+- SOCIAL LOGIN: "Sign in with Google", "Continue with Facebook", "Login with GitHub" etc. are THIRD-PARTY AUTH. Only use them if the user EXPLICITLY asked for it ("login with Google"). If the user gave you email/password/name — they want the form, not social login.
+- NO REPETITION: Never execute the exact same (action_type, selector, value) more than twice in a row. If it didn't work the first two times, it won't work the third time. Escalate or try a completely different approach.
+- WATCH FOR WRONG OUTCOMES: If a click navigated you to a completely different website (e.g., accounts.google.com when you expected a form), that click was WRONG. Report it as a failure in your reasoning and try something else.
+- DON'T INVENT VALUES: Only type values that appear in the goal text. Never make up names, emails, passwords, or any other data.
+
+ACTION TYPES:
+- click: Click an element by CSS selector
+- type: Type text into an input field (value = the text)
 - select: Choose an option from a <select> element
 - navigate: Go to a URL
 - scroll: Scroll the page
 - wait: Wait for something to load/change
 - dismiss_overlay: Close a popup, modal, or cookie banner
-- evaluate: Execute JavaScript in the page and return the result
-- done: The goal/sub-goal is complete — no further actions needed
-- escalate: Human intervention needed (captcha, paywall, unexpected error)"""
+- evaluate: Execute JavaScript in the page
+- done: Goal/sub-goal is complete — no further actions needed
+- escalate: Human intervention needed (captcha, paywall, unexpected error)
+- ask_user: Required fields have no matching value in the goal. Include what's missing in 'reasoning'. Do NOT guess or make up values.
+
+FORM-FILLING:
+1. MAP: Identify each input by label, placeholder, name, or input_type. Match goal data to fields by TYPE (email→email, password→password, name→name, company→company).
+2. FILL: One field per action. Type the EXACT value from the goal. Selector MUST be from interactive_elements — never guess.
+3. SUBMIT: After ALL fields are filled, click the submit/register/sign-up button.
+4. ORDER: Fill top-to-bottom as fields appear. Use element_index to distinguish identical selectors."""
 
 PLANNER_JSON_SCHEMA = {
     "type": "object",
@@ -540,21 +577,25 @@ PLANNER_JSON_SCHEMA = {
             "type": "string",
             "enum": [
                 "click", "type", "select", "navigate", "scroll",
-                "wait", "dismiss_overlay", "evaluate", "done", "escalate",
+                "wait", "dismiss_overlay", "evaluate", "done", "escalate", "ask_user",
             ],
             "description": "The type of browser action to take.",
         },
         "selector": {
             "type": "string",
-            "description": "CSS selector of the target element. Empty for navigate/scroll/wait/done/escalate.",
+            "description": "CSS selector of the target element. Empty for navigate/scroll/wait/done/escalate/ask_user.",
+        },
+        "element_index": {
+            "type": "integer",
+            "description": "The [element_index] from interactive_elements for the target element. Use this to disambiguate when selectors are non-unique. Omit for actions without a target element.",
         },
         "value": {
             "type": "string",
-            "description": "Value to type for 'type', URL for 'navigate', option text for 'select'. Empty otherwise.",
+            "description": "Value to type for 'type', URL for 'navigate', option text for 'select'. For 'ask_user', list the missing fields needed (comma-separated). Empty otherwise.",
         },
         "tool": {
             "type": "string",
-            "enum": ["click", "type", "select", "navigate", "scroll", "wait", "dismiss_overlay", "evaluate", "done", "escalate"],
+            "enum": ["click", "type", "select", "navigate", "scroll", "wait", "dismiss_overlay", "evaluate", "done", "escalate", "ask_user"],
             "description": "The gRPC tool to call. Must match action_type.",
         },
         "reasoning": {
@@ -583,6 +624,7 @@ def build_planner_user_prompt(
     action_history: list[str] | None = None,
     memory_recommendations: list[dict] | None = None,
     last_error: str = "",
+    vision_target: Any = None,
 ) -> str:
     """Build the planner user prompt with full situational context.
 
@@ -603,9 +645,26 @@ def build_planner_user_prompt(
     if unified_perception:
         parts.append(f"<page_state>\n{unified_perception}\n</page_state>")
 
-    # Available interactive elements
+    # Available interactive elements — formatted with [element_index] prefix
+    # for Set-of-Marks disambiguation.
     if available_elements:
-        elems_block = json.dumps(available_elements, indent=2)
+        lines = []
+        for e in available_elements:
+            idx = e.get("element_index", "?")
+            sel = e.get("selector", "")
+            label = (e.get("label") or e.get("text") or e.get("placeholder") or "")[:60]
+            name = e.get("name", "")
+            input_type = e.get("input_type", "")
+            autocomplete = e.get("autocomplete", "")
+            placeholder = e.get("placeholder", "")
+            current_value = e.get("current_value", "")
+            extras = f" type={input_type}" if input_type else ""
+            extras += f" name={name}" if name else ""
+            extras += f" autocomplete={autocomplete}" if autocomplete else ""
+            extras += f' placeholder="{placeholder[:30]}"' if placeholder else ""
+            extras += f' value="{current_value[:30]}"' if current_value else ""
+            lines.append(f'  [{idx}] {sel}{extras}  "{label}"')
+        elems_block = "\n".join(lines)
         parts.append(f"<interactive_elements>\n{elems_block}\n</interactive_elements>")
 
     # Action history
@@ -625,6 +684,39 @@ def build_planner_user_prompt(
             f"The following actions worked well in similar past contexts. "
             f"Use them as strong hints, but verify they make sense for the CURRENT page state:\n"
             f"{recs_block}\n</memory_recommendations>"
+        )
+
+    # Vision-confirmed target — the Vision Eye analysed the SOM-annotated
+    # screenshot and identified the element that is most likely the correct
+    # next target. Confidence-gated: only passed when vision_confidence >= 0.6
+    # AND the DOM Reader confirms the element is visible + enabled.
+    if vision_target is not None:
+        vt = vision_target
+        ei = getattr(vt, "element_index", None)
+        sel = getattr(vt, "selector", "")
+        label = getattr(vt, "label", "")
+        conf = getattr(vt, "confidence", 0.0)
+        if conf >= 0.8:
+            directive = (
+                f"You MUST use this element. Use element_index={ei} and "
+                f"selector=\"{sel}\". Do NOT pick a different element."
+            )
+        else:
+            directive = (
+                f"This is a strong hint — prefer this element unless you "
+                f"have clear evidence it is wrong. Use element_index={ei} "
+                f"and selector=\"{sel}\"."
+            )
+        parts.append(
+            f"<vision_confirmed_target>\n"
+            f"  The Vision Eye analysed the SOM-annotated screenshot and "
+            f"identified the following element as the intended next target:\n"
+            f"  element_index: [{ei}]\n"
+            f"  selector: {sel}\n"
+            f"  label: \"{label}\"\n"
+            f"  vision_confidence: {conf:.2f}\n"
+            f"  ACTION: {directive}\n"
+            f"</vision_confirmed_target>"
         )
 
     # Decision prompt

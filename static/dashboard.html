@@ -80,6 +80,12 @@ body::before{content:'';position:fixed;top:-50%;left:-50%;width:200%;height:200%
 @keyframes slideIn{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
 
 @media(max-width:640px){.container{padding:12px}.header h1{font-size:1.5rem}.goal-bar{flex-direction:column}}
+.live-panel-section{display:none;padding:20px;margin-bottom:16px}
+.live-panel-section.active{display:block}
+.live-panel-section h2{font-size:1.1rem;font-weight:600;margin:0}
+.live-screenshot-wrap{background:#000;border-radius:8px;overflow:hidden;max-height:400px;display:flex;align-items:center;justify-content:center;min-width:300px}
+.live-screenshot-wrap img{width:100%;height:auto;display:block}
+.live-info{flex:1;min-width:250px;display:flex;flex-direction:column;gap:10px;font-size:.85rem}
 </style>
 </head>
 <body>
@@ -102,6 +108,24 @@ body::before{content:'';position:fixed;top:-50%;left:-50%;width:200%;height:200%
     <input type="text" id="goalInput" placeholder="What should the agent do? e.g., Search for flights from Delhi to Mumbai on June 5" autofocus>
     <button id="submitBtn" onclick="submitGoal()">▶ Run</button>
     <button onclick="toggleMode()" style="background:transparent;border:1px solid var(--border);font-size:.8rem;padding:14px 16px" title="Toggle fast/thorough mode">Fast</button>
+  </div>
+
+  <!-- Live View -->
+  <div class="glass live-panel-section" id="liveView">
+    <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:12px">
+      <h2>📺 Live View</h2>
+      <span style="font-size:.78rem;color:var(--text-dim)" id="liveStep">---</span>
+      <span id="liveStatus" style="font-size:.78rem;padding:3px 10px;border-radius:20px;background:rgba(0,206,201,0.15);color:var(--success)">running</span>
+    </div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      <div class="live-screenshot-wrap"><img id="liveViewScreenshot" src="" alt="Live agent view"></div>
+      <div class="live-info">
+        <div><span style="color:var(--text-dim)">Action:</span> <span id="liveAction" style="font-weight:600">---</span></div>
+        <div><span style="color:var(--text-dim)">Sub-goal:</span> <span id="liveSubGoal">---</span></div>
+        <div><span style="color:var(--text-dim)">Page:</span> <span id="livePage" style="word-break:break-all">---</span></div>
+        <div><span style="color:var(--text-dim)">URL:</span> <span id="liveUrl" style="font-size:.78rem;color:var(--text-dim);word-break:break-all">---</span></div>
+      </div>
+    </div>
   </div>
 
   <div class="glass eyes-panel">
@@ -137,15 +161,23 @@ function handleEvent(d){
     renderGoals();
     if(d.eye_updates)for(let[k,v]of Object.entries(d.eye_updates)){let el=document.getElementById('eye-'+k.replace('_','-'));if(el){el.className='glass eye-tile '+(v==='active'?'active':v==='error'?'error':v==='warning'?'warning':'');el.querySelector('.eye-status').textContent=v}}
   }else if(d.type==='eye_report'){let el=document.getElementById('eye-'+d.eye_name);if(el){el.className='glass eye-tile active';el.querySelector('.eye-status').textContent='active (confidence: '+(d.confidence||0).toFixed(2)+')'}}
+  else if(d.type==='agent_step'){updateLiveView(d)}
 }
+const API_KEY='dev-secret-key-123';
 async function submitGoal(){
   let goal=document.getElementById('goalInput').value.trim();if(!goal)return;
   let btn=document.getElementById('submitBtn');btn.disabled=true;btn.textContent='Running...';
   try{
-    let r=await fetch(API+'/api/v1/goals',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({description:goal,max_steps:50,context:fastMode?'mode=fast':''})});
-    if(r.ok){document.getElementById('goalInput').value='';showToast('Goal created','success')}else{showToast('Failed to create goal','error')}
+    let r=await fetch(API+'/api/v1/goals',{method:'POST',headers:{'Content-Type':'application/json','X-API-Key':API_KEY},body:JSON.stringify({description:goal,max_steps:50,context:fastMode?'mode=fast':''})});
+    if(r.ok){let j=await r.json();goals[j.goal_id]={goal_id:j.goal_id,description:goal,status:j.status,progress:j.progress,created_at:Date.now()};document.getElementById('goalInput').value='';renderGoals();showToast('Goal created','success')}else{let t=await r.text();showToast('Failed: '+t,'error')}
   }catch(e){showToast('Error: '+e.message,'error')}
   btn.disabled=false;btn.textContent='▶ Run';
+}
+async function cancelGoal(id){
+  try{
+    let r=await fetch(API+'/api/v1/goals/'+id+'/cancel',{method:'POST',headers:{'X-API-Key':API_KEY}});
+    if(r.ok){goals[id].status='failed';goals[id].progress=1;renderGoals();showToast('Goal cancelled','success')}else{let t=await r.text();showToast('Cancel failed: '+t,'error')}
+  }catch(e){showToast('Error: '+e.message,'error')}
 }
 function renderGoals(){
   let entries=Object.entries(goals).sort((a,b)=>b[1].created_at-a[1].created_at),grid=document.getElementById('goalsGrid');
@@ -154,8 +186,25 @@ function renderGoals(){
   grid.innerHTML=entries.map(([id,g])=>{
     let pct=Math.round((g.progress||0)*100),sc=g.status==='completed'?'completed':g.status==='failed'?'failed':'';
     let sg=g.sub_goals||[],shtml=sg.length?('<div class="sub-goals">'+sg.map(s=>{let dc=s.status==='Done'?'done':s.status==='Active'?'active':s.status==='Blocked'?'blocked':'pending';return`<div class="sub-goal-item"><span class="sub-goal-dot ${dc}"></span>${e(s.description)}</div>`}).join('')+'</div>'):'';
-    return`<div class="glass goal-card ${sc}"><div class="goal-title">${e(g.description)}</div><div class="goal-meta"><span>${pct}%</span><span style="text-transform:capitalize">${g.status}</span></div><div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>${shtml}</div>`
+    let cancelBtn = g.status==='active'||g.status==='blocked'
+      ? `<button onclick="event.stopPropagation();cancelGoal('${id}')" style="position:absolute;top:16px;right:16px;background:var(--danger);color:#fff;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:.78rem;font-weight:600;font-family:var(--font)">✕ Stop</button>`
+      : '';
+    return`<div class="glass goal-card ${sc}"><div class="goal-title">${e(g.description)}</div>${cancelBtn}<div class="goal-meta"><span>${pct}%</span><span style="text-transform:capitalize">${g.status}</span></div><div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>${shtml}</div>`
   }).join('')
+}
+function updateLiveView(d){
+  document.getElementById('liveView').style.display='block';
+  document.getElementById('liveStep').textContent='Step '+d.step+' — '+d.action;
+  document.getElementById('liveAction').textContent=d.action;
+  document.getElementById('liveSubGoal').textContent=d.sub_goal||'---';
+  document.getElementById('livePage').textContent=d.page_title||d.page_url||'---';
+  document.getElementById('liveUrl').textContent=d.page_url||'---';
+  if(d.screenshot_base64){
+    document.getElementById('liveViewScreenshot').src='data:image/png;base64,'+d.screenshot_base64;
+    document.getElementById('liveStatus').textContent='running';
+    document.getElementById('liveStatus').style.background='rgba(0,206,201,0.15)';
+    document.getElementById('liveStatus').style.color='var(--success)';
+  }
 }
 function toggleMode(){fastMode=!fastMode;document.getElementById('modeBadge').textContent=fastMode?'Fast':'Thorough';document.getElementById('modeBadge').className='mode-badge '+(fastMode?'fast':'thorough');showToast(`Mode: ${fastMode?'Fast (skip Eyes)':'Thorough (full 5 Eyes)'}`,'success')}
 function showToast(m,t){let el=document.createElement('div');el.className='toast '+t;el.textContent=m;document.body.appendChild(el);setTimeout(()=>el.remove(),4000)}

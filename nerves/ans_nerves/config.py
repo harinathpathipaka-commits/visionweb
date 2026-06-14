@@ -18,15 +18,15 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class LLMConfig(BaseModel):
-    provider: str = "deepseek"               # DeepSeek-V3 for text (OpenAI-compatible)
-    model: str = "deepseek-chat"
+    provider: str = "deepseek"               # DeepSeek-V4-Flash for text (OpenAI-compatible)
+    model: str = "deepseek-v4-flash"
     base_url: str = "https://api.deepseek.com/v1"
-    vision_provider: str = "openai"          # GPT-4o for vision
-    vision_model: str = "gpt-4o"
+    vision_provider: str = "openai"          # GPT-4o-mini for vision
+    vision_model: str = "gpt-4o-mini"
     vision_base_url: str = "https://api.openai.com/v1"
-    decomposer_model: str = "deepseek-chat"
-    planner_model: str = "deepseek-chat"
-    verifier_model: str = "deepseek-chat"
+    decomposer_model: str = "deepseek-v4-flash"
+    planner_model: str = "deepseek-v4-flash"
+    verifier_model: str = "deepseek-v4-flash"
     embedding_provider: str = "fastembed"    # Local ONNX, no API cost
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     embedding_dim: int = Field(default=384, ge=1, le=4096)
@@ -39,11 +39,11 @@ class LLMConfig(BaseModel):
 
 
 class VisionConfig(BaseModel):
-    model: str = "gpt-4o"
+    model: str = "gpt-4o-mini"
     max_tokens: int = Field(default=4096, ge=1, le=16384)
     screenshot_width: int = Field(default=512, ge=320, le=3840)
     screenshot_height: int = Field(default=512, ge=240, le=2160)
-    cost_per_call_cents: float = Field(default=0.30, ge=0.0)
+    cost_per_call_cents: float = Field(default=0.04, ge=0.0)
 
 
 class VerifierConfig(BaseModel):

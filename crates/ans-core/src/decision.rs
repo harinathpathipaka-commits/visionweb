@@ -66,7 +66,7 @@ pub struct BusinessOutcome {
 impl BusinessOutcome {
     /// Create a new outcome with only the immediate layer populated.
     #[must_use] 
-    pub const fn new_immediate(success: bool, error: Option<String>) -> Self {
+    pub fn new_immediate(success: bool, error: Option<String>) -> Self {
         Self {
             immediate: ImmediateOutcome {
                 action_succeeded: success,

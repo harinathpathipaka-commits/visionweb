@@ -281,6 +281,53 @@ class LanceDBStore:
         )
         return True
 
+    def update_latest_outcome(
+        self,
+        *,
+        session_id: str,
+        goal_id: str,
+        goal_advanced: bool = False,
+        criterion_met: bool = False,
+        sub_goal_completed: bool = False,
+    ) -> bool:
+        """Backfill short-term outcome on the most recent record for a
+        session+goal pair. Called after the verifier confirms a sub-goal."""
+        rows = self._all_rows()
+        if not rows:
+            return False
+        # Find the most recent row for this session+goal
+        best_idx: int | None = None
+        best_ts = 0
+        for i, row in enumerate(rows):
+            if row.get("session_id") == session_id and row.get("goal_id") == goal_id:
+                ts = int(row.get("stored_at", 0))
+                if ts >= best_ts:
+                    best_ts = ts
+                    best_idx = i
+        if best_idx is None:
+            return False
+        row = rows[best_idx]
+        # Update short-term outcome fields
+        new_business = float(row.get("business_outcome", 0.0))
+        new_result = float(row.get("result_score", 0.0))
+        if goal_advanced and float(row.get("result_score", 0.0)) < 0.7:
+            new_result = 0.7
+        if sub_goal_completed:
+            new_result = 1.0
+            new_business = 1.0
+        row["result_score"] = new_result
+        row["business_outcome"] = new_business
+        row["composite_score"] = (
+            float(row.get("outcome_score", 0.0)) * 0.40
+            + new_result * 0.333
+            - float(row.get("error_penalty", 0.0)) * 0.133
+            + new_business * 0.133
+        )
+        self._table = self.db.create_table(
+            _TABLE_NAME, data=rows, mode="overwrite",
+        )
+        return True
+
     def count(self) -> int:
         try:
             return self.table.count_rows()

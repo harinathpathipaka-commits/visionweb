@@ -41,6 +41,7 @@ fn element_to_proto(el: &DistilledElement) -> ans_proto::ans::DistilledElement {
         is_visible: el.is_visible,
         bounding_box: el.bounding_box.map(bbox_to_proto),
         children: el.children.iter().map(|&c| c as i32).collect(),
+        element_index: el.element_index as i32,
     }
 }
 
@@ -54,6 +55,8 @@ fn interactive_to_proto(el: &InteractiveElement) -> ans_proto::ans::InteractiveE
         is_visible: el.is_visible,
         is_enabled: el.is_enabled,
         bounding_box: el.bounding_box.map(bbox_to_proto),
+        element_index: el.element_index as i32,
+        name: el.name.clone().unwrap_or_default(),
     }
 }
 
@@ -131,6 +134,7 @@ fn proto_to_element(el: &ans_proto::ans::DistilledElement) -> DistilledElement {
             height: bb.height,
         }),
         children: el.children.iter().map(|&c| c as usize).collect(),
+        element_index: el.element_index as usize,
     }
 }
 
@@ -157,6 +161,8 @@ fn proto_to_interactive(el: &ans_proto::ans::InteractiveElement) -> InteractiveE
             width: bb.width,
             height: bb.height,
         }),
+        element_index: el.element_index as usize,
+        name: if el.name.is_empty() { None } else { Some(el.name.clone()) },
     }
 }
 

@@ -18,7 +18,10 @@ thiserror.workspace = true
 tracing.workspace = true
 uuid.workspace = true
 futures-util.workspace = true
+base64 = "0.22"
+socket2 = "0.5"
 ans-goal = { path = "../ans-goal" }
+ans-ipc = { path = "../ans-ipc" }
 
 [lints]
 workspace = true

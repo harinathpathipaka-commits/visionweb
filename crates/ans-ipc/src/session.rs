@@ -291,6 +291,75 @@ impl SessionManager {
         let sessions = self.sessions.read().await;
         sessions.get(&session_id).map(|h| h.current_url.clone())
     }
+
+    /// Update the session status.
+    pub async fn set_status(&self, session_id: Uuid, status: SessionStatus) {
+        let mut sessions = self.sessions.write().await;
+        if let Some(handle) = sessions.get_mut(&session_id) {
+            handle.status = status;
+            tracing::info!(%session_id, ?status, "Session status changed");
+        }
+    }
+
+    /// Find the first session ID associated with a given goal.
+    /// Returns `None` if no session exists for that goal.
+    pub async fn find_session_by_goal(&self, goal_id: Uuid) -> Option<Uuid> {
+        let sessions = self.sessions.read().await;
+        sessions.iter().find_map(|(id, h)| {
+            if h.goal_id == goal_id { Some(*id) } else { None }
+        })
+    }
+
+    // ── Human interaction helpers (used by error recovery UI) ──
+
+    /// Simulate a mouse click at page coordinates (x, y).
+    /// Uses CDP `Input.dispatchMouseEvent` for realistic interaction.
+    pub async fn click_at(&self, session_id: Uuid, x: i32, y: i32) -> Result<String, BrowserError> {
+        let sessions = self.sessions.read().await;
+        let handle = sessions.get(&session_id).ok_or(BrowserError::BrowserClosed)?;
+        let script = format!(
+            "(function(){{var el=document.elementFromPoint({x},{y});if(el){{el.focus();el.click();return 'clicked '+el.tagName+'#'+(el.id||'')}}else{{return 'no element at ({x},{y})'}}}})()"
+        );
+        handle.backend.execute_script(&script).await
+    }
+
+    /// Type text into the currently focused element on the page.
+    pub async fn type_to_page(&self, session_id: Uuid, text: &str) -> Result<String, BrowserError> {
+        let sessions = self.sessions.read().await;
+        let handle = sessions.get(&session_id).ok_or(BrowserError::BrowserClosed)?;
+        let escaped = escape_for_js(text);
+        let script = format!(
+            "(function(){{var t='{escaped}';var el=document.activeElement||document.body;if(el.isContentEditable){{el.textContent+=t}}else{{el.value=(el.value||'')+t;el.dispatchEvent(new Event('input',{{bubbles:true}}))}}return 'typed '+t.length+' chars'}})()"
+        );
+        handle.backend.execute_script(&script).await
+    }
+
+    /// Simulate a key press on the page (Enter, Tab, Escape, Backspace).
+    pub async fn key_press(&self, session_id: Uuid, key: &str) -> Result<String, BrowserError> {
+        let sessions = self.sessions.read().await;
+        let handle = sessions.get(&session_id).ok_or(BrowserError::BrowserClosed)?;
+        let (code, key_name) = match key {
+            "Enter" => ("Enter", "Enter"),
+            "Tab" => ("Tab", "Tab"),
+            "Escape" => ("Escape", "Escape"),
+            "Backspace" => ("Backspace", "Backspace"),
+            other => (other, other),
+        };
+        let script = format!(
+            "(function(){{var el=document.activeElement||document.body;var kd=new KeyboardEvent('keydown',{{key:'{key_name}',code:'{code}',bubbles:true}});var kp=new KeyboardEvent('keypress',{{key:'{key_name}',code:'{code}',bubbles:true}});var ku=new KeyboardEvent('keyup',{{key:'{key_name}',code:'{code}',bubbles:true}});el.dispatchEvent(kd);el.dispatchEvent(kp);el.dispatchEvent(ku);return 'key_'+'{key_name}'}})()"
+        );
+        handle.backend.execute_script(&script).await
+    }
+
+    /// Scroll the page by a number of pixels (positive = down).
+    pub async fn scroll_by(&self, session_id: Uuid, pixels: i32) -> Result<String, BrowserError> {
+        let sessions = self.sessions.read().await;
+        let handle = sessions.get(&session_id).ok_or(BrowserError::BrowserClosed)?;
+        let script = format!(
+            "window.scrollBy({{top:{pixels},behavior:'smooth'}});'scrolled {pixels}px'"
+        );
+        handle.backend.execute_script(&script).await
+    }
 }
 
 fn escape_for_js(s: &str) -> String {

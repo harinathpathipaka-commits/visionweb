@@ -7,12 +7,16 @@ services:
     ports:
       - "50051:50051"  # gRPC
       - "50052:50052"  # Gateway (REST/MCP/WS)
+    env_file:
+      - nerves/.env
     environment:
+      - ANS_GRPC_HOST=127.0.0.1
       - ANS_GRPC_PORT=50051
       - ANS_GATEWAY_PORT=50052
       - RUST_LOG=ans=info,tonic=warn
     volumes:
       - ans-data:/data
+    command: ["--grpc-port", "50051", "--gateway-port", "50052", "--gateway-bind", "0.0.0.0", "--nerves-dir", "/app/nerves", "--prewarm", "2"]
     restart: unless-stopped
     mem_limit: 2g
     cpus: 2

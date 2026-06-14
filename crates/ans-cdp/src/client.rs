@@ -198,6 +198,50 @@ impl CdpBackend {
         })
     }
 
+    /// Wait for the page to settle after an interaction. Polls
+    /// `document.readyState` until it is `"complete"` or the timeout
+    /// expires.  Keeps the next DOM capture from seeing stale state.
+    ///
+    /// Early exit: checks readyState once before entering the poll
+    /// loop. If the page is already settled (the common case for static
+    /// pages and most form interactions), returns in ~50ms instead of
+    /// burning the full poll interval.
+    async fn wait_for_stability(
+        connection: &CdpConnection,
+        timeout: Duration,
+    ) {
+        // Fast path: check readyState once before entering the poll loop.
+        // Most pages are already "complete" after a click — we only need
+        // the loop for slow SPA transitions and full navigations.
+        let cmd = command::runtime_evaluate("document.readyState");
+        if let Ok(response) = connection.send_command(cmd, Duration::from_secs(2)).await {
+            if let Ok(value) = command::parse_evaluate_result(&response) {
+                if value.as_str() == Some("complete") {
+                    return; // already settled — no wait needed
+                }
+            }
+        }
+        // Slow path: poll until complete or timeout
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            let cmd = command::runtime_evaluate("document.readyState");
+            match connection.send_command(cmd, Duration::from_secs(2)).await {
+                Ok(response) => {
+                    if let Ok(value) = command::parse_evaluate_result(&response) {
+                        if value.as_str() == Some("complete") {
+                            return;
+                        }
+                    }
+                }
+                Err(_) => return, // connection closed, give up
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
     /// Send a command and drop the response (fire-and-forget).
     async fn send_ignore(&self, cmd: CdpCommand) {
         let json = cmd.to_json();
@@ -422,22 +466,84 @@ impl ans_core::BrowserBackend for CdpBackend {
         ))
         .await;
 
+        // ── Pre-click DOM snapshot ──────────────────────────────
+        // Capture element count before the click so we can detect
+        // whether the click actually changed the page (modals opening,
+        // form fields appearing, tab switches — things that don't
+        // necessarily change the URL).
+        let dom_count_before = self
+            .connection
+            .send_command(
+                command::runtime_evaluate("document.querySelectorAll('*').length"),
+                Duration::from_secs(3),
+            )
+            .await
+            .ok()
+            .and_then(|r| command::parse_evaluate_result(&r).ok())
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+
+        let url_before = self.current_url.lock().await.clone();
+
+        // Stability wait: let the page react to the click.
+        // 500ms is enough for most interactions; the early-exit in
+        // wait_for_stability returns sooner when readyState is already complete.
+        Self::wait_for_stability(&self.connection, Duration::from_millis(500)).await;
+
+        // ── Post-click DOM snapshot ─────────────────────────────
+        let dom_count_after = self
+            .connection
+            .send_command(
+                command::runtime_evaluate("document.querySelectorAll('*').length"),
+                Duration::from_secs(3),
+            )
+            .await
+            .ok()
+            .and_then(|r| command::parse_evaluate_result(&r).ok())
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+
+        let url_after = self.current_url.lock().await.clone();
+        let url_changed = url_before != url_after;
+        let dom_changed = dom_count_before != dom_count_after;
+        let page_changed = url_changed || dom_changed;
+
         let elapsed = start.elapsed();
 
         Ok(ActionOutcome {
-            success: true,
-            error_message: None,
+            success: page_changed,
+            error_message: if page_changed {
+                None
+            } else {
+                Some(format!(
+                    "click had no visible effect — URL unchanged, DOM element count unchanged ({})",
+                    dom_count_before,
+                ))
+            },
             execution_time_ms: elapsed.as_millis() as u64,
-            page_url_after: Some(self.current_url.lock().await.clone()),
-            dom_changed: true,
+            page_url_after: Some(url_after),
+            dom_changed: page_changed,
         })
     }
 
     async fn type_text(&self, selector: &str, text: &str) -> Result<ActionOutcome, BrowserError> {
         let start = std::time::Instant::now();
 
-        // Click the element first to focus it
-        let _ = self.click(selector).await;
+        // Focus the element via JS instead of a full click().
+        // click() does 5+ CDP round-trips + mouse events + 1.5s stability
+        // wait — overkill for focusing an input. A single Runtime.evaluate
+        // call with .focus() is ~50ms vs ~2-3s.
+        let focus_script = format!(
+            r#"document.querySelector('{}')?.focus()"#,
+            escape_js_string(selector),
+        );
+        let _ = self
+            .connection
+            .send_command(
+                command::runtime_evaluate(&focus_script),
+                Duration::from_secs(3),
+            )
+            .await;
 
         // Humanized: type character-by-character with variable delays
         let humanize = self.stealth.as_ref().is_some_and(|s| s.humanize);
@@ -451,6 +557,10 @@ impl ans_core::BrowserBackend for CdpBackend {
         } else {
             self.send_ignore(command::input_insert_text(text)).await;
         }
+
+        // Stability wait after typing — form fields may trigger validation,
+        // autocomplete, or dynamic UI changes.
+        Self::wait_for_stability(&self.connection, Duration::from_millis(300)).await;
 
         let elapsed = start.elapsed();
 

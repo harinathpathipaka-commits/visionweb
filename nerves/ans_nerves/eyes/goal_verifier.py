@@ -55,6 +55,7 @@ class GoalVerifierEye(BaseEye):
         visible_text = page_data.get("visible_text", [])
         dom_summary = page_data.get("dom_summary", "")
         diff_summary = page_data.get("diff_summary", "")
+        screenshot_b64 = page_data.get("screenshot_base64", "")
 
         user_prompt = build_verifier_user_prompt(
             sub_goal_description=sub_goal,
@@ -67,12 +68,23 @@ class GoalVerifierEye(BaseEye):
         )
 
         try:
-            response = await get_llm_client().complete_structured(
-                system_prompt=VERIFIER_SYSTEM,
-                user_prompt=user_prompt,
-                json_schema=VERIFIER_JSON_SCHEMA,
-                model_override=get_config().llm.verifier_model,
-            )
+            if screenshot_b64:
+                # Visual verification: pass the screenshot for vision-capable
+                # confirmation of success/error states.
+                response = await get_llm_client().complete_vision(
+                    system_prompt=VERIFIER_SYSTEM,
+                    user_prompt=user_prompt,
+                    screenshot_base64=screenshot_b64,
+                    json_schema=VERIFIER_JSON_SCHEMA,
+                    model_override=get_config().llm.verifier_model,
+                )
+            else:
+                response = await get_llm_client().complete_structured(
+                    system_prompt=VERIFIER_SYSTEM,
+                    user_prompt=user_prompt,
+                    json_schema=VERIFIER_JSON_SCHEMA,
+                    model_override=get_config().llm.verifier_model,
+                )
         except Exception:
             logger.warning("goal_verifier: LLM call failed", exc_info=True)
             return EyeReport(

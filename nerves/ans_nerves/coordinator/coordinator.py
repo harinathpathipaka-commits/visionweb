@@ -128,10 +128,29 @@ class CrossEyeCoordinator:
         for r in reports:
             content = r.content
             if r.eye_name == "dom_reader":
-                interactive = len(content.get("interactive", []))
+                interactive = content.get("interactive", [])
                 noise = len(content.get("distraction_flags", []))
+                # Summarise form fields with labels for the planner
+                form_fields = []
+                for el in interactive:
+                    label = el.get("label", "") or el.get("placeholder", "") or el.get("text", "")
+                    tag = el.get("element_type", el.get("tag", ""))
+                    itype = el.get("input_type", "")
+                    name = el.get("name", "")
+                    if tag in ("input", "textarea", "select", "button"):
+                        desc = f"tag={tag}"
+                        if itype and itype != "text":
+                            desc += f" type={itype}"
+                        if name:
+                            desc += f" name={name}"
+                        if label:
+                            desc += f" label='{label[:40]}'"
+                        form_fields.append(desc)
+                form_summary = ""
+                if form_fields:
+                    form_summary = f" fields=[{', '.join(form_fields[:12])}]"
                 perception_parts.append(
-                    f"DOM: {interactive} interactive elements, {noise} distractions"
+                    f"DOM: {len(interactive)} interactive, {noise} noise{form_summary}"
                 )
             elif r.eye_name == "vision":
                 page_type = content.get("page_type", "unknown")

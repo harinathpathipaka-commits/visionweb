@@ -22,8 +22,8 @@ from ans_nerves.config import (
 class TestLLMConfig:
     def test_defaults(self):
         cfg = LLMConfig()
-        assert cfg.model == "gpt-4o-mini"
-        assert cfg.provider == "openai"
+        assert cfg.model == "deepseek-v4-flash"
+        assert cfg.provider == "deepseek"
         assert cfg.max_tokens == 4096
         assert cfg.temperature == 0.3
 
@@ -108,7 +108,7 @@ class TestGetConfig:
 
 class TestGetApiKey:
     def test_missing_key_raises(self):
-        """Provider defaults to 'openai', so get_api_key() checks OPENAI_API_KEY."""
+        """Provider defaults to 'deepseek', so get_api_key() checks DEEPSEEK_API_KEY."""
         old_openai = os.getenv("OPENAI_API_KEY")
         old_deepseek = os.getenv("DEEPSEEK_API_KEY")
         if old_openai:
@@ -116,7 +116,7 @@ class TestGetApiKey:
         if old_deepseek:
             del os.environ["DEEPSEEK_API_KEY"]
         try:
-            with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):
+            with pytest.raises(RuntimeError, match="DEEPSEEK_API_KEY"):
                 get_api_key()
         finally:
             if old_openai:
@@ -125,12 +125,12 @@ class TestGetApiKey:
                 os.environ["DEEPSEEK_API_KEY"] = old_deepseek
 
     def test_key_present_returns_value(self):
-        """Provider defaults to 'openai', so get_api_key() returns OPENAI_API_KEY."""
+        """Provider defaults to 'deepseek', so get_api_key() returns DEEPSEEK_API_KEY."""
         old_openai = os.getenv("OPENAI_API_KEY")
         old_deepseek = os.getenv("DEEPSEEK_API_KEY")
-        if old_deepseek:
-            del os.environ["DEEPSEEK_API_KEY"]
-        os.environ["OPENAI_API_KEY"] = "sk-test-12345"
+        if old_openai:
+            del os.environ["OPENAI_API_KEY"]
+        os.environ["DEEPSEEK_API_KEY"] = "sk-test-12345"
         try:
             assert get_api_key() == "sk-test-12345"
         finally:

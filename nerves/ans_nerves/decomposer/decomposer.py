@@ -6,7 +6,6 @@ with measurable success criteria that the Goal Verifier Eye can check.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -52,33 +51,12 @@ class GoalSpec:
 class GoalDecomposer:
     """Decomposes goals into verifiable sub-goals using LLM with response caching."""
 
-    _cache: dict[int, GoalSpec] = {}  # goal_hash → cached result
-
     async def decompose(
         self,
         goal_description: str,
         context: dict | None = None,
     ) -> GoalSpec:
-        """Break a goal into sub-goals. Cache hit = 0 LLM calls."""
-
-        # Cache key: hash(goal + sorted context)
-        ctx_str = json.dumps(context or {}, sort_keys=True)
-        cache_key = hash(goal_description + ctx_str)
-
-        if cache_key in self._cache:
-            logger.info("decomposer: cache hit, returning %d sub-goals",
-                        len(self._cache[cache_key].sub_goals))
-            # Return a copy so callers can mutate safely
-            cached = self._cache[cache_key]
-            return GoalSpec(
-                description=cached.description,
-                sub_goals=list(cached.sub_goals),
-                context=dict(cached.context),
-                max_budget_cents=cached.max_budget_cents,
-                max_steps=cached.max_steps,
-                estimated_steps=cached.estimated_steps,
-                risk_factors=list(cached.risk_factors),
-            )
+        """Break a goal into sub-goals using the LLM decomposer."""
 
         if not goal_description.strip():
             return GoalSpec(description=goal_description)
@@ -126,7 +104,55 @@ class GoalDecomposer:
             estimated_steps=parsed.get("estimated_steps", len(sub_goals)),
             risk_factors=parsed.get("risk_factors", []),
         )
-        # Cache for reuse (first run → LLM, repeat → instant)
-        if cache_key not in self._cache:
-            self._cache[cache_key] = spec
         return spec
+
+    async def decompose_single_sub_goal(
+        self,
+        sub_goal_description: str,
+        full_goal: str,
+        context: dict | None = None,
+    ) -> list[SubGoal]:
+        """Re-decompose a single stuck sub-goal into finer-grained steps.
+
+        Called when a sub-goal is hitting max errors or stagnation — the
+        original decomposition was too broad (e.g. "Fill the registration
+        form" needs to become "Fill email field", "Fill password field", etc.).
+        """
+        if not sub_goal_description.strip():
+            return []
+
+        user_prompt = build_decomposer_user_prompt(
+            goal_description=(
+                f"RE-DECOMPOSE this specific sub-goal into SMALLER, more granular "
+                f"steps. The sub-goal is part of a larger goal: '{full_goal}'.\n\n"
+                f"SUB-GOAL TO BREAK DOWN: {sub_goal_description}\n\n"
+                f"The original decomposition was too broad — the agent got stuck "
+                f"because the step was too large. Break it into 2-4 VERY SPECIFIC "
+                f"micro-steps that can each be completed with 1-3 browser actions."
+            ),
+            context=context or {},
+        )
+
+        try:
+            response = await get_llm_client().complete_structured(
+                system_prompt=DECOMPOSER_SYSTEM,
+                user_prompt=user_prompt,
+                json_schema=DECOMPOSER_JSON_SCHEMA,
+                model_override=get_config().llm.decomposer_model,
+            )
+        except Exception:
+            logger.warning("decomposer: re-decomposition LLM call failed")
+            return []
+
+        if response.parsed is None:
+            return []
+
+        return [
+            SubGoal(
+                id=sg.get("id", f"re_sg_{i}"),
+                description=sg.get("description", ""),
+                success_criteria=sg.get("success_criteria", []),
+                depends_on=sg.get("depends_on", []),
+            )
+            for i, sg in enumerate(response.parsed.get("sub_goals", []))
+        ]

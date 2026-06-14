@@ -56,8 +56,8 @@ impl BudgetMode {
     pub const fn should_verify_goal(&self, action_index: usize) -> bool {
         match self {
             Self::Normal => true,
-            Self::Conservative => action_index.is_multiple_of(2),
-            Self::Critical => action_index.is_multiple_of(3),
+            Self::Conservative => action_index % 2 == 0,
+            Self::Critical => action_index % 3 == 0,
             Self::Emergency => false,
         }
     }

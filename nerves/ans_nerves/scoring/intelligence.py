@@ -90,10 +90,12 @@ class DecisionIntelligence:
         embedder: EmbeddingGenerator | None = None,
         store: LanceDBStore | None = None,
         scorer: AdvancedMultiFactorScorer | None = None,
+        grpc_client: Any = None,
     ) -> None:
         self._embedder = embedder or get_embedding_generator()
         self._store = store or get_store()
         self._scorer = scorer or AdvancedMultiFactorScorer()
+        self._grpc = grpc_client  # optional: sync to Rust daemon's DecisionStore
 
     @property
     def store(self) -> LanceDBStore:
@@ -156,7 +158,58 @@ class DecisionIntelligence:
             factors.immediate,
             factors.goal,
         )
+
+        # 4. Sync to Rust daemon's DecisionStore via gRPC
+        if self._grpc is not None:
+            try:
+                from ans_nerves.ans_pb2 import Action
+                await self._grpc.store_score(
+                    session_id=record.session_id,
+                    goal_id=record.goal_id,
+                    action=Action(
+                        action_type=record.action_type,
+                        selector=record.selector,
+                        value=record.value,
+                    ),
+                    tool=record.tool,
+                    context_embedding=embedding,
+                    outcome_score=factors.immediate,
+                    result_score=factors.goal,
+                    error_message=record.error_message or "",
+                    error_penalty=factors.error_penalty,
+                    business_outcome=factors.business,
+                    context_type=record.context_type,
+                )
+                logger.debug("record_action: synced to daemon id=%s", record_id)
+            except Exception as exc:
+                logger.debug("record_action: daemon sync skipped (%s)", exc)
+
         return record_id
+
+    async def update_record_outcome(
+        self,
+        session_id: str,
+        goal_id: str,
+        *,
+        goal_advanced: bool = False,
+        criterion_met: bool = False,
+        sub_goal_completed: bool = False,
+    ) -> None:
+        """Backfill short-term outcomes on the most recent action record.
+
+        Called when the Goal Verifier confirms a sub-goal is complete, so
+        warm-start memory learns which actions actually advanced the goal.
+        """
+        try:
+            self._store.update_latest_outcome(
+                session_id=session_id,
+                goal_id=goal_id,
+                goal_advanced=goal_advanced,
+                criterion_met=criterion_met,
+                sub_goal_completed=sub_goal_completed,
+            )
+        except Exception:
+            logger.debug("update_record_outcome: store update failed", exc_info=True)
 
     async def query_best_actions(
         self,

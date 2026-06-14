@@ -2,6 +2,8 @@
 .env
 *.env
 !*.env.example
+*api_keys*
+*api_keys*.json
 
 # ── Rust build ────────────────────────────────────────
 target/
@@ -29,7 +31,16 @@ dist/
 .DS_Store
 Thumbs.db
 
+# ── Logs ───────────────────────────────────────────────
+*.log
+
+# ── Screenshots ────────────────────────────────────────
+*.png
+*.jpg
+*.jpeg
+
 # ── ANS runtime ───────────────────────────────────────
+.ans/
 .claude/
 .claude-flow/
 .swarm/
@@ -37,3 +48,6 @@ Thumbs.db
 *.db
 daemon-*.txt
 mcp-*.txt
+
+# ── Build caches ───────────────────────────────────────
+.cargo/

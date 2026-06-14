@@ -39,6 +39,8 @@ pub struct DistilledElement {
     pub is_visible: bool,
     pub bounding_box: Option<BoundingBox>,
     pub children: Vec<usize>,
+    /// Set-of-Marks positional index in `DistilledPage.elements`.
+    pub element_index: usize,
 }
 
 /// Pixel bounding box for an element.
@@ -61,6 +63,10 @@ pub struct InteractiveElement {
     pub is_visible: bool,
     pub is_enabled: bool,
     pub bounding_box: Option<BoundingBox>,
+    /// Corresponding `DistilledElement.element_index` (Set-of-Marks).
+    pub element_index: usize,
+    /// HTML `name` attribute — essential for form field disambiguation.
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

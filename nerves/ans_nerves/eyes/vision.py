@@ -34,7 +34,12 @@ class VisionEye(BaseEye):
     name = "vision"
 
     async def observe(self, session_id: str, page_data: dict[str, Any]) -> EyeReport:
-        screenshot_b64 = page_data.get("screenshot_base64")
+        # Prefer SOM-annotated screenshot (numbered bounding boxes) for
+        # visual element disambiguation. Fall back to clean screenshot.
+        screenshot_b64 = (
+            page_data.get("som_screenshot_base64")
+            or page_data.get("screenshot_base64")
+        )
         if not screenshot_b64:
             return EyeReport(
                 eye_name=self.name,
@@ -47,6 +52,8 @@ class VisionEye(BaseEye):
 
         # Screenshot-only: no DOM context. Vision observes visual elements,
         # DOM Reader handles structure. Separation avoids hallucinated selectors.
+        # When SOM annotation is present, numbered boxes let the model
+        # reference elements by their visual index (e.g. "element #3").
         user_prompt = build_vision_user_prompt(
             goal_context=goal_context,
             page_url=page_url,

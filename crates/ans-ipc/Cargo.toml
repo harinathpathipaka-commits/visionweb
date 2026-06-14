@@ -26,6 +26,7 @@ ans-storage = { path = "../ans-storage" }
 ans-budget = { path = "../ans-budget" }
 ans-signal = { path = "../ans-signal" }
 tokio-stream.workspace = true
+socket2 = "0.5"
 
 [lints]
 workspace = true

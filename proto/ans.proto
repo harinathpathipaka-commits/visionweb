@@ -167,6 +167,7 @@ message DistilledElement {
   bool is_visible = 5;
   BoundingBox bounding_box = 6;
   repeated int32 children = 7;
+  int32 element_index = 8;   // Set-of-Marks positional index in DistilledDom.elements
 }
 
 message InteractiveElement {
@@ -178,6 +179,8 @@ message InteractiveElement {
   bool is_visible = 6;
   bool is_enabled = 7;
   BoundingBox bounding_box = 8;
+  int32 element_index = 9;   // Corresponding DistilledElement index (Set-of-Marks)
+  string name = 10;           // HTML name attribute (form field identification)
 }
 
 message SemanticBlock {
@@ -419,6 +422,7 @@ message ProgressUpdate {
   float progress = 2;
   string status = 3;
   repeated SubGoal sub_goals = 4;
+  string message = 5;
 }
 
 message GoalUpdate {

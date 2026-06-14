@@ -187,8 +187,15 @@ fn skip_noise_element(el: &ans_core::distill::DistilledElement) -> bool {
 
 /// Truncate text for diff display.
 fn truncate_for_diff(text: &str) -> String {
+    // Safe truncation — slice at char boundary, not raw byte offset
     if text.len() > 100 {
-        format!("{}...", &text[..100])
+        let truncate_at = text
+            .char_indices()
+            .take_while(|&(i, _)| i < 100)
+            .map(|(i, c)| i + c.len_utf8())
+            .last()
+            .unwrap_or(100);
+        format!("{}...", &text[..truncate_at.min(text.len())])
     } else {
         text.to_string()
     }
@@ -334,6 +341,7 @@ mod tests {
             is_visible: true,
             bounding_box: None,
             children: vec![],
+            element_index: 0,
         }
     }
 

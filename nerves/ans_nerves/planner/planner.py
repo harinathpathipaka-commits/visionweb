@@ -34,17 +34,28 @@ _MIN_RECOMMENDATION_SCORE = 0.3
 
 
 @dataclass
+class VisionConfirmedTarget:
+    """An element the Vision eye identified as the probable target."""
+    element_index: int
+    selector: str = ""
+    label: str = ""
+    confidence: float = 0.0
+
+
+@dataclass
 class PlannedAction:
     """A single planned browser action with reasoning."""
 
     action_type: str = ""
     selector: str = ""
+    element_index: int | None = None   # Set-of-Marks index for disambiguation
     value: str = ""
     tool: str = ""
     reasoning: str = ""
     confidence: float = 0.5
     expected_outcome: str = ""
     source: str = "llm_cold"  # "llm_cold", "memory_validated", "memory_override", "fallback"
+    vision_target: VisionConfirmedTarget | None = None
 
 
 class AgentPlanner:
@@ -78,6 +89,7 @@ class AgentPlanner:
         last_error: str = "",
         page_type: str = "",
         action_type_hint: str = "",
+        vision_target: VisionConfirmedTarget | None = None,
     ) -> PlannedAction:
         """Plan the single next browser action.
 
@@ -100,6 +112,7 @@ class AgentPlanner:
                 last_error=last_error,
                 page_type=page_type,
                 action_type_hint=action_type_hint,
+                vision_target=vision_target,
             )
         else:
             logger.debug("plan_next_action: cold start (%d records)", record_count)
@@ -111,6 +124,7 @@ class AgentPlanner:
                 available_elements=available_elements,
                 action_history=action_history,
                 last_error=last_error,
+                vision_target=vision_target,
             )
 
     # ── Cold start: LLM reasons from context ──────────────────
@@ -124,6 +138,7 @@ class AgentPlanner:
         available_elements: list[dict] | None = None,
         action_history: list[str] | None = None,
         last_error: str = "",
+        vision_target: VisionConfirmedTarget | None = None,
     ) -> PlannedAction:
         """Reason purely from context — no memory available yet.
 
@@ -140,6 +155,7 @@ class AgentPlanner:
             action_history=action_history,
             memory_recommendations=None,  # cold start — no memory
             last_error=last_error,
+            vision_target=vision_target,
         )
 
         try:
@@ -157,6 +173,7 @@ class AgentPlanner:
                 reasoning="LLM call failed during cold-start planning. Waiting for retry.",
                 confidence=0.1,
                 source="fallback",
+                vision_target=vision_target,
             )
 
         if response.parsed is None:
@@ -167,17 +184,20 @@ class AgentPlanner:
                 reasoning=f"LLM returned unparseable response: {response.content[:200]}",
                 confidence=0.1,
                 source="fallback",
+                vision_target=vision_target,
             )
 
         return PlannedAction(
             action_type=response.parsed.get("action_type", "wait"),
             selector=response.parsed.get("selector", ""),
+            element_index=response.parsed.get("element_index"),
             value=response.parsed.get("value", ""),
             tool=response.parsed.get("tool", "wait"),
             reasoning=response.parsed.get("reasoning", ""),
             confidence=response.parsed.get("confidence", 0.5),
             expected_outcome=response.parsed.get("expected_outcome", ""),
             source="llm_cold",
+            vision_target=vision_target,
         )
 
     # ── Warm start: memory recommendations + LLM validation ───
@@ -193,6 +213,7 @@ class AgentPlanner:
         last_error: str = "",
         page_type: str = "",
         action_type_hint: str = "",
+        vision_target: VisionConfirmedTarget | None = None,
     ) -> PlannedAction:
         """Query memory for best past actions, then validate with LLM.
 
@@ -232,6 +253,7 @@ class AgentPlanner:
             action_history=action_history,
             memory_recommendations=memory_recommendations if memory_recommendations else None,
             last_error=last_error,
+            vision_target=vision_target,
         )
 
         try:
@@ -249,6 +271,7 @@ class AgentPlanner:
                 reasoning="LLM warm-start call failed. Falling back to wait.",
                 confidence=0.1,
                 source="fallback",
+                vision_target=vision_target,
             )
 
         if response.parsed is None:
@@ -267,12 +290,14 @@ class AgentPlanner:
         return PlannedAction(
             action_type=response.parsed.get("action_type", "wait"),
             selector=response.parsed.get("selector", ""),
+            element_index=response.parsed.get("element_index"),
             value=response.parsed.get("value", ""),
             tool=response.parsed.get("tool", "wait"),
             reasoning=response.parsed.get("reasoning", ""),
             confidence=response.parsed.get("confidence", 0.5),
             expected_outcome=response.parsed.get("expected_outcome", ""),
             source=source,
+            vision_target=vision_target,
         )
 
 

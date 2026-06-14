@@ -253,4 +253,30 @@ impl ApiRouter {
             })),
         }
     }
+
+    /// POST /api/v1/goals/:id/cancel — cancel a running goal.
+    pub async fn cancel_goal(&self, goal_id: &str) -> Json<Value> {
+        let mut client = self.client.clone_client();
+        let req = tonic::Request::new(ans_proto::ans::ProgressUpdate {
+            goal_id: goal_id.into(),
+            progress: 0.0,
+            status: "Failed".into(),
+            message: "Cancelled by user".into(),
+            sub_goals: vec![],
+        });
+
+        match client.update_goal_progress(req).await {
+            Ok(resp) => {
+                let r = resp.into_inner();
+                Json(json!({
+                    "goal_id": r.goal_id,
+                    "status": r.status,
+                    "cancelled": true,
+                }))
+            }
+            Err(e) => Json(json!({
+                "error": format!("gRPC error: {}", e)
+            })),
+        }
+    }
 }

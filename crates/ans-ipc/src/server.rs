@@ -48,6 +48,7 @@ pub struct IpcServer {
     signal_router: SignalRouter,
     metrics: Arc<Metrics>,
     nerves_dir: Option<std::path::PathBuf>,
+    grpc_port: u16,
 }
 
 impl IpcServer {
@@ -64,6 +65,7 @@ impl IpcServer {
             signal_router: SignalRouter::new(),
             metrics: Arc::new(Metrics::new()),
             nerves_dir: None,
+            grpc_port: 50051,
         }
     }
 
@@ -94,6 +96,7 @@ impl IpcServer {
             signal_router: SignalRouter::new(),
             metrics,
             nerves_dir: None,
+            grpc_port: 50051,
         }
     }
 
@@ -110,10 +113,25 @@ impl IpcServer {
         self.goals.clone()
     }
 
+    /// Set the gRPC port (used to tell spawned Python processes where to connect).
+    #[must_use]
+    pub fn with_grpc_port(mut self, port: u16) -> Self {
+        self.grpc_port = port;
+        self
+    }
+
+    /// Access the session manager for human-in-the-loop actions
+    /// (e.g., the gateway's WebSocket error recovery handler).
+    #[must_use]
+    pub fn session_manager(&self) -> SessionManager {
+        self.sessions.clone()
+    }
+
     /// Convert into a tonic service, useful for integration testing.
     pub fn into_tonic_service(
         self,
     ) -> generated::AgentNervousSystemServer<AgentNervousSystemServer> {
+        let grpc_port = self.grpc_port;
         let svc = AgentNervousSystemServer {
             sessions: self.sessions,
             goals: self.goals,
@@ -123,12 +141,14 @@ impl IpcServer {
             signal_router: self.signal_router,
             metrics: self.metrics,
             nerves_dir: self.nerves_dir,
+            grpc_port,
         };
         generated::AgentNervousSystemServer::new(svc)
     }
 
     /// Start the gRPC server and block until shutdown signal received.
     pub async fn serve(self, addr: SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
+        let grpc_port = self.grpc_port;
         let svc = AgentNervousSystemServer {
             sessions: self.sessions,
             goals: self.goals,
@@ -138,16 +158,29 @@ impl IpcServer {
             signal_router: self.signal_router,
             metrics: self.metrics,
             nerves_dir: self.nerves_dir,
+            grpc_port,
         };
 
         tracing::info!("gRPC server starting on {}", addr);
 
+        // SO_REUSEADDR prevents "address already in use" on restart
+        // (Windows: allows bind to TIME_WAIT port; Unix: same + TIME_WAIT reuse)
+        let socket = socket2::Socket::new(
+            socket2::Domain::IPV4,
+            socket2::Type::STREAM,
+            Some(socket2::Protocol::TCP),
+        )?;
+        socket.set_reuse_address(true)?;
+        socket.bind(&socket2::SockAddr::from(addr))?;
+        socket.listen(128)?;
+        socket.set_nonblocking(true)?;
+
+        let listener = tokio::net::TcpListener::from_std(socket.into())?;
+        let incoming = tokio_stream::wrappers::TcpListenerStream::new(listener);
+
         Server::builder()
             .add_service(generated::AgentNervousSystemServer::new(svc))
-            .serve_with_shutdown(addr, async {
-                let _ = tokio::signal::ctrl_c().await;
-                tracing::info!("Shutdown signal received");
-            })
+            .serve_with_incoming(incoming)
             .await?;
 
         Ok(())
@@ -172,6 +205,7 @@ pub struct AgentNervousSystemServer {
     signal_router: SignalRouter,
     metrics: Arc<Metrics>,
     nerves_dir: Option<std::path::PathBuf>,
+    grpc_port: u16,
 }
 
 // Import the generated server trait module alias
@@ -269,10 +303,21 @@ impl AgentNervousSystem for AgentNervousSystemServer {
             self.metrics.inc_errors();
         }
 
+        // Capture post-action page state so the Python planner has access
+        // to the URL after the action (visible_text is extracted Python-side).
+        let new_state = self.sessions.get_url(session_id).await.map(|url| PageState {
+            url,
+            title: String::new(),
+            loaded: true,
+            dom_node_count: 0,
+            visible_text: vec![],
+            timestamp: chrono::Utc::now().timestamp_millis(),
+        });
+
         Ok(Response::new(ActionResult {
             success: outcome.success,
             error_message: outcome.error_message.unwrap_or_default(),
-            new_state: None,
+            new_state,
             diff: None,
             execution_time_ms: outcome.execution_time_ms as i64,
         }))
@@ -411,6 +456,7 @@ impl AgentNervousSystem for AgentNervousSystemServer {
         let description = state.description.clone();
         let nerves_dir = self.nerves_dir.clone();
         let goals = self.goals.clone();
+        let grpc_port = self.grpc_port;
         tokio::spawn(async move {
             // Auto-detect venv Python relative to nerves_dir
             let python = if let Some(ref dir) = nerves_dir {
@@ -427,7 +473,9 @@ impl AgentNervousSystem for AgentNervousSystemServer {
 
             let mut cmd = tokio::process::Command::new(&python);
             cmd.args(["-m", "ans_nerves", "run", "--goal-id", &goal_id, &description])
-                .kill_on_drop(true);
+                .kill_on_drop(true)
+                .env("ANS_GRPC_PORT", grpc_port.to_string())
+                .env("ANS_GRPC_HOST", "127.0.0.1");
             if let Some(ref dir) = nerves_dir {
                 cmd.current_dir(dir);
             }
@@ -438,12 +486,12 @@ impl AgentNervousSystem for AgentNervousSystemServer {
                     } else {
                         let stderr = String::from_utf8_lossy(&output.stderr);
                         tracing::error!(%goal_id, %stderr, "Python AgentLoop failed");
-                        let _ = goals.update_progress(goal_uuid, 0.0, ans_core::goal::GoalStatus::Failed);
+                        let _ = goals.update_progress(goal_uuid, 0.0, ans_core::goal::GoalStatus::Failed, None);
                     }
                 }
                 Err(e) => {
                     tracing::error!(%goal_id, error=%e, "Failed to spawn Python AgentLoop");
-                    let _ = goals.update_progress(goal_uuid, 0.0, ans_core::goal::GoalStatus::Failed);
+                    let _ = goals.update_progress(goal_uuid, 0.0, ans_core::goal::GoalStatus::Failed, None);
                 }
             }
         });
@@ -491,9 +539,10 @@ impl AgentNervousSystem for AgentNervousSystemServer {
             let _ = self.goals.update_sub_goals(goal_id, sub_goals);
         }
 
+        let message = if req.message.is_empty() { None } else { Some(req.message) };
         let state = self
             .goals
-            .update_progress(goal_id, req.progress, status)
+            .update_progress(goal_id, req.progress, status, message)
             .map_err(|e| match e {
                 ans_goal::GoalStoreError::NotFound(id) => {
                     Status::not_found(format!("goal {id} not found"))

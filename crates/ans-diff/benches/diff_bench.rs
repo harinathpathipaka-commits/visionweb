@@ -17,6 +17,7 @@ fn build_page(label: &str, count: usize) -> DistilledPage {
             is_visible: true,
             bounding_box: None,
             children: vec![],
+            element_index: i,
         })
         .collect();
 

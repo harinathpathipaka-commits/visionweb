@@ -111,10 +111,18 @@ class DomReaderEye(BaseEye):
             classification = _classify_element(el)
 
             if classification == "interactive":
+                attrs = el.get("attributes", {}) or {}
                 interactive.append({
                     "selector": el.get("selector", ""),
+                    "element_index": el.get("element_index"),
                     "element_type": el.get("tag", "unknown"),
                     "label": el.get("text", "") or el.get("aria_label", "") or "",
+                    "input_type": attrs.get("type", "text") if el.get("tag") == "input" else None,
+                    "placeholder": attrs.get("placeholder", ""),
+                    "name": attrs.get("name", ""),
+                    "autocomplete": attrs.get("autocomplete", ""),
+                    "aria_label": el.get("aria_label", ""),
+                    "value": attrs.get("value", ""),
                     "is_visible": el.get("is_visible", True),
                     "is_enabled": el.get("is_enabled", True),
                     "bounding_box": el.get("bounding_box"),

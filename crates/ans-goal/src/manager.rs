@@ -83,13 +83,15 @@ impl GoalManager {
     }
 
     /// Update progress and status for an existing goal.
+    /// If `message` is provided, it overrides the auto-generated notification message.
     pub fn update_progress(
         &self,
         goal_id: Uuid,
         progress: f32,
         status: GoalStatus,
+        message: Option<String>,
     ) -> Result<GoalState, GoalStoreError> {
-        self.store.update_progress(goal_id, progress, status)
+        self.store.update_progress(goal_id, progress, status, message)
     }
 
     /// Replace sub-goals from Python LLM decomposer.
@@ -262,7 +264,7 @@ mod tests {
         let state = mgr.create_goal("Test goal", &HashMap::new(), 50).unwrap();
 
         let updated = mgr
-            .update_progress(state.goal_id, 0.5, GoalStatus::Active)
+            .update_progress(state.goal_id, 0.5, GoalStatus::Active, None)
             .unwrap();
         assert!((updated.progress - 0.5).abs() < 0.01);
     }
